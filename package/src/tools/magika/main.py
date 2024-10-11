@@ -1,0 +1,37 @@
+"""identify file content using google magika ai tool
+
+NB: this is defined for integration with apigw so files should be base64 encoded into the 'Body' field
+
+example:
+
+>>> test_data.json
+>>> {"Body": "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"}
+
+curl -v -d @test_data.json http://localhost:8080/2015-03-31/functions/function/invocations
+
+produces:
+>>> {"ct_label": "png", "score": 1.0, "group": "image", "mime_type": "image/png", "magic": "PNG image data", "description": "PNG image data"}
+
+which is correct
+"""
+import io
+import json
+
+from dataclasses import asdict
+
+from shared import lambda_event_to_data
+
+from magika import Magika
+
+m = Magika()
+
+
+def lambda_handler(event, context):
+    """read data from the event body
+    return magika response
+    """
+    data, mimetype = lambda_event_to_data(event)
+
+    res = m.identify_bytes(data)
+
+    return asdict(res.output)
