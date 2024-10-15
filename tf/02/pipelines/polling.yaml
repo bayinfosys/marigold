@@ -1,0 +1,87 @@
+Comment: "Polling State Machine"
+StartAt: CheckIfExists
+States:
+  CheckIfExists:
+    Type: Task
+    Resource: "arn:aws:states:::dynamodb:getItem"
+    Parameters:
+      TableName: "${results_cache_table}"
+      Key:
+        PK:
+          S.$: "$.destination.userid"
+        SK:
+          S.$: "$.destination.message_id"
+    ResultPath: "$.dynamoResult"
+    Next: DecideNextStep
+
+  DecideNextStep:
+    Type: Choice
+    Choices:
+      - Variable: "$.dynamoResult.Item"
+        IsPresent: true
+        Next: CheckStatus
+    Default: StartJob
+
+  CheckStatus:
+    Type: Choice
+    Choices:
+      - Variable: "$.dynamoResult.Item.Status.S"
+        StringEquals: "complete"
+        Next: ReturnExistingItem
+      - Variable: "$.dynamoResult.Item.Status.S"
+        StringEquals: "error"
+        Next: ReturnErrorState
+      - Variable: "$.dynamoResult.Item.Status.S"
+        StringEquals: "pending"
+        Next: ReturnPendingStatus
+      - Variable: "$.dynamoResult.Item.Status.S"
+        StringEquals: "started"
+        Next: UpdateToPending
+
+  StartJob:
+    Type: Task
+    Resource: "arn:aws:states:::states:startExecution"
+    Parameters:
+      StateMachineArn.$: "$.targetStateMachineArn"  # ARN of the target state machine
+      Input.$: "$"  # Pass the entire input to the target state machine
+    ResultPath: "$.startJobResult"
+    Next: CheckStatus  # After starting the job, check status
+
+  UpdateToPending:
+    Type: Task
+    Resource: "arn:aws:states:::dynamodb:updateItem"
+    Parameters:
+      TableName: "${results_cache_table}"
+      Key:
+        PK:
+          S.$: "$.destination.userid"
+        SK:
+          S.$: "$.destination.message_id"
+      UpdateExpression: "SET #status = :status"
+      ExpressionAttributeNames:
+        "#status": "Status"
+      ExpressionAttributeValues:
+        ":status":
+          S: "pending"
+    ResultPath: "$.updateToPendingResult"
+    Next: ReturnPendingStatus
+
+  ReturnExistingItem:
+    Type: Pass
+    Parameters:
+      "message_id.$": "$.destination.message_id"
+      "response.$": "States.StringToJson($.dynamoResult.Item.Response.S)"
+    Next: SuccessState
+
+  ReturnPendingStatus:
+    Type: Pass
+    Parameters:
+      "status": "pending"
+    Next: SuccessState
+
+  ReturnErrorState:
+    Type: Fail
+    Error: "Error occurred during processing."
+
+  SuccessState:
+    Type: Succeed

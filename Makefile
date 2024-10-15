@@ -60,17 +60,17 @@ endif
 # model packages (torch etc) are also on the host/etfs and mounted
 #
 .PHONEY:
-build/model_env:
+build/environment:
 	docker build \
-	  -t $(PROJECT_NAME)/model_env:$(TAG) \
+	  -t $(PROJECT_NAME)/environment:$(TAG) \
 	  -f package/src/models/environment/Dockerfile .
 
-push/model_env:
+push/environment:
 	docker tag \
-	  $(PROJECT_NAME)/model_env:$(TAG) \
-	  $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/model_env:$(TAG) && \
-	docker push $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/model_env:$(TAG) && \
-	docker rmi $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/model_env:$(TAG)
+	  $(PROJECT_NAME)/environment:$(TAG) \
+	  $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG) && \
+	docker push $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG) && \
+	docker rmi $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG)
 
 #
 # text embeddings
@@ -93,10 +93,10 @@ cache/text-embedding/%:
 	  -v ./cache/models:/models \
 	  -v ./cache/packages:/host:ro \
 	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
-	  $(PROJECT_NAME)/model_env:$(TAG) \
+	  $(PROJECT_NAME)/environment:$(TAG) \
 	  models/cache_model.py
 
-cache/text-embedding: build/model_env $(addprefix cache/text-embedding/,$(SENTENCE_TRANSFORMERS))
+cache/text-embedding: build/environment $(addprefix cache/text-embedding/,$(SENTENCE_TRANSFORMERS))
 
 
 #
@@ -121,11 +121,11 @@ cache/instruct/%:
 	  -v ./cache/models:/models \
 	  -v ./cache/packages:/host:ro \
 	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
-	  $(PROJECT_NAME)/model_env:$(TAG) \
+	  $(PROJECT_NAME)/environment:$(TAG) \
 	  models/cache_model.py
 
 
-cache/instruct: build/model_env $(addprefix cache/instruct/,$(INSTRUCTS))
+cache/instruct: build/environment $(addprefix cache/instruct/,$(INSTRUCTS))
 
 
 #
@@ -147,10 +147,10 @@ cache/tts/%:
 	  -v ./cache/models:/models \
 	  -v ./cache/packages:/host:ro \
 	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
-	  $(PROJECT_NAME)/model_env:$(TAG) \
+	  $(PROJECT_NAME)/environment:$(TAG) \
 	  models/cache_model.py
 
-cache/tts: build/model_env $(addprefix cache/tts/,$(TXT2SPEECH))
+cache/tts: build/environment $(addprefix cache/tts/,$(TXT2SPEECH))
 
 
 # image embedding
@@ -169,7 +169,7 @@ cache/image-embedding/%:
 	  -v ./cache/models:/models \
 	  -v ./cache/packages:/host:ro \
 	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
-	  $(PROJECT_NAME)/model_env:$(TAG) \
+	  $(PROJECT_NAME)/environment:$(TAG) \
 	  models/cache_model.py
 
 cache/image-embedding: $(addprefix cache/image-embedding/,$(IMAGE_TRANSFORMERS))
@@ -191,7 +191,7 @@ cache/txt2img/%:
 	  -v ./cache/models:/models \
 	  -v ./cache/packages:/host:ro \
 	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
-	  $(PROJECT_NAME)/model_env:$(TAG) \
+	  $(PROJECT_NAME)/environment:$(TAG) \
 	  models/cache_model.py
 
 cache/txt2img: $(addprefix cache/txt2img/,$(TXT2IMG))
@@ -231,8 +231,8 @@ docker-login:
 	aws ecr get-login-password --region $(AWS_REGION) | \
 	docker login --username AWS --password-stdin $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com
 
-build: build/model_env build/tools
-push: push/model_env push/tools
+build: build/environment build/tools
+push: push/environment push/tools
 
 #
 # docker compose for local
@@ -261,11 +261,11 @@ stop:
 #
 # swagger api definition is stored in s3
 #
-build/api-definition: build/openapi_extract
+build/api-definition:
 	docker run -it --rm \
 	  -v $(shell pwd)/package/src/api:/app/routes:ro \
-	  -v $(shell pwd)/tf/03-apigw/rest:/out \
-	  vec/tools/openapi_extract:$(TAG) \
+	  -v $(shell pwd)/tf/03/rest:/out \
+	  aws-tools/openapi_extract:v0.1 \
 	    --router routes.routes:router \
 	    --out-public /out/api_public_definition.json \
 	    --out-private /out/api_private_definition.json \
@@ -309,8 +309,8 @@ apply:
 destroy:
 	terraform -chdir=tf/$(LAYER) destroy -var-file=../common.tfvars -var-file=../$(ENV).tfvars -var "container_tag=$(TAG)" -auto-approve
 get-key:
-	terraform -chdir=tf/03-apigw output -raw api_key_value
+	terraform -chdir=tf/03 output -raw api_key_value
 get-asset-bucket:
-	terraform -chdir=tf/02-lambdas output -raw asset_bucket_name
+	terraform -chdir=tf/02 output -raw asset_bucket_name
 get-api-spec:
-	terraform -chdir=tf/03-apigw output -raw api_spec
+	terraform -chdir=tf/03 output -raw api_spec

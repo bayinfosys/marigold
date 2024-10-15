@@ -1,0 +1,64 @@
+Comment: "TTS Pipeline"
+StartAt: SelectModel
+States:
+  SelectModel:
+    Type: Choice
+    Choices:
+      - Variable: "$.language_code"
+        StringEquals: "en-GB"
+        Next: MMSTTSEng
+      - Variable: "$.language_code"
+        StringEquals: "cy-GB"
+        Next: MMSTTSCym
+      - Variable: "$.language_code"
+        StringEquals: "de-DE"
+        Next: MMSTTSDeu
+      - Variable: "$.language_code"
+        StringEquals: "fr-FR"
+        Next: MMSTTSFra
+      - Variable: "$.language_code"
+        StringEquals: "es-ES"
+        Next: MMSTTSEsp
+      - Variable: "$.language_code"
+        StringEquals: "fn-FN"
+        Next: MMSTTSFnn
+      - Variable: "$.language_code"
+        StringEquals: "nl-NL"
+        Next: MMSTTSNld
+    Default: FailState
+
+  MMSTTSEng:
+    Type: Task
+    Resource: "${mms-tts-eng}"
+    Next: SuccessState
+  MMSTTSCym:
+    Type: Task
+    Resource: "${mms-tts-cym}"
+    Next: SuccessState
+  MMSTTSDeu:
+    Type: Task
+    Resource: "${mms-tts-deu}"
+    Next: SuccessState
+  MMSTTSFra:
+    Type: Task
+    Resource: "${mms-tts-fra}"
+    Next: SuccessState
+  MMSTTSEsp:
+    Type: Task
+    Resource: "${mms-tts-spa}"
+    Next: SuccessState
+  MMSTTSFnn:
+    Type: Task
+    Resource: "${mms-tts-fin}"
+    Next: SuccessState
+  MMSTTSNld:
+    Type: Task
+    Resource: "${mms-tts-nld}"
+    Next: SuccessState
+
+  SuccessState:
+    Type: Succeed
+
+  FailState:
+    Type: Fail
+    Error: "Invalid language code specified."

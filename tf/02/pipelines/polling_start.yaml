@@ -1,0 +1,93 @@
+Comment: "Polling sfn to start and register jobs"
+StartAt: CheckIfExists
+States:
+  CheckIfExists:
+    Type: Task
+    Resource: "arn:aws:states:::dynamodb:getItem"
+    Parameters:
+      TableName: "${results_cache_table}"
+      Key:
+        PK:
+          S.$: "$.destination.userid"
+        SK:
+          S.$: "$.destination.message_id"
+    ResultPath: "$.dynamoResult"
+    Next: DecideNextStep
+
+  DecideNextStep:
+    Type: Choice
+    Choices:
+      - Variable: "$.dynamoResult.Item"
+        IsPresent: true
+        Next: ReturnExistingItem  # Directly return existing item instead of checking status
+    Default: StartJob
+
+  StartJob:
+    Type: Task
+    Resource: "arn:aws:states:::dynamodb:putItem"  # Register the job
+    Parameters:
+      TableName: "${results_cache_table}"
+      Item:
+        PK:
+          S.$: "$.destination.userid"
+        SK:
+          S.$: "$.destination.message_id"
+        Status:
+          S: "started"  # Set status to "started"
+        Response:
+          S: "{\"status\": \"started\"}"
+    ResultPath: "$.startJobResult"
+    Next: DispatchJob  # Proceed to dispatch the job after registration
+
+  DispatchJob:
+    Type: Task
+    Resource: "arn:aws:states:::states:startExecution"
+    Parameters:
+      StateMachineArn.$: "$.targetStateMachineArn"  # ARN of the target state machine
+      Input.$: "$"  # Pass the entire input to the target state machine
+    ResultPath: "$.dispatchJobResult"
+    Next: ReturnJobStarted  # Go to a state that indicates the job has started
+    Catch:
+      - ErrorEquals:
+          - States.ALL
+        ResultPath: "$.errorInfo"
+        Next: UpdateToError  # Transition to error handling state
+
+  ReturnExistingItem:
+    Type: Pass
+    Parameters:
+      "message_id.$": "$.destination.message_id"
+      "response.$": "States.StringToJson($.dynamoResult.Item.Response.S)"
+    Next: SuccessState
+
+  ReturnJobStarted:
+    Type: Pass
+    Parameters:
+      "status": "Job has been started."
+    Next: SuccessState
+
+  UpdateToError:
+    Type: Task
+    Resource: "arn:aws:states:::dynamodb:updateItem"
+    Parameters:
+      TableName: "${results_cache_table}"
+      Key:
+        PK:
+          S.$: "$.destination.userid"
+        SK:
+          S.$: "$.destination.message_id"
+      UpdateExpression: "SET #status = :status"
+      ExpressionAttributeNames:
+        "#status": "Status"
+      ExpressionAttributeValues:
+        ":status":
+          S: "error"  # Set the status to "error" in case of failure
+    ResultPath: "$.updateToErrorResult"
+    Next: ReturnErrorState  # Transition to error state
+
+  ReturnErrorState:
+    Type: Fail
+    Error: "Error occurred during processing."
+
+  SuccessState:
+    Type: Succeed

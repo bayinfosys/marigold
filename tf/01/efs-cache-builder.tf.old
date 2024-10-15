@@ -1,0 +1,164 @@
+data "aws_ami" "latest_amazon_linux_2" {
+  most_recent = true
+
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+
+  owners = ["137112412989"] # Amazon's official AWS account ID
+}
+
+# library package builders (pytorch, etc)
+data "local_file" "cache_library_sh" {
+  filename = "${path.module}/../../scripts/build-cache.sh"
+}
+
+# load the model cache script from disk
+data "local_file" "cache_model_py" {
+  filename = "${path.module}/../../package/src/models/cache_model.py"
+}
+
+# Security group for the EC2 instance
+resource "aws_security_group" "cache_builder" {
+  name = join("-", [var.org_name, var.project_name, var.env, "cache-builder"])
+  description = "cache builder security group"
+  vpc_id      = module.vpc.vpc_id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = var.project_tags
+}
+
+# IAM role for EC2 instance to allow it to interact with AWS resources
+resource "aws_iam_role" "cache_builder_role" {
+  name = join("-", [var.org_name, var.project_name, var.env, "model-cacher-role"])
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        },
+        Action = "sts:AssumeRole"
+      },
+    ]
+  })
+
+  tags = var.project_tags
+}
+
+resource "aws_iam_instance_profile" "cache_builder_profile" {
+  name = join("-", [var.org_name, var.project_name, var.env, "model-cacher-profile"])
+  role = aws_iam_role.cache_builder_role.name
+}
+
+resource "aws_iam_role_policy" "cache_builder_policy" {
+  name = join("-", [var.org_name, var.project_name, var.env, "model-cacher-policy"])
+  role = aws_iam_role.cache_builder_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "ec2:DescribeInstances",
+          "ec2:TerminateInstances",
+        ],
+        Resource = "*"
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite",
+          "elasticfilesystem:ClientRootAccess"
+        ],
+        Resource = [module.efs.arn, module.efs.access_points["assets_rw"].arn]
+      },
+    ]
+  })
+}
+
+# EC2 instance to run the task
+resource "aws_instance" "cache_builder" {
+  ami                         = "ami-01ec84b284795cbc7" # Replace with a valid AMI ID
+  instance_type               = "r4.xlarge"             # require memory for storing the shards
+  subnet_id                   = module.vpc.public_subnets[0]
+  associate_public_ip_address = true # Assign public IP
+  iam_instance_profile        = aws_iam_instance_profile.cache_builder_profile.name
+  vpc_security_group_ids      = [aws_security_group.cache_builder.id]
+  key_name                    = aws_key_pair.cache_builder_key.key_name
+
+  # NB: the unbutu ami runs the cloud-init script as the ubuntu user, not root
+  # NB: To access this script on the instance use `cat /var/lib/cloud/instance/scripts/part-001`
+  # ref: https://docs.aws.amazon.com/efs/latest/ug/mounting-fs-mount-helper-ec2-linux.html
+
+  user_data = base64encode(templatefile(
+    "${path.module}/../../scripts/ec2-startup.sh.tpl",
+    {
+      available_models_json     = jsonencode(var.available_models)
+      library_cache_script      = data.local_file.cache_library_sh.content
+      model_cache_script        = data.local_file.cache_model_py.content
+      efs_access_point          = module.efs.access_points["assets_rw"].id
+      efs_dns                   = module.efs.dns_name
+      library_cache_script_name = basename(data.local_file.cache_library_sh.filename)
+      model_cache_script_name   = basename(data.local_file.cache_model_py.filename)
+    }
+  ))
+
+  tags = merge(
+    var.project_tags,
+    { Name = join("-", [var.org_name, var.project_name, var.env, "model-cacher"]) }
+  )
+}
+
+#
+# access testing
+#
+# Create an SSH key pair
+resource "tls_private_key" "cache_builder_key" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "aws_key_pair" "cache_builder_key" {
+  key_name   = "ec2-cache-builder-key"
+  public_key = tls_private_key.cache_builder_key.public_key_openssh
+}
+
+# Save the private key to a file (only applicable if you're running Terraform locally)
+resource "local_file" "cache_builder_key_pem" {
+  content         = tls_private_key.cache_builder_key.private_key_pem
+  filename        = "${path.module}/ec2-cache-builder.pem"
+  file_permission = "0600"
+}
+
+
+resource "aws_security_group_rule" "allow_ssh" {
+  type              = "ingress"
+  from_port         = 22
+  to_port           = 22
+  protocol          = "tcp"
+  cidr_blocks       = ["82.5.170.78/32"] # Restrict SSH access to your IP
+  security_group_id = aws_security_group.cache_builder.id
+}
+
+# Output the EC2 instance's public DNS for SSH access
+output "cache_builder_public_dns" {
+  value       = aws_instance.cache_builder.public_dns
+  description = "The public DNS of the task runner EC2 instance"
+}

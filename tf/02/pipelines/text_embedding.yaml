@@ -1,0 +1,63 @@
+Comment: "Embedding Pipeline"
+StartAt: SelectModel
+States:
+  SelectModel:
+    Type: Choice
+    Choices:
+      - Variable: "$.body.model"
+        StringEquals: "sentence-transformers/all-minilm-l6-v2"
+        Next: ModelAllMinilmL6V2
+      - Variable: "$.body.model"
+        StringEquals: "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+        Next: ModelParaphraseMultilingualMPNetBaseV2
+      - Variable: "$.body.model"
+        StringEquals: "sentence-transformers/sentence-t5-large"
+        Next: SentenceT5Large
+    Default: FailState
+
+  ModelAllMinilmL6V2:
+    Type: Task
+    Resource: "${embedding-all-minilm-l6-v2}"
+    ResultPath: "$.results"
+    Next: UpdateStatusToComplete
+
+  ModelParaphraseMultilingualMPNetBaseV2:
+    Type: Task
+    Resource: "${embedding-paraphrase-multilingual-mpnet-base-v2}"
+    ResultPath: "$.results"
+    Next: UpdateStatusToComplete
+
+  SentenceT5Large:
+    Type: Task
+    Resource: "${embedding-sentence-t5-large}"
+    ResultPath: "$.results"
+    Next: UpdateStatusToComplete
+
+  UpdateStatusToComplete:
+    Type: Task
+    Resource: "arn:aws:states:::dynamodb:updateItem"
+    Parameters:
+      TableName: "${results_cache_table}"
+      Key:
+        PK:
+          S.$: "$.destination.userid"
+        SK:
+          S.$: "$.destination.message_id"
+      UpdateExpression: "SET #status = :status, #response = :response"
+      ExpressionAttributeNames:
+        "#status": "sts"
+        "#response": "rsp"
+      ExpressionAttributeValues:
+        ":status":
+          S: "complete"
+        ":response":
+          S.$: "States.JsonToString($.results.body)"
+    ResultPath: "$.dynamoResult"
+    Next: SuccessState
+
+  SuccessState:
+    Type: Succeed
+
+  FailState:
+    Type: Fail
+    Error: "Invalid model specified."

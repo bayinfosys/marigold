@@ -1,4 +1,4 @@
-from enum import StrEnum
+from enum import Enum
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from typing import List, Dict, Any
@@ -7,7 +7,7 @@ from typing import List, Dict, Any
 from datetime import datetime
 
 
-class ModelType(StrEnum):
+class ModelType(Enum):
     TEXT_EMBEDDING = "text-embedding"
     IMAGE_EMBEDDING = "image-embedding"
     IMAGE_GEN = "image-generator"
@@ -16,7 +16,7 @@ class ModelType(StrEnum):
     INSTRUCT = "instruct"
 
 
-class ModelModalities(StrEnum):
+class ModelModalities(Enum):
     TEXT = "text"
     IMAGE = "image"
     AUDIO = "audio"
@@ -84,7 +84,7 @@ class DecodeTextResponse(BaseModel):
 
 
 # instruct
-class InstructRole(StrEnum):
+class InstructRole(Enum):
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"

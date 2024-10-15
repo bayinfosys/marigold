@@ -1,0 +1,105 @@
+Comment: "Job Execution State Machine"
+StartAt: SelectModel
+States:
+  SelectModel:
+    Type: Choice
+    Choices:
+      - Variable: "$.input.model"
+        StringEquals: "qwen/qwen2-05b-instruct"
+        Next: ModelQwen205bInstruct
+      - Variable: "$.input.model"
+        StringEquals: "qwen/qwen2-15b-instruct"
+        Next: ModelQwen215bInstruct
+      - Variable: "$.input.model"
+        StringEquals: "microsoft/phi-3-mini-128k-instruct"
+        Next: ModelPhi3Mini128kInstruct
+    Default: InvalidModelState
+
+  ModelQwen205bInstruct:
+    Type: Task
+    Resource: "${qwen2-05b-instruct}"
+    ResultPath: "$.modelResult"
+    Next: UpdateStatusToComplete
+    Catch:
+      - ErrorEquals:
+          - States.ALL
+        ResultPath: "$.errorInfo"
+        Next: ModelErrorState
+
+  ModelQwen215bInstruct:
+    Type: Task
+    Resource: "${qwen2-15b-instruct}"
+    ResultPath: "$.modelResult"
+    Next: UpdateStatusToComplete
+    Catch:
+      - ErrorEquals:
+          - States.ALL
+        ResultPath: "$.errorInfo"
+        Next: ModelErrorState
+
+  ModelPhi3Mini128kInstruct:
+    Type: Task
+    Resource: "${microsoft-phi-3-mini-128k-instruct}"
+    ResultPath: "$.modelResult"
+    Next: UpdateStatusToComplete
+    Catch:
+      - ErrorEquals:
+          - States.ALL
+        ResultPath: "$.errorInfo"
+        Next: ModelErrorState
+
+  UpdateStatusToComplete:
+    Type: Task
+    Resource: "arn:aws:states:::dynamodb:updateItem"
+    Parameters:
+      TableName: "${results_cache_table}"
+      Key:
+        PK:
+          S.$: "$.destination.userid"
+        SK:
+          S.$: "$.destination.message_id"
+      UpdateExpression: "SET #status = :status, #response = :response"
+      ExpressionAttributeNames:
+        "#status": "sts"
+        "#response": "rsp"
+      ExpressionAttributeValues:
+        ":status":
+          S: "complete"
+        ":response":
+          S.$: "$.modelResult.body"
+    ResultPath: "$.dynamoResult"
+    Next: SuccessState
+
+  InvalidModelState:
+    Type: Fail
+    Error: "Invalid model specified."
+
+  ModelErrorState:
+    Type: Pass
+    Next: UpdateToError
+
+  UpdateToError:
+    Type: Task
+    Resource: "arn:aws:states:::dynamodb:updateItem"
+    Parameters:
+      TableName: "${results_cache_table}"
+      Key:
+        PK:
+          S.$: "$.destination.userid"
+        SK:
+          S.$: "$.destination.message_id"
+      UpdateExpression: "SET #status = :status"
+      ExpressionAttributeNames:
+        "#status": "sts"
+      ExpressionAttributeValues:
+        ":status":
+          S: "error"
+    ResultPath: "$.updateToErrorResult"
+    Next: GeneralErrorState
+
+  GeneralErrorState:
+    Type: Fail
+    Error: "Internal processing error"
+
+  SuccessState:
+    Type: Succeed

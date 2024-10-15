@@ -1,0 +1,51 @@
+Comment: "Polling check job status state machine"
+StartAt: CheckIfExists
+States:
+  CheckIfExists:
+    Type: Task
+    Resource: "arn:aws:states:::dynamodb:getItem"
+    Parameters:
+      TableName: "${results_cache_table}"
+      Key:
+        PK:
+          S.$: "$.destination.userid"
+        SK:
+          S.$: "$.message_id"
+    ResultPath: "$.dynamoResult"
+    Next: CheckStatus
+
+  CheckStatus:
+    Type: Choice
+    Choices:
+      - Variable: "$.dynamoResult.Item.Status.S"
+        StringEquals: "complete"
+        Next: ReturnExistingItem
+      - Variable: "$.dynamoResult.Item.Status.S"
+        StringEquals: "error"
+        Next: ReturnErrorState
+      - Variable: "$.dynamoResult.Item.Status.S"
+        StringEquals: "pending"
+        Next: ReturnPendingStatus
+      - Variable: "$.dynamoResult.Item.Status.S"
+        StringEquals: "started"
+        Next: ReturnPendingStatus  # You may want to handle this differently
+
+  ReturnExistingItem:
+    Type: Pass
+    Parameters:
+      "message_id.$": "$.message_id"
+      "response.$": "States.StringToJson($.dynamoResult.Item.Response.S)"
+    Next: SuccessState
+
+  ReturnPendingStatus:
+    Type: Pass
+    Parameters:
+      "status": "pending"
+    Next: SuccessState
+
+  ReturnErrorState:
+    Type: Fail
+    Error: "Error occurred during processing."
+
+  SuccessState:
+    Type: Succeed

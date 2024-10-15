@@ -68,10 +68,52 @@ def handler(event, context):
         return mk_resp(500, "internal error")
 
 
+def get_status(userid, message_id):
+    """Retrieve the status of an item from DynamoDB using attribute projection."""
+    response = dynamodb.get_item(
+        TableName=DYNAMODB_TABLE,
+        Key={
+            "PK": {"S": userid},
+            "SK": {"S": message_id},
+        },
+        ProjectionExpression="sts",  # only get status attribute
+    )
+
+    if "Item" in response and "sts" in response["Item"]:
+        # FIXME: raise a notfound exception?
+        return response["Item"]["sts"]["S"]
+
+    return None  # Item not found
+
+
+def get_response(userid, message_id):
+    """Retrieve the response attribute of an item from DynamoDB using attribute projection."""
+    response = dynamodb.get_item(
+        TableName=DYNAMODB_TABLE,
+        Key={
+            "PK": {"S": userid},
+            "SK": {"S": message_id},
+        },
+        ProjectionExpression="rsp",  # only response attribute
+    )
+
+    if "Item" in response and "rsp" in response["Item"]:
+        return response["Item"]["rsp"]["S"]
+
+    return None  # Item not found
+
+
 def handle_submission(userid, event):
     # message_id = str(uuid.uuid4())
     message_id = md5(event["body"].encode("utf-8")).hexdigest()
     message_content = json.loads(event["body"])
+
+    # Check if the item already exists in DynamoDB
+    existing_status = get_status(userid, message_id)
+    if existing_status:
+        return mk_resp(
+            200, json.dumps({"message_id": message_id, "status": existing_status})
+        )
 
     # Set the TTL to be 24 hours (86400 seconds) from now
     ttl_timestamp = int(time.time()) + 86400
@@ -82,7 +124,7 @@ def handle_submission(userid, event):
         Item={
             "PK": {"S": userid},
             "SK": {"S": message_id},
-            "Status": {"S": "started"},
+            "sts": {"S": "started"},
             "ttl": {"N": str(ttl_timestamp)},
         },
     )
@@ -94,7 +136,7 @@ def handle_submission(userid, event):
         input=json.dumps(
             {
                 "destination": {"userid": userid, "message_id": message_id},
-                "input": message_content,
+                "body": message_content,  # sometimes this is 'input' sometimes 'body'
             }
         ),
     )
@@ -110,20 +152,16 @@ def handle_status(userid, event):
     try:
         message_id = event["pathParameters"]["message_id"]
     except KeyError as e:
-        logger.error("cannot extract message_id from event [%s]", str(e))
+        logger.error("Cannot extract message_id from event [%s]", str(e))
         return mk_resp(400, "message_id required")
 
-    # Query DynamoDB for the message status
-    response = dynamodb.get_item(
-        TableName=DYNAMODB_TABLE,
-        Key={"PK": {"S": userid}, "SK": {"S": message_id}},
-    )
+    # Get the status of the item
+    status = get_status(userid, message_id)
 
-    if "Item" in response:
-        status = response["Item"]["Status"]["S"]
-        logger.info("found item: '%s'", str(response["Item"]))
+    if status:
         if status == "complete":
-            return mk_resp(200, response["Item"]["Response"]["S"])
+            response_content = get_response(userid, message_id)  # Get the response
+            return mk_resp(200, response_content)
         else:
             return mk_resp(202, json.dumps({"status": status}))
     else:

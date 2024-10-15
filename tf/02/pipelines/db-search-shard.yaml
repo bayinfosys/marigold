@@ -1,0 +1,30 @@
+Comment: "A Step Function to perform a search across FAISS shards and return the top-k results."
+StartAt: "ListShards"
+States:
+  ListShards:
+    Type: "Task"
+    Resource: "${list_shards_arn}"
+    Next: "ParallelSearch"
+  ParallelSearch:
+    Type: "Map"
+    InputPath: "$.shardList"
+    ItemsPath: "$.Payload.shards"
+    MaxConcurrency: 0
+    Iterator:
+      StartAt: "SearchShard"
+      States:
+        SearchShard:
+          Type: "Task"
+          Resource: "${search_shard_arn}"
+          Parameters:
+            shard_index.$: "$$.Map.Item.Value.shardIndex"
+            embedding.$: "$$.Map.Item.Value.embedding"
+            top_k: 10
+          End: true
+    ResultPath: "$.searchResults"
+    Next: "MergeAndSortResults"
+  MergeAndSortResults:
+    Type: "Task"
+    Resource: "${merge_shards_arn}"
+    InputPath: "$.searchResults"
+    End: true
