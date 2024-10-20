@@ -1,11 +1,18 @@
-from fastapi_aws import AWSAPIRouter, CognitoAuthorizer
+from fastapi import Security
+
+from fastapi_aws import AWSAPIRouter, LambdaAuthorizer
 
 from .models import ListModelsResponse
 from .models import EmbedTextRequest, EmbedImageRequest, EmbeddingsResponse
 from .models import InstructRequest, InstructResponse
 from .models import TTSRequest, TTSResponse
 
-cognito_auth = CognitoAuthorizer(authorizer_name="${cognito_authorizer_name}")
+
+lambda_auth = LambdaAuthorizer(
+    authorizer_name="${lambda_authorizer_name}",
+    aws_lambda_uri="${lambda_authorizer_uri}",
+    aws_iam_role_arn="${lambda_authorizer_iam_role_arn}",
+)
 
 router = AWSAPIRouter()
 
@@ -35,7 +42,7 @@ router = AWSAPIRouter()
     aws_iam_arn="${polling_start_lambda_iam_role_arn}",
     tags=["models", "embedding"],
 )
-async def embed_text(body: EmbedTextRequest):
+async def embed_text(body: EmbedTextRequest, user=Security(lambda_auth)):
     return EmbeddingsResponse()
 
 @router.get(
@@ -46,7 +53,7 @@ async def embed_text(body: EmbedTextRequest):
     aws_iam_arn="${polling_start_lambda_iam_role_arn}",
     tags=["models", "embedding"],
 )
-async def fetch_embed_text():
+async def fetch_embed_text(user=Security(lambda_auth)):
     return EmbeddingsResponse()
 
 
@@ -58,7 +65,7 @@ async def fetch_embed_text():
 #    aws_iam_arn="${text_embedding_invoke_lambda_iam_role_arn}",
 #    tags=["models", "embedding"],
 # )
-# async def embed_text(body: EmbedTextRequest):
+# async def embed_text(body: EmbedTextRequest, user=Security(lambda_auth)):
 #    return EmbeddingsResponse()
 
 
@@ -69,7 +76,7 @@ async def fetch_embed_text():
     aws_iam_arn="${image_embedding_step_function_iam_role_arn}",
     tags=["models", "embedding"],
 )
-async def embed_image(body: EmbedImageRequest):
+async def embed_image(body: EmbedImageRequest, user=Security(lambda_auth)):
     return EmbeddingsResponse()
 
 
@@ -83,7 +90,7 @@ async def embed_image(body: EmbedImageRequest):
     aws_iam_arn="${instruct_step_function_iam_role_arn}",
     tags=["models", "instruct", "chat"],
 )
-async def instruct_new_message(body: InstructRequest):
+async def instruct_new_message(body: InstructRequest, user=Security(lambda_auth)):
     return InstructResponse()
 
 
@@ -95,7 +102,7 @@ async def instruct_new_message(body: InstructRequest):
     aws_iam_arn="${instruct_polling_iam_role_arn}",
     tags=["models", "instruct", "chat"],
 )
-async def instruct_poll_response():
+async def instruct_poll_response(user=Security(lambda_auth)):
     return
 
 
@@ -109,5 +116,5 @@ async def instruct_poll_response():
     aws_iam_arn="${tts_step_function_iam_role_arn}",
     tags=["models", "text-to-speech"],
 )
-async def tts(body: TTSRequest):
+async def tts(body: TTSRequest, user=Security(lambda_auth)):
     return TTSResponse()

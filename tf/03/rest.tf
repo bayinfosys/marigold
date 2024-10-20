@@ -127,6 +127,7 @@ resource "aws_api_gateway_rest_api" "embed" {
     #polling_start_step_function_arn = data.aws_sfn_state_machine.polling_start.arn
     polling_start_lambda_arn = data.aws_lambda_function.embed_polling.invoke_arn
     polling_start_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
+
     text_embedding_step_function_arn = data.aws_sfn_state_machine.text_embedding.arn
     text_embedding_step_function_iam_role_arn = aws_iam_role.apigateway_lambda.arn
 
@@ -145,17 +146,17 @@ resource "aws_api_gateway_rest_api" "embed" {
 #    models_definition_arn = "arn:aws:apigateway:${var.region}:s3:path/${aws_s3_bucket.www.id}/docs/models.json"
 #    models_definition_iam_role_arn = aws_iam_role.apigateway_s3_read.arn
 
+    lambda_authorizer_name = join("-", [var.org_name, "vecdb", var.env, "auth"])
+    lambda_authorizer_uri = data.aws_lambda_function.authorizer_lambda.invoke_arn
+    lambda_authorizer_iam_role_arn = aws_iam_role.invocation_role.arn
+
     region = var.region
   })
 }
 
 resource "aws_api_gateway_deployment" "embed" {
-  depends_on = [
-    # aws_api_gateway_integration.example
-  ]
-
   triggers = {
-    redeployment = local.api_private_definition_hash
+    redeployment = sha1(jsonencode(aws_api_gateway_rest_api.embed.body))
   }
 
   rest_api_id = aws_api_gateway_rest_api.embed.id
@@ -175,7 +176,7 @@ resource "aws_api_gateway_stage" "embed" {
 
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.embed.arn
-    format           = "$context.identity.sourceIp - - [$context.requestTime] \"$context.httpMethod $context.routeKey $context.protocol\" $context.status $context.responseLength $context.requestId $context.integrationErrorMessage $context.error.message $context.error.messageString $context.error.responseType"
+    format           = "$context.identity.sourceIp - - [$context.requestTime] \"$context.httpMethod $context.resourcePath $context.protocol\" $context.status $context.responseLength $context.requestId $context.integration.integrationStatus $context.integrationErrorMessage $context.error.message $context.error.messageString $context.integration.error"
   }
 }
 
@@ -208,42 +209,43 @@ resource "aws_api_gateway_base_path_mapping" "domain" {
 }
 
 #
-# api key for testing
+# authorizer from the other project
+# NB: we need a local iam rule to invoke the authorizer from this apigw
 #
-resource "aws_api_gateway_usage_plan" "test" {
-  name        = join("-", [var.project_name, var.env, "usage-plan"])
-  description = "Example Usage Plan created by Terraform"
+resource "aws_iam_role" "invocation_role" {
+  name = join("-", [var.org_name, var.project_name, var.env, "invocation-role"])
 
-  api_stages {
-    api_id = aws_api_gateway_stage.embed.rest_api_id
-    stage  = aws_api_gateway_stage.embed.stage_name
-  }
-
-  quota_settings {
-    limit  = 50000
-    offset = 2
-    period = "WEEK"
-  }
-
-  throttle_settings {
-    burst_limit = 200
-    rate_limit  = 100
-  }
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "apigateway.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      },
+    ]
+  })
 }
 
-resource "aws_api_gateway_api_key" "test" {
-  name        = join("-", [var.project_name, var.env, "test-api-key"])
-  description = "Example API Key created by Terraform"
-  enabled     = true
+resource "aws_iam_role_policy_attachment" "lambda_invoke" {
+  role       = aws_iam_role.invocation_role.name
+  policy_arn = aws_iam_policy.lambda_invoke_policy.arn
 }
 
-resource "aws_api_gateway_usage_plan_key" "test" {
-  key_id        = aws_api_gateway_api_key.test.id
-  key_type      = "API_KEY"
-  usage_plan_id = aws_api_gateway_usage_plan.test.id
-}
+resource "aws_iam_policy" "lambda_invoke_policy" {
+  name        = join("-", [var.org_name, var.project_name, var.env, "lambda-invoke-policy"])
+  description = "Policy to allow API Gateway to invoke the Lambda authorizer."
 
-output "api_key_value" {
-  value = aws_api_gateway_api_key.test.value
-  sensitive = true
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = "lambda:InvokeFunction"
+        Resource =  data.aws_lambda_function.authorizer_lambda.arn
+      },
+    ]
+  })
 }

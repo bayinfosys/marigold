@@ -43,6 +43,7 @@ module "instruct_polling" {
     POLL_PATH      = "/instruct/{message_id}"
     SFN_ARN        = module.instruct.state_machine_arn
     DYNAMODB_TABLE = aws_dynamodb_table.results_cache.arn
+    APPEND_CORS_HEADERS = "True"
   }
 
   policy_statements = {
@@ -82,14 +83,15 @@ module "embed_polling" {
   cloudwatch_logs_retention_in_days = 5
 
   runtime     = "python3.11"
-  source_path = join("/", [path.module, "..", "..", "package", "src", "tools", "polling", "main.py"])
-  handler     = "main.handler"
+  source_path = join("/", [path.module, "..", "..", "package", "src"])
+  handler     = "tools.polling.main.handler"
 
   environment_variables = {
     INPUT_PATH     = "/embed/text"
     POLL_PATH      = "/embed/text/{message_id}"
     SFN_ARN        = module.text_embedding.state_machine_arn
     DYNAMODB_TABLE = aws_dynamodb_table.results_cache.arn
+    APPEND_CORS_HEADERS = "True"
   }
 
   policy_statements = {

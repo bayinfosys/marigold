@@ -32,3 +32,10 @@ data "aws_lambda_function" "instruct_polling" {
 data "aws_lambda_function" "embed_polling" {
   function_name = join("-", [var.org_name, var.project_name, var.env, "embed-polling"])
 }
+
+#
+# external
+#
+data "aws_lambda_function" "authorizer_lambda" {
+  function_name = join("-", [var.org_name, "vecdb", var.env, "rest-authorizer"])
+}

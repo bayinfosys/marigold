@@ -5,6 +5,10 @@ import os
 import base64
 import logging
 import json
+import boto3
+
+
+from botocore.exceptions import ClientError
 
 
 logger = logging.getLogger(__name__)
@@ -12,7 +16,43 @@ logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")
 
 
 DEFAULT_MIMETYPE = "text/plain"
-APPEND_CORS_HEADERS = os.getenv("APPEND_CORS_HEADERS") or False
+APPEND_CORS_HEADERS = os.getenv("APPEND_CORS_HEADERS", "False").lower() in ("true", "1", "t")
+
+
+def get_userid_from_event(event):
+    """extract a usernae from an event
+
+    The custom authorizer will relate apikey, jwts, etc to user/group names.
+    Here, we access that custom identifier to ensure users access the same data
+    regardless of the access method.
+
+    TODO: check specific access method permissions (apikey perms, etc)
+    """
+    try:
+        #return event["requestContext"]["identity"]["apiKey"]
+        return event["requestContext"]["authorizer"]["email"]
+    except KeyError:
+        logger.error("requestContext.authorizer.email not found in '%s'", str(event))
+        return "dummy"  # FIXME: return 400
+
+
+def get_path_from_event(event):
+    """extract the endpoint path from the lambda event
+
+    NB: various paths exist in the event, some with patterns resolved
+    some without, etc. This function returns the path which matches
+    the definition given in the openapi spec.
+    """
+    return event["resource"]
+
+
+def path_handler(path, registry):
+    """Decorator to register a function as a handler for a given path."""
+    def decorator(func):
+        # Register the function in the global `handlers` dictionary
+        registry[path] = func
+        return func  # Return the original function unmodified
+    return decorator
 
 
 def lambda_event_to_data(event, data_key: str = None):
@@ -114,7 +154,7 @@ def mk_resp(statusCode, body, headers=None, **kwargs):
     }
 
 
-def update_results_table(user_id: str, message_id: str, results_table: str, results: dict, status: str = "complete"):
+def update_results_table(user_id: str, message_id: str, results_table: str, response: dict, status: str = "complete"):
     """write polled results to the results table for caching
     NB: we pass in 'results_table' but it could be an environment variable
     """

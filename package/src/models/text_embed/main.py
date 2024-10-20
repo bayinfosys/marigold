@@ -62,7 +62,6 @@ def lambda_handler(event, context):
         logger.error(
             "[%s] '%s' not found in '%s'", MODELNAME, str(e), str(list(data.keys()))
         )
-        # print("[%s] '%s' not found in '%s'" % (MODELNAME, str(e), str(list(data.keys()))))
         return mk_resp(400, {"status": "error", "message": "missing 'model' key"})
 
     try:
@@ -71,7 +70,6 @@ def lambda_handler(event, context):
         logger.error(
             "[%s] '%s' not found in '%s'", MODELNAME, str(e), str(list(data.keys()))
         )
-        # print("[%s] '%s' not found in '%s'" % (MODELNAME, str(e), str(list(data.keys()))))
         return mk_resp(400, {"status": "error", "message": "missing 'input' key"})
 
     if modelname != MODELNAME:
@@ -99,7 +97,6 @@ def lambda_handler(event, context):
         embeddings = model.encode(input)
     except Exception as e:
         logger.critical("[%s] encoding '%s' failed [%s]", MODELNAME, str(data), str(e))
-        # print("[%s] encoding '%s' failed [%s]" % (MODELNAME, str(data), str(e)))
         return mk_resp(
             400, {"status": "error", "message": "failed to encode '%s'" % str(data)}
         )
@@ -117,7 +114,6 @@ def lambda_handler(event, context):
             str(type(embeddings)),
             str(e),
         )
-        # print("[%s] listing '%s' [%s] failed [%s]" % (MODELNAME, str(embeddings), str(type(embeddings)), str(e)))
         return mk_resp(
             400, {"status": "error", "message": "failed to convert '%s'" % str(data)}
         )

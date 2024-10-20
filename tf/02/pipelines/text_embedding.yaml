@@ -51,7 +51,7 @@ States:
         ":status":
           S: "complete"
         ":response":
-          S.$: "States.JsonToString($.results.body)"
+          S.$: "$.results.body"
     ResultPath: "$.dynamoResult"
     Next: SuccessState
 

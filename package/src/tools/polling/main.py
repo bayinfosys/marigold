@@ -6,6 +6,8 @@ import time
 
 from hashlib import md5
 
+from shared import get_userid_from_event, get_path_from_event, mk_resp
+
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")
 
@@ -16,38 +18,6 @@ SUBMISSION_PATH = os.environ["INPUT_PATH"]
 STATUS_PATH = os.environ["POLL_PATH"]
 SFN_ARN = os.environ["SFN_ARN"]
 DYNAMODB_TABLE = os.environ["DYNAMODB_TABLE"]
-
-
-def get_userid_from_event(event):
-    try:
-        return event["requestContext"]["identity"]["apiKey"]
-    except KeyError:
-        logger.error("requestContext.identity.apiKey not found in '%s'", str(event))
-        return "dummy"  # FIXME: return 400
-
-
-def get_path_from_event(event):
-    """NB: this can be event.resource, event.requestContext.resourcePath,
-    but not event.path
-    """
-    return event["resource"]
-
-
-def cors_headers():
-    return {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Api-Key",
-        "Access-Control-Allow-Methods": "OPTIONS,GET,POST,PUT,DELETE,PATCH",
-    }
-
-
-def mk_resp(statusCode, body, **kwargs):
-    return {
-        "statusCode": statusCode,
-        "body": body,
-        "headers": {**cors_headers(), **kwargs.get("headers", {})},
-        **{k: v for k, v in kwargs.items() if k not in ("headers",)},
-    }
 
 
 def handler(event, context):
@@ -62,10 +32,10 @@ def handler(event, context):
         return handlers[path](userid, event)
     except KeyError as e:
         logger.error("unhandled path: '%s' [%s]", str(e), str(list(handlers.keys())))
-        return mk_resp(400, json.dumps("Invalid path"))
+        return mk_resp(400, {"status": "error", "message": "invalid path"})
     except Exception as e:
         logger.exception("unknown exception in handler: '%s'", str(e))
-        return mk_resp(500, "internal error")
+        return mk_resp(500, {"status": "error", "message": "internal error"})
 
 
 def get_status(userid, message_id):
@@ -86,19 +56,22 @@ def get_status(userid, message_id):
     return None  # Item not found
 
 
-def get_response(userid, message_id):
+def get_response(userid, message_id) -> dict:
     """Retrieve the response attribute of an item from DynamoDB using attribute projection."""
-    response = dynamodb.get_item(
-        TableName=DYNAMODB_TABLE,
-        Key={
+    key={
             "PK": {"S": userid},
             "SK": {"S": message_id},
-        },
+        }
+
+    response = dynamodb.get_item(
+        TableName=DYNAMODB_TABLE,
+        Key=key,
         ProjectionExpression="rsp",  # only response attribute
     )
 
     if "Item" in response and "rsp" in response["Item"]:
-        return response["Item"]["rsp"]["S"]
+        logger.debug("response: '%s' [%s]", str(response["Item"]["rsp"]["S"]), str(type(response["Item"]["rsp"]["S"])))
+        return json.loads(response["Item"]["rsp"]["S"])
 
     return None  # Item not found
 
@@ -110,10 +83,9 @@ def handle_submission(userid, event):
 
     # Check if the item already exists in DynamoDB
     existing_status = get_status(userid, message_id)
+
     if existing_status:
-        return mk_resp(
-            200, json.dumps({"message_id": message_id, "status": existing_status})
-        )
+        return mk_resp(200, {"message_id": message_id, "status": existing_status})
 
     # Set the TTL to be 24 hours (86400 seconds) from now
     ttl_timestamp = int(time.time()) + 86400
@@ -141,7 +113,7 @@ def handle_submission(userid, event):
         ),
     )
 
-    return mk_resp(200, json.dumps({"message_id": message_id}))
+    return mk_resp(200, {"message_id": message_id})
 
 
 def handle_status(userid, event):
@@ -153,7 +125,7 @@ def handle_status(userid, event):
         message_id = event["pathParameters"]["message_id"]
     except KeyError as e:
         logger.error("Cannot extract message_id from event [%s]", str(e))
-        return mk_resp(400, "message_id required")
+        return mk_resp(400, {"status": "error", "message": "message_id required"})
 
     # Get the status of the item
     status = get_status(userid, message_id)
@@ -161,9 +133,10 @@ def handle_status(userid, event):
     if status:
         if status == "complete":
             response_content = get_response(userid, message_id)  # Get the response
+            response_content.update({"status": "complete"})
             return mk_resp(200, response_content)
         else:
-            return mk_resp(202, json.dumps({"status": status}))
+            return mk_resp(202, {"status": status})
     else:
         logger.warning("'%s/%s' item not found", userid, message_id)
-        return mk_resp(404, "%s not found" % message_id)
+        return mk_resp(404, {"status": "not found"})
