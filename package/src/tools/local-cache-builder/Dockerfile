@@ -4,7 +4,7 @@ ARG BASE_IMAGE=python:3.12
 
 FROM $BASE_IMAGE
 
-COPY models/env/requirements.txt /tmp/requirements.txt
+#COPY package/src/models/environment/requirements.txt /tmp/requirements.txt
 COPY package/src/tools/local-cache-builder/build-cache.sh /usr/local/bin/build-cache.sh
 
 ENTRYPOINT ["bash", "-c"]

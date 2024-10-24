@@ -19,6 +19,10 @@ INSTRUCTS=qwen/qwen2-0.5b-instruct qwen/qwen2-1.5b-instruct microsoft/phi-3-mini
 #TXT2IMG=unfilteredai/nsfw-gen-v2.1 stabilityai/sdxl-turbo stabilityai/stable-diffusion-2-1 playgroundai/playground-v2.5-1024px-aesthetic sd-community/sdxl-flash-mini compvis/ldm-text2im-large-256 runwayml/stable-diffusion-v1-5 dream-textures/texture-diffusion black-forest-labs/flux.1-schnell
 TXT2IMG=sd-community/sdxl-flash stabilityai/sd-turbo
 
+# image to text, OCR etc
+#IMG2TXT=llava-hf/llava-onevision-qwen2-0.5b-ov-hf jinhybr/OCR-Donut-CORD
+IMG2TXT=naver-clova-ix/donut-base-finetuned-docvqa
+
 # music generation models
 TXT2MUSID=facebook/musicgen-stereo-small
 
@@ -195,6 +199,27 @@ cache/txt2img/%:
 	  models/cache_model.py
 
 cache/txt2img: $(addprefix cache/txt2img/,$(TXT2IMG))
+
+# imaget-to-text
+cache/img2txt/%:
+	docker run \
+	  -it \
+	  --rm \
+	  --entrypoint python3 \
+	  -e HF_HUB_OFFLINE=0 \
+	  -e HF_HUB_DISABLE_PROGRESS_BARS=0 \
+	  -e MODEL_TYPE="img2txt" \
+	  -e MODELNAME=$* \
+	  -e CACHE_DIR=/models \
+	  -e HF_HUB_CACHE=/models \
+	  -e LOCAL_FILES_ONLY=0 \
+	  -v ./cache/models:/models \
+	  -v ./cache/packages:/host:ro \
+	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
+	  $(PROJECT_NAME)/environment:$(TAG) \
+	  models/cache_model.py
+
+cache/img2txt: $(addprefix cache/img2txt/,$(IMG2TXT))
 
 
 #

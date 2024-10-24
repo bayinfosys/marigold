@@ -145,6 +145,84 @@ def load_txt2img(modelname: str, cache_dir: str = None, **kwargs):
     return pipe
 
 
+def load_img2txt(
+    modelname: str,
+    cache_dir: str = None,
+    load_in_4bit: bool = False,
+    use_fast: bool = False,
+    remote_code: bool = False,
+    local_files_only: bool = True,
+    low_cpu_mem_usage: bool = True,
+):
+    T0 = clock()
+    #from transformers import AutoProcessor as T
+    #from transformers import AutoTokenizer as T
+    from transformers import DonutProcessor as T
+
+    logger.info("imported transformers.proc in %0.2fs", (clock() - T0))
+
+    T0 = clock()
+    #from transformers import AutoModelForPreTraining as M
+    #from transformers import AutoModel as M
+    from transformers import VisionEncoderDecoderModel as M
+
+    logger.info("import transformers.model in %0.2fs", (clock() - T0))
+
+    logger.info("loading '%s' from '%s'", modelname, cache_dir)
+
+    try:
+        p = T.from_pretrained(
+            modelname,
+            cache_dir=cache_dir,
+            load_in_4bit=load_in_4bit,
+            use_fast=use_fast,
+            trust_remote_code=remote_code,
+            local_files_only=local_files_only,
+        )
+    except OSError as e:
+        logger.error("'%s' not in local caache [%s]", modelname, str(e))
+        raise ModelNotFoundError(modelname) from e
+    except Exception as e:
+        logger.exception("'%s' load tokenizer failed [%s]", modelname, str(e))
+        raise ModelNotFoundError(modelname) from e
+
+    try:
+        m = M.from_pretrained(
+            modelname,
+            cache_dir=cache_dir,
+            load_in_4bit=load_in_4bit,
+            trust_remote_code=remote_code,
+            local_files_only=local_files_only,
+            low_cpu_mem_usage=low_cpu_mem_usage,
+        )
+    except OSError as e:
+        logger.error("'%s' not in local caache [%s]", modelname, str(e))
+        raise ModelNotFoundError(modelname) from e
+    except Exception as e:
+        logger.exception("'%s' load model failed [%s]", modelname, str(e))
+        raise ModelNotFoundError(modelname) from e
+
+    try:
+        m.eval()
+    except Exception as e:
+        logger.error("m.eval() failed [%s]", str(e))
+
+    try:
+        cbsize = m.get_memory_footprint()
+    except Exception as e:
+        logger.error("m.get_memory_footprint() failed [%s]", str(e))
+        cbsize = 0
+
+    logger.info(
+        "loaded '%s'.model in %0.2fs into %ib",
+        modelname,
+        (clock() - T0),
+        cbsize,
+    )
+
+    return p, m
+
+
 if __name__ == "__main__":
     import sys
     import json
@@ -164,6 +242,7 @@ if __name__ == "__main__":
         "instruct": load_instruct,
         "tts": load_tts,
         "txt2img": load_txt2img,
+        "img2txt": load_img2txt,
     }
 
     logger.info("args: '%s'", str(sys.argv))

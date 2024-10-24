@@ -84,7 +84,7 @@ class DecodeTextResponse(BaseModel):
 
 
 # instruct
-class InstructRole(Enum):
+class InstructRole(str, Enum):
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
@@ -141,3 +141,26 @@ class TTSResponse(BaseModel):
 class TTSRequest(BaseModel):
     lang_code: str
     input: str
+
+
+# img2txt
+class Img2TxtResponse(BaseModel):
+    #id: str = Field(None, description="unique id for this response (not used)")
+    created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
+    finish_reason: str = "stop"
+    model: str
+    choices: List[InstructMessage]
+    usage: ModelUsageStats
+
+
+class Img2TxtRequest(BaseModel):
+    model: str = Field(..., description="model to fulfill the request")
+    images: List[str] = Field(..., description="base64 encoded jpeg or png")
+    messages: InstructMessages = Field(..., description="messages to be submitted with the image")
+    temperature: float = Field(1.0, description="ignored")
+    max_tokens: int = Field(1000, description="maximum tokens to be generated")
+    seed: int = Field(None, description="random seed for generation")
+    top_k: int = Field(None, description="top_k tokens to consider")
+    top_p: float = Field(None, description="nucleaus sampling by p")
+    repetition_penalty: float = Field(None, description="increase to prevent repetition in output")
+    no_repeat_ngram_size: int = Field(None, description="size of ngrams to prevent repeating")
