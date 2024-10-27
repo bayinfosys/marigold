@@ -35,8 +35,8 @@ module "instruct_polling" {
   cloudwatch_logs_retention_in_days = 5
 
   runtime     = "python3.11"
-  source_path = join("/", [path.module, "..", "..", "package", "src", "tools", "polling", "main.py"])
-  handler     = "main.handler"
+  source_path = join("/", [path.module, "..", "..", "package", "src"])
+  handler     = "tools.polling.main.handler"
 
   environment_variables = {
     INPUT_PATH     = "/instruct"

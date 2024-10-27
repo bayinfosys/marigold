@@ -11,19 +11,16 @@ module "model_lambdas" {
   version = "~> 7.7.0"
 
   function_name = join("-", [var.org_name, var.project_name, var.env, replace(each.key, "/", "-")])
-  description   = "${var.project_name}-${var.env}-${each.key}"
+  description = each.value.environment_variables["MODELNAME"]
 
   cloudwatch_logs_retention_in_days = 5
 
-  create_package = false
-
-  image_uri    = data.aws_ecr_image.images[each.value.image].image_uri
-  package_type = "Image"
+  runtime = "python3.12"
+  source_path = join("/", [path.module, "..", "..", "package", "src"])
+  handler = each.value.command
 
   memory_size = each.value.memory_size
   timeout     = each.value.timeout
-  image_config_command = [each.value.command]
-  image_config_entry_point = ["/lambda-entrypoint.sh"]
 
   # vpc
   vpc_subnet_ids         = [for x in data.aws_subnet.private_subnets: x.id]
@@ -39,6 +36,13 @@ module "model_lambdas" {
     CACHE_DIR="/mnt/shared/models"
     HF_HUB_CACHE="/mnt/shared/models"
     PYTHONPATH="/usr/local/lib/python3.12:/mnt/shared/packages/lib/python3.12/site-packages"
+    HF_HUB_DISABLE_PROGRESS_BARS="1"
+    HF_HUB_DISABLE_TELEMETRY="1"
+    HF_HOME="/tmp"
+    HF_HUB_OFFLINE="1"
+    LOAD_IN_4BIT="0"
+    REMOTE_CODE="0"
+    USE_FAST="0"
   })
 
   # FIXME: use the efs_access_policy from 01

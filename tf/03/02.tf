@@ -19,12 +19,6 @@ data "aws_sfn_state_machine" "tts" {
   name = join("-", [var.org_name, var.project_name, var.env, "tts"])
 }
 
-data "aws_lambda_function" "tools" {
-  for_each = var.tool_lambdas
-
-  function_name = join("-", [var.org_name, var.project_name, var.env, "tools", each.key])
-}
-
 data "aws_lambda_function" "instruct_polling" {
   function_name = join("-", [var.org_name, var.project_name, var.env, "instruct-polling"])
 }

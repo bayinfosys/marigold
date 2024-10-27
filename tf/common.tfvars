@@ -4,16 +4,6 @@ project_domain = "mdl.bayis.co.uk"
 
 env = "dev"
 
-container_tag = "v0.5-20-g4abb98c"  # overridden at runtime
-
-containers = [
-  # model environment
-  "environment",
-
-  # tools
-  "tools/magika",
-]
-
 available_models = {
   "sentence-transformers/all-minilm-l6-v2" = { model_type = "text-embedding" },
   "sentence-transformers/paraphrase-multilingual-mpnet-base-v2" = { model_type = "text-embedding" },
@@ -22,14 +12,16 @@ available_models = {
   "qwen/qwen2-0.5b-instruct" = { model_type = "instruct" },
   "qwen/qwen2-1.5b-instruct" = { model_type = "instruct" },
   "microsoft/phi-3-mini-128k-instruct" = { model_type = "instruct" },
+  "meta-llama/llama-3.2-1b-instruct" = { model_type = "instruct" },
 }
 
 model_lambdas = {
   # text-embedding
   "embedding-paraphrase-multilingual-mpnet-base-v2" = {
     image = "environment"
-    memory_size = 2000
+    memory_size = 1024
     vector_size = 384
+    timeout = 40
     environment_variables = {
       MODELNAME = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
       MODEL_TYPE = "text-embedding"
@@ -38,8 +30,9 @@ model_lambdas = {
   },
   "embedding-sentence-t5-large" = {
     image = "environment"
-    memory_size = 2000
+    memory_size = 1024
     vector_size = 768
+    timeout = 40
     environment_variables = {
       MODELNAME = "sentence-transformers/sentence-t5-large"
       MODEL_TYPE = "text-embedding"
@@ -48,8 +41,9 @@ model_lambdas = {
   },
   "embedding-all-minilm-l6-v2" = {
     image = "environment"
-    memory_size = 2000
+    memory_size = 1024
     vector_size = 384
+    timeout = 40
     environment_variables = {
       MODELNAME = "sentence-transformers/all-minilm-l6-v2"
       MODEL_TYPE = "text-embedding"
@@ -83,6 +77,16 @@ model_lambdas = {
     memory_size = 8000
     environment_variables = {
       MODELNAME = "microsoft/phi-3-mini-128k-instruct"
+      MODEL_TYPE = "instruct"
+      LOW_CPU_MEM_USAGE = "1"
+    }
+    command = "models.instruct.main.lambda_handler"
+  },
+  "meta-llama-32-1b-instruct" = {
+    image = "environment"
+    memory_size = 8000
+    environment_variables = {
+      MODELNAME = "meta-llama/llama-3.2-1b-instruct"
       MODEL_TYPE = "instruct"
       LOW_CPU_MEM_USAGE = "1"
     }
@@ -146,25 +150,4 @@ model_lambdas = {
     }
     command = "models.tts.main.lambda_handler"
   },
-}
-
-db_lambdas = {
-  "sqlite" = {
-    image       = "tools/sqlite",
-    command     = "app.tools.sqlite.package.sqlite_manager.fetch.lambda_handler"
-    memory_size = 2048,
-    timeout     = 20,
-    environment_variables = {
-      S3_SQLITE_PREFIX = "vec"
-      S3_SNAPSHOT_PREFIX = "vec"
-    }
-  }
-}
-
-tool_lambdas = {
-  "magika" = {
-    image = "tools/magika",
-    memory_size = 500,
-    timeout = 5
-  }
 }

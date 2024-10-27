@@ -17,13 +17,6 @@ locals {
     }
   ))
 
-  instruct_batch_pipeline_yaml = templatefile("${path.module}/pipelines/instruct-batch.yaml", {
-    instruct_batch_job_queue_arn = aws_batch_job_queue.low_priority_queue.arn
-    instruct_batch_job_definition_arn = aws_batch_job_definition.instruct_model_job.arn
-    results_cache_table = aws_dynamodb_table.results_cache.id
-    }
-  )
-
   tts_pipeline_yaml = templatefile("${path.module}/pipelines/tts.yaml", {
     for x in keys(var.model_lambdas) : x => module.model_lambdas[x].lambda_function_arn
   })
@@ -32,7 +25,6 @@ locals {
   polling_dummy_pipeline_json = yamldecode(local.polling_dummy_pipeline_yaml)
   text_embedding_pipeline_json = yamldecode(local.text_embedding_pipeline_yaml)
   instruct_pipeline_json       = yamldecode(local.instruct_pipeline_yaml)
-  instruct_batch_pipeline_json = yamldecode(local.instruct_batch_pipeline_yaml)
   tts_pipeline_json            = yamldecode(local.tts_pipeline_yaml)
 }
 
@@ -103,34 +95,6 @@ module "instruct" {
 
     dynamodb = {
       dynamodb = [aws_dynamodb_table.results_cache.arn]
-    }
-  }
-
-  logging_configuration = {
-    include_execution_data = true
-    level                  = "ALL"
-  }
-
-  tags = var.project_tags
-}
-
-module "instruct_batch" {
-  source = "terraform-aws-modules/step-functions/aws"
-
-  name = join("-", [var.org_name, var.project_name, var.env, "instruct-batch"])
-
-  definition = jsonencode(local.instruct_batch_pipeline_json)
-
-  type = "STANDARD"
-
-  service_integrations = {
-    dynamodb = {
-      dynamodb = [aws_dynamodb_table.results_cache.arn]
-    }
-
-    batch_Sync = {
-      batch = [aws_batch_job_queue.low_priority_queue.arn, aws_batch_job_definition.instruct_model_job.arn]
-      events = true
     }
   }
 

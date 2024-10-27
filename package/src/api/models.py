@@ -25,6 +25,14 @@ class ModelModalities(Enum):
     MESH = "mesh"
 
 
+class CacheDestination(BaseModel):
+    """Location of cached response in dynamodb
+    This data is used to generate the key
+    """
+    user_id: str
+    message_id: str
+
+
 class ModelProvider(BaseModel):
     name: str
     description: str
@@ -47,6 +55,17 @@ Embedding = List[float]
 EmbeddingsResponse = Embedding
 
 
+class EmbeddingQuantization(str, Enum):
+    """embedding quantization method to reduce storage requirements
+    see: https://www.sbert.net/docs/package_reference/sentence_transformer/quantization.html#sentence_transformers.quantization.quantize_embeddings
+    """
+    FLOAT32 = "float32"
+    INT8 = "int8"
+    UINT8 = "uint8"
+    BINARY = "binary"
+    UBINARY = "ubinary"
+
+
 class ModelUsageStats(BaseModel):
     """statistics around the processing
     NB: not all fields are relevant for all methods
@@ -55,6 +74,7 @@ class ModelUsageStats(BaseModel):
     inference: float = Field(..., description="inference duration in seconds")
     input_tokens: int = Field(..., description="number of tokens in the input")
     output_tokens: int = Field(..., description="number of tokens in the output")
+    memory_usage: int = Field(..., description="process max memory usage in kb")
 
 
 # embedding request/response
@@ -63,6 +83,7 @@ class EmbedTextRequest(BaseModel):
     input: str
     encoding_format: str = Field("float", description="ignored")
     precision: int = Field("2", description="float precision of response")
+    quantization: EmbeddingQuantization = Field(EmbeddingQuantization.FLOAT32, description="quantization method")
 
 
 class EmbedImageRequest(BaseModel):
@@ -89,15 +110,19 @@ class InstructRole(str, Enum):
     USER = "user"
     ASSISTANT = "assistant"
 
+class InstructType(str, Enum):
+    TEXT = "text"
+    IMAGE = "image"
+
 
 class InstructMessage(BaseModel):
     """this should match the openai structure
     NB: this structure should be inside a 'message' object
     TODO: add tokens and logprobs
     """
-
     role: InstructRole
-    content: str
+    type_: InstructType = Field(default=InstructType.TEXT, alias="type", description="optional type of the content for multi-modal models")
+    content: str = Field(..., description="text message or base64 encoded image depending on type parameter")
 
 
 InstructMessages = List[InstructMessage]
@@ -128,9 +153,8 @@ class InstructSFNSubmission(BaseModel):
     """this is not used in the python, but is the input to sfn
     To use the /instruct_direct endpoint, use this message
     """
-    user_id: str
-    message_id: str
-    input: InstructRequest
+    destination: CacheDestination
+    body: InstructRequest
 
 
 # tts

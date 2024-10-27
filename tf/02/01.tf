@@ -31,15 +31,3 @@ data "aws_security_group" "lambda_sg" {
 data "aws_iam_policy" "efs_assets_ro" {
   arn = data.terraform_remote_state.containers.outputs["efs_assets_ro_iam_policy_arn"]
 }
-
-data "aws_ecr_repository" "containers" {
-  for_each = toset(var.containers)
-  name     = join("/", [var.org_name, var.project_name, each.key])
-}
-
-data "aws_ecr_image" "images" {
-  for_each = toset(var.containers)
-
-  repository_name = data.aws_ecr_repository.containers[each.key].name
-  image_tag       = var.container_tag
-}

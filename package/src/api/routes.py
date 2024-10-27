@@ -86,8 +86,11 @@ async def embed_image(body: EmbedImageRequest, user=Security(lambda_auth)):
 @router.post(
     "/instruct",
     response_model=InstructResponse,
-    aws_sfn_sync_arn="${instruct_step_function_arn}",
-    aws_iam_arn="${instruct_step_function_iam_role_arn}",
+    aws_lambda_uri="${instruct_polling_start_lambda_arn}",
+    aws_iam_arn="${instruct_polling_start_lambda_iam_role_arn}",
+# direct invocation can happen like this:
+#    aws_sfn_sync_arn="${instruct_step_function_arn}",
+#    aws_iam_arn="${instruct_step_function_iam_role_arn}",
     tags=["models", "instruct", "chat"],
 )
 async def instruct_new_message(body: InstructRequest, user=Security(lambda_auth)):
@@ -98,8 +101,8 @@ async def instruct_new_message(body: InstructRequest, user=Security(lambda_auth)
 @router.get(
     "/instruct/{message_id}",
     response_model=InstructResponse,
-    aws_lambda_uri="${instruct_polling_arn}",
-    aws_iam_arn="${instruct_polling_iam_role_arn}",
+    aws_lambda_uri="${instruct_polling_check_lambda_arn}",
+    aws_iam_arn="${instruct_polling_check_lambda_iam_role_arn}",
     tags=["models", "instruct", "chat"],
 )
 async def instruct_poll_response(user=Security(lambda_auth)):

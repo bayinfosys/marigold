@@ -45,47 +45,6 @@ data "aws_iam_policy_document" "generic_endpoint_policy" {
   }
 }
 
-resource "aws_vpc_endpoint" "s3" {
-  vpc_id       = module.vpc.vpc_id
-  service_name = "com.amazonaws.eu-west-2.s3"
-
-  tags = merge(var.project_tags, {
-    Name = join("-", [var.org_name, var.project_name, var.env, "s3"])
-  })
-}
-
-resource "aws_vpc_endpoint" "ecr_api" {
-  vpc_id              = module.vpc.vpc_id
-  service_name        = "com.amazonaws.eu-west-2.ecr.api"
-  vpc_endpoint_type   = "Interface"
-  private_dns_enabled = true
-  subnet_ids          = module.vpc.private_subnets
-
-  security_group_ids = [
-    module.vpc.default_security_group_id
-  ]
-
-  tags = merge(var.project_tags, {
-    Name = join("-", [var.org_name, var.project_name, var.env, "ecr-api"])
-  })
-}
-
-resource "aws_vpc_endpoint" "ecr_dkr" {
-  vpc_id              = module.vpc.vpc_id
-  service_name        = "com.amazonaws.eu-west-2.ecr.dkr"
-  vpc_endpoint_type   = "Interface"
-  private_dns_enabled = true
-  subnet_ids          = module.vpc.private_subnets
-
-  security_group_ids = [
-    module.vpc.default_security_group_id
-  ]
-
-  tags = merge(var.project_tags, {
-    Name = join("-", [var.org_name, var.project_name, var.env, "ecr-dkr"])
-  })
-}
-
 resource "aws_vpc_endpoint" "cloudwatch" {
   vpc_id              = module.vpc.vpc_id
   service_name        = "com.amazonaws.eu-west-2.logs"
@@ -100,12 +59,6 @@ resource "aws_vpc_endpoint" "cloudwatch" {
   tags = merge(var.project_tags, {
     Name = join("-", [var.org_name, var.project_name, var.env, "cloudwatch"])
   })
-}
-
-resource "aws_vpc_endpoint_route_table_association" "private_s3" {
-  # FIXME: make this a loop for all route tables
-  vpc_endpoint_id = aws_vpc_endpoint.s3.id
-  route_table_id  = module.vpc.private_route_table_ids[0]
 }
 
 #

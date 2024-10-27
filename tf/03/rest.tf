@@ -6,7 +6,7 @@ locals {
   api_private_definition_hash = local.rest_api_private_definition
 }
 
-resource "aws_cloudwatch_log_group" "embed" {
+resource "aws_cloudwatch_log_group" "default" {
   name              = join("/", ["api-gateway", var.project_name, var.env])
   retention_in_days = 7
 }
@@ -115,7 +115,7 @@ resource "aws_iam_role_policy" "apigateway_lambda_policy" {
 #  })
 #}
 
-resource "aws_api_gateway_rest_api" "embed" {
+resource "aws_api_gateway_rest_api" "default" {
   name        = join("-", [var.org_name, var.project_name, var.env, "api"])
 
   body = templatefile(local.rest_api_private_definition, {
@@ -131,14 +131,18 @@ resource "aws_api_gateway_rest_api" "embed" {
     text_embedding_step_function_arn = data.aws_sfn_state_machine.text_embedding.arn
     text_embedding_step_function_iam_role_arn = aws_iam_role.apigateway_lambda.arn
 
+    instruct_polling_start_lambda_arn = data.aws_lambda_function.instruct_polling.invoke_arn
+    instruct_polling_start_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
+
+    instruct_polling_check_lambda_arn = data.aws_lambda_function.instruct_polling.invoke_arn
+    instruct_polling_check_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
+
+
     image_embedding_step_function_arn = data.aws_sfn_state_machine.text_embedding.arn
     image_embedding_step_function_iam_role_arn = aws_iam_role.apigateway_stepfunctions.arn
 
-    instruct_step_function_arn = data.aws_sfn_state_machine.instruct.arn
-    instruct_step_function_iam_role_arn = aws_iam_role.apigateway_stepfunctions.arn
-
-    instruct_polling_arn = data.aws_lambda_function.instruct_polling.invoke_arn
-    instruct_polling_iam_role_arn = aws_iam_role.apigateway_stepfunctions.arn # TODO: lambda invoke role
+#    instruct_step_function_arn = data.aws_sfn_state_machine.instruct.arn
+#    instruct_step_function_iam_role_arn = aws_iam_role.apigateway_stepfunctions.arn
 
     tts_step_function_arn = data.aws_sfn_state_machine.tts.arn
     tts_step_function_iam_role_arn = aws_iam_role.apigateway_stepfunctions.arn
@@ -154,12 +158,12 @@ resource "aws_api_gateway_rest_api" "embed" {
   })
 }
 
-resource "aws_api_gateway_deployment" "embed" {
+resource "aws_api_gateway_deployment" "default" {
   triggers = {
-    redeployment = sha1(jsonencode(aws_api_gateway_rest_api.embed.body))
+    redeployment = sha1(jsonencode(aws_api_gateway_rest_api.default.body))
   }
 
-  rest_api_id = aws_api_gateway_rest_api.embed.id
+  rest_api_id = aws_api_gateway_rest_api.default.id
 
   # Use a description or a unique identifier to trigger a new deployment on updates
   description = "${timestamp()} hash ${local.api_private_definition_hash}"
@@ -169,13 +173,13 @@ resource "aws_api_gateway_deployment" "embed" {
   }
 }
 
-resource "aws_api_gateway_stage" "embed" {
+resource "aws_api_gateway_stage" "default" {
   stage_name    = "v1"
-  rest_api_id   = aws_api_gateway_rest_api.embed.id
-  deployment_id = aws_api_gateway_deployment.embed.id
+  rest_api_id   = aws_api_gateway_rest_api.default.id
+  deployment_id = aws_api_gateway_deployment.default.id
 
   access_log_settings {
-    destination_arn = aws_cloudwatch_log_group.embed.arn
+    destination_arn = aws_cloudwatch_log_group.default.arn
     format           = "$context.identity.sourceIp - - [$context.requestTime] \"$context.httpMethod $context.resourcePath $context.protocol\" $context.status $context.responseLength $context.requestId $context.integration.integrationStatus $context.integrationErrorMessage $context.error.message $context.error.messageString $context.integration.error"
   }
 }
@@ -203,8 +207,8 @@ resource "aws_iam_role_policy_attachment" "api_gw_cloudwatch_log_policy_attach" 
 }
 
 resource "aws_api_gateway_base_path_mapping" "domain" {
-  api_id      = aws_api_gateway_rest_api.embed.id
-  stage_name  = aws_api_gateway_deployment.embed.stage_name
+  api_id      = aws_api_gateway_rest_api.default.id
+  stage_name  = aws_api_gateway_deployment.default.stage_name
   domain_name = aws_api_gateway_domain_name.domain.domain_name
 }
 

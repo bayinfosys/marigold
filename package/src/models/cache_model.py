@@ -7,6 +7,12 @@ and also load the models at runtime from the cache.
 
 NB: this laods models at runtime, see these threads for HF loading optimization issues:
 https://huggingface.co/mosaicml/mpt-7b-instruct/discussions/6
+
+TODO: have a separate cache area for each model type, to separate
+      text-embedding, instruct, etc. this will aid billing and allow
+      separate premium tiers for search, chat, generation, etc.
+
+FIXME: standardise loading time/mem measurement and logging across model types
 """
 import os
 import logging
@@ -103,9 +109,11 @@ def load_instruct(
 
 
 def load_text_embedding(modelname: str, cache_dir: str = None, **kwargs):
+    from transformers import AutoTokenizer as T
     from sentence_transformers import SentenceTransformer as ST
 
     T0 = clock()
+    t = T.from_pretrained(modelname, cache_dir=cache_dir)
     m = ST(modelname, cache_folder=cache_dir)
 
     logger.info(
@@ -114,15 +122,21 @@ def load_text_embedding(modelname: str, cache_dir: str = None, **kwargs):
         (clock() - T0),
     )
 
-    return m
+    return t, m
 
 
 def load_image_embedding(modelname: str, cache_dir: str = None, **kwargs):
-    from transformers import AutoImageProcessor as P
-    from transformers import AutoModel as ST
+    #from transformers import AutoImageProcessor as P
+    #from transformers import AutoModel as ST
 
-    P.from_pretrained(modelname, cache_dir=cache_dir)
-    ST.from_pretrained(modelname, cache_dir=cache_dir)
+    #P.from_pretrained(modelname, cache_dir=cache_dir)
+    #ST.from_pretrained(modelname, cache_dir=cache_dir)
+
+    from sentence_transformers import SentenceTransformer
+
+    m = SentenceTransformer(modelname, cache_folder=cache_dir)
+
+    return m
 
 
 def load_tts(modelname: str, cache_dir: str = None, **kwargs):

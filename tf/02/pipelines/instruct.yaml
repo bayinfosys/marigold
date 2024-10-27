@@ -1,18 +1,21 @@
-Comment: "Job Execution State Machine"
+Comment: "instruct model execution"
 StartAt: SelectModel
 States:
   SelectModel:
     Type: Choice
     Choices:
-      - Variable: "$.input.model"
-        StringEquals: "qwen/qwen2-05b-instruct"
+      - Variable: "$.body.model"
+        StringEquals: "qwen/qwen2-0.5b-instruct"
         Next: ModelQwen205bInstruct
-      - Variable: "$.input.model"
-        StringEquals: "qwen/qwen2-15b-instruct"
+      - Variable: "$.body.model"
+        StringEquals: "qwen/qwen2-1.5b-instruct"
         Next: ModelQwen215bInstruct
-      - Variable: "$.input.model"
+      - Variable: "$.body.model"
         StringEquals: "microsoft/phi-3-mini-128k-instruct"
         Next: ModelPhi3Mini128kInstruct
+      - Variable: "$.body.model"
+        StringEquals: "meta-llama/llama-3.2-1b-instruct"
+        Next: ModelLlama321BInstruct
     Default: InvalidModelState
 
   ModelQwen205bInstruct:
@@ -40,6 +43,17 @@ States:
   ModelPhi3Mini128kInstruct:
     Type: Task
     Resource: "${microsoft-phi-3-mini-128k-instruct}"
+    ResultPath: "$.modelResult"
+    Next: UpdateStatusToComplete
+    Catch:
+      - ErrorEquals:
+          - States.ALL
+        ResultPath: "$.errorInfo"
+        Next: ModelErrorState
+
+  ModelLlama321BInstruct:
+    Type: Task
+    Resource: "${meta-llama-32-1b-instruct}"
     ResultPath: "$.modelResult"
     Next: UpdateStatusToComplete
     Catch:

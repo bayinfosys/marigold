@@ -55,6 +55,12 @@ def path_handler(path, registry):
     return decorator
 
 
+def get_memory_usage():
+    """return the memory used by the process in MB"""
+    import resource
+    return 1 + int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.)
+
+
 def lambda_event_to_data(event, data_key: str = None):
     """extract image/text data from the apigw integration
 
@@ -127,6 +133,9 @@ def mk_resp(statusCode, body, headers=None, **kwargs):
     """
     logger.debug("resp: %03i '%s', %s", statusCode, str(body), str(kwargs))
 
+    if headers is None:
+        headers = {}
+
     if isinstance(body, (dict, list)):
         try:
             body = json.dumps(body)
@@ -134,14 +143,13 @@ def mk_resp(statusCode, body, headers=None, **kwargs):
             logger.exception("unable to serialise lambda response [%s]", str(e))
             return mk_error_resp(msg="unable to serialize response")
 
+        headers.update({"Content-Type": "application/json"})
+
     if not isinstance(statusCode, int):
         raise ValueError("statusCode must be an integer")
 
     if not isinstance(body, str):
         raise ValueError("body must be a string")
-
-    if headers is None:
-        headers = {}
 
     if APPEND_CORS_HEADERS:
         headers.update(cors_headers())

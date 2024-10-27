@@ -1,9 +1,10 @@
 PROJECT_NAME=vecmdl
 
 # 3.6Gb 2.87G 1.84G
-#SENTENCE_TRANSFORMERS=labse paraphrase-multilingual-mpnet-base-v2 paraphrase-multilingual-MiniLM-L12-v2 all-minilm-l6-v2 nomic-ai/nomic-embed-text-v1.5 intfloat/e5-small-v2 intfloat/e5-base-v2 intfloat/e5-small-unsupervised intfloat/multilingual-e5-small sentence-transformers/sentence-t5-large snowflake/snowflake-arctic-embed-m taylorai/gte-tiny taylorai/bge-micro-v2 intfloat/e5-large-unsupervised whereisai/uae-large-v1
-SENTENCE_TRANSFORMERS=sentence-transformers/all-minilm-l6-v2 sentence-transformers/paraphrase-multilingual-mpnet-base-v2
-IMAGE_TRANSFORMERS=google/vit-base-patch16-224-in21k facebook/vit-mae-base openai/imagegpt-small facebook/dino-vitb8 facebook/dinov2-small
+#SENTENCE_TRANSFORMERS=sentence-transformers/labse sentence-transformers/paraphrase-multilingual-mpnet-base-v2 sentence-transformers/paraphrase-multilingual-minilm-l12-v2 sentence-transformers/all-minilm-l6-v2 intfloat/e5-small-v2 intfloat/e5-small-unsupervised intfloat/multilingual-e5-small intfloat/multilingual-e5-large-instruct intfloat/e5-large-unsupervised sentence-transformers/sentence-t5-large snowflake/snowflake-arctic-embed-xs snowflake/snowflake-arctic-embed-m taylorai/gte-tiny taylorai/bge-micro-v2 whereisai/uae-large-v1 sentence-transformers/gtr-t5-large sentence-transformers/all-minilm-l12-v2 sentence-transformers/paraphrase-multilingual-mpnet-base-v2
+SENTENCE_TRANSFORMERS=sentence-transformers/all-minilm-l6-v2
+IMAGE_TRANSFORMERS=sentence-transformers/clip-ViT-L-14 sentence-transformers/clip-vit-b-32-multilingual-v1 sentence-transformers/clip-vit-b-32
+#IMAGE_TRANSFORMERS=google/vit-base-patch16-224-in21k facebook/vit-mae-base openai/imagegpt-small facebook/dino-vitb8 facebook/dinov2-small
 
 # 16Gb
 # https://huggingface.co/microsoft
@@ -13,7 +14,7 @@ IMAGE_TRANSFORMERS=google/vit-base-patch16-224-in21k facebook/vit-mae-base opena
 # NB: these models need keys:
 #INSTRUCTS=apple/openelm-1_1b-instruct apple/openelm-3b-instruct
 #INSTRUCTS=microsoft/phi-2 microsoft/phi-3-mini-128k-instruct llmware/bling-falcon-1b-0.1 cognitivecomputations/tinydolphin-2.8-1.1b unfilteredai/unfilteredai-1b microsoft/phi-3-mini-128k-instruct huggingfacetb/smollm-360m-instruct facebook/blenderbot-400M-distill
-INSTRUCTS=qwen/qwen2-0.5b-instruct qwen/qwen2-1.5b-instruct microsoft/phi-3-mini-128k-instruct llmware/bling-sheared-llama-1.3b-0.1
+INSTRUCTS=qwen/qwen2-0.5b-instruct qwen/qwen2-1.5b-instruct microsoft/phi-3-mini-128k-instruct llmware/bling-sheared-llama-1.3b-0.1 mistralai/mistral-7b-instruct-v0.3 meta-llama/llama-3.1-8b-instruct microsoft/phi-3-mini-128k-instruct meta-llama/llama-3.2-1b-instruct meta-llama/llama-3.2-3b-instruct deepseek-ai/janus-1.3b chuanli11/llama-3.2-3b-instruct-uncensored
 
 # image generative models
 #TXT2IMG=unfilteredai/nsfw-gen-v2.1 stabilityai/sdxl-turbo stabilityai/stable-diffusion-2-1 playgroundai/playground-v2.5-1024px-aesthetic sd-community/sdxl-flash-mini compvis/ldm-text2im-large-256 runwayml/stable-diffusion-v1-5 dream-textures/texture-diffusion black-forest-labs/flux.1-schnell
@@ -116,6 +117,7 @@ cache/instruct/%:
 	  --entrypoint python3 \
 	  -e HF_HUB_OFFLINE=0 \
 	  -e HF_HUB_DISABLE_PROGRESS_BARS=0 \
+	  -e HF_TOKEN=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 \
 	  -e MODEL_TYPE="instruct" \
 	  -e MODELNAME=$* \
 	  -e CACHE_DIR=/models \
@@ -327,12 +329,12 @@ init: check-layer
 validate:
 	terraform -chdir=tf/$(LAYER) validate
 plan:
-	terraform -chdir=tf/$(LAYER) refresh -var-file=../common.tfvars -var-file=../$(ENV).tfvars -var "container_tag=$(TAG)"
-	terraform -chdir=tf/$(LAYER) plan -var-file=../common.tfvars -var-file=../$(ENV).tfvars -out new.plan -var "container_tag=$(TAG)"
+	terraform -chdir=tf/$(LAYER) refresh -var-file=../common.tfvars -var-file=../$(ENV).tfvars
+	terraform -chdir=tf/$(LAYER) plan -var-file=../common.tfvars -var-file=../$(ENV).tfvars -out new.plan
 apply:
-	terraform -chdir=tf/$(LAYER) apply new.plan && rm tf/$(LAYER)/new.plan
+	terraform -chdir=tf/$(LAYER) apply -parallelism=0 new.plan && rm tf/$(LAYER)/new.plan
 destroy:
-	terraform -chdir=tf/$(LAYER) destroy -var-file=../common.tfvars -var-file=../$(ENV).tfvars -var "container_tag=$(TAG)" -auto-approve
+	terraform -chdir=tf/$(LAYER) destroy -var-file=../common.tfvars -var-file=../$(ENV).tfvars" -auto-approve
 get-key:
 	terraform -chdir=tf/03 output -raw api_key_value
 get-asset-bucket:

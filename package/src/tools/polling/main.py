@@ -40,28 +40,32 @@ def handler(event, context):
 
 def get_status(userid, message_id):
     """Retrieve the status of an item from DynamoDB using attribute projection."""
+    key = {
+        "PK": {"S": userid},
+        "SK": {"S": message_id},
+    }
+
     response = dynamodb.get_item(
         TableName=DYNAMODB_TABLE,
-        Key={
-            "PK": {"S": userid},
-            "SK": {"S": message_id},
-        },
+        Key=key,
         ProjectionExpression="sts",  # only get status attribute
     )
 
     if "Item" in response and "sts" in response["Item"]:
         # FIXME: raise a notfound exception?
         return response["Item"]["sts"]["S"]
+    else:
+        logger.warning("[%s/%s] no response for '%s'", userid, message_id, str(key))
 
     return None  # Item not found
 
 
 def get_response(userid, message_id) -> dict:
     """Retrieve the response attribute of an item from DynamoDB using attribute projection."""
-    key={
-            "PK": {"S": userid},
-            "SK": {"S": message_id},
-        }
+    key = {
+        "PK": {"S": userid},
+        "SK": {"S": message_id},
+    }
 
     response = dynamodb.get_item(
         TableName=DYNAMODB_TABLE,
@@ -70,8 +74,16 @@ def get_response(userid, message_id) -> dict:
     )
 
     if "Item" in response and "rsp" in response["Item"]:
-        logger.debug("response: '%s' [%s]", str(response["Item"]["rsp"]["S"]), str(type(response["Item"]["rsp"]["S"])))
+        logger.debug(
+            "[%s/%s] response: '%s' [%s]",
+            userid,
+            message_id,
+            str(response["Item"]["rsp"]["S"]),
+            str(type(response["Item"]["rsp"]["S"])),
+        )
         return json.loads(response["Item"]["rsp"]["S"])
+    else:
+        logger.warning("[%s/%s] no response for '%s'", userid, message_id, str(key))
 
     return None  # Item not found
 
@@ -85,6 +97,9 @@ def handle_submission(userid, event):
     existing_status = get_status(userid, message_id)
 
     if existing_status:
+        logger.info(
+            "[%s/%s] existing item found '%s'", userid, message_id, existing_status
+        )
         return mk_resp(200, {"message_id": message_id, "status": existing_status})
 
     # Set the TTL to be 24 hours (86400 seconds) from now
@@ -103,7 +118,7 @@ def handle_submission(userid, event):
 
     # Start the Step Functions state machine
     # TODO: check response values
-    sfn.start_execution(
+    response = sfn.start_execution(
         stateMachineArn=SFN_ARN,
         input=json.dumps(
             {
@@ -112,6 +127,8 @@ def handle_submission(userid, event):
             }
         ),
     )
+
+    logger.info("[%s/%s] started execution '%s'", userid, message_id, str(response))
 
     return mk_resp(200, {"message_id": message_id})
 
@@ -134,9 +151,11 @@ def handle_status(userid, event):
         if status == "complete":
             response_content = get_response(userid, message_id)  # Get the response
             response_content.update({"status": "complete"})
+            logger.info("[%s/%s] status: '%s'", userid, message_id, "complete")
             return mk_resp(200, response_content)
         else:
+            logger.info("[%s/%s] status: '%s'", userid, message_id, str(status))
             return mk_resp(202, {"status": status})
     else:
-        logger.warning("'%s/%s' item not found", userid, message_id)
+        logger.warning("[%s/%s] item not found", userid, message_id)
         return mk_resp(404, {"status": "not found"})
