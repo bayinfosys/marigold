@@ -150,4 +150,13 @@ model_lambdas = {
     }
     command = "models.tts.main.lambda_handler"
   },
+
+  "facebook-dpt-dinov2-small-kitti" = {
+    image = "environment"
+    environment_variables = {
+      MODELNAME = "facebook/dpt-dinov2-small-kitti"
+      MODEL_TYPE = "depth"
+    }
+    command = "models.depth.main.lambda_handler"
+  },
 }

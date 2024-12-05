@@ -148,10 +148,10 @@ def handle_status(userid, event):
     status = get_status(userid, message_id)
 
     if status:
-        if status == "complete":
+        if status in ("complete", "error"): # these are end states, and we should return the response
             response_content = get_response(userid, message_id)  # Get the response
-            response_content.update({"status": "complete"})
-            logger.info("[%s/%s] status: '%s'", userid, message_id, "complete")
+            response_content.update({"status": status})
+            logger.info("[%s/%s] status: '%s'", userid, message_id, status)
             return mk_resp(200, response_content)
         else:
             logger.info("[%s/%s] status: '%s'", userid, message_id, str(status))

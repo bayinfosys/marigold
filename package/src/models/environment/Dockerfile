@@ -23,10 +23,6 @@ ENV REMOTE_CODE=0
 # use_fast is for GPTNeoXTokenizer ValueError
 ENV USE_FAST=0
 
-# FIXME: remove this package to the cache layer and dump this container
-COPY ./package/src/models/environment/requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
-
 COPY ./package/src .
 
 # we override the entrypoint because aws lambda function definitions can

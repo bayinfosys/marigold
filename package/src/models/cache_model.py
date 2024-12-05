@@ -28,8 +28,10 @@ class ModelNotFoundError(Exception):
     pass
 
 
-def load_instruct(
-    modelname: str,
+def standard_loader(
+    T,
+    M,
+    modelname,
     cache_dir: str = None,
     load_in_4bit: bool = False,
     use_fast: bool = False,
@@ -37,18 +39,15 @@ def load_instruct(
     local_files_only: bool = True,
     low_cpu_mem_usage: bool = True,
 ):
-    T0 = clock()
-    from transformers import AutoTokenizer as T
+    """load a standard T.from_pretrained and M.from_pretrained
+    where T is one of AutoTokenizer, AutoImageProcess etc
+    and M is one of AutoModel, AutoModelForDepthEstimation etc
 
-    logger.info("imported transformers.toks in %0.2fs", (clock() - T0))
-
-    T0 = clock()
-    from transformers import AutoModelForCausalLM as M
-
-    logger.info("import transformers.model in %0.2fs", (clock() - T0))
-
-    logger.info("loading '%s' from '%s'", modelname, cache_dir)
-
+    this just does the standard logging of times and memory usage
+    """
+    # can't do these asserts without needing the type imports, can we check names?
+    # assert T in (AutoImageProcessor, AutoTokenizer)
+    # assert M in (AutoModelForDepthEstimation, AutoModelForCausalLM)
     T0 = clock()
 
     try:
@@ -71,6 +70,7 @@ def load_instruct(
 
     T0 = clock()
 
+    # NB: do not set the dtype for CPU loading (only float32 is performant)
     try:
         m = M.from_pretrained(
             modelname,
@@ -99,16 +99,38 @@ def load_instruct(
         cbsize = 0
 
     logger.info(
-        "loaded '%s'.model in %0.2fs into %ib",
+        "loaded '%s'.model in %0.2fs into %ib [%s]",
         modelname,
         (clock() - T0),
         cbsize,
+        m.config.torch_dtype,
     )
 
     return t, m
 
 
+def load_instruct(modelname: str, **kwargs):
+    """instruct models AKA chatbots"""
+    T0 = clock()
+    from transformers import AutoTokenizer as T
+
+    logger.info("imported transformers.toks in %0.2fs", (clock() - T0))
+
+    T0 = clock()
+    from transformers import AutoModelForCausalLM as M
+
+    logger.info("import transformers.model in %0.2fs", (clock() - T0))
+
+    t, m = standard_loader(T, M, modelname, **kwargs)
+
+    return t, m
+
+
 def load_text_embedding(modelname: str, cache_dir: str = None, **kwargs):
+    """text-to-vector do text embeddings
+    NB: we should avoid using the sentence-transformers lib directly, and use
+        the tokenizer/model setup so we can replicate the standard flow/metrics
+    """
     from transformers import AutoTokenizer as T
     from sentence_transformers import SentenceTransformer as ST
 
@@ -126,11 +148,14 @@ def load_text_embedding(modelname: str, cache_dir: str = None, **kwargs):
 
 
 def load_image_embedding(modelname: str, cache_dir: str = None, **kwargs):
-    #from transformers import AutoImageProcessor as P
-    #from transformers import AutoModel as ST
+    """image-to-vector do image embeddings
+    NB: we use sentence transformers to do clip models so we can support text search over images
+    """
+    # from transformers import AutoImageProcessor as P
+    # from transformers import AutoModel as ST
 
-    #P.from_pretrained(modelname, cache_dir=cache_dir)
-    #ST.from_pretrained(modelname, cache_dir=cache_dir)
+    # P.from_pretrained(modelname, cache_dir=cache_dir)
+    # ST.from_pretrained(modelname, cache_dir=cache_dir)
 
     from sentence_transformers import SentenceTransformer
 
@@ -140,6 +165,7 @@ def load_image_embedding(modelname: str, cache_dir: str = None, **kwargs):
 
 
 def load_tts(modelname: str, cache_dir: str = None, **kwargs):
+    """text-to-speech"""
     from transformers import VitsModel as M
     from transformers import AutoTokenizer as T
 
@@ -150,6 +176,7 @@ def load_tts(modelname: str, cache_dir: str = None, **kwargs):
 
 
 def load_txt2img(modelname: str, cache_dir: str = None, **kwargs):
+    """text-to-image are image generators"""
     from diffusers import DiffusionPipeline as PPL
 
     pipe = PPL.from_pretrained(modelname, cache_dir=cache_dir).to("cpu")
@@ -159,82 +186,43 @@ def load_txt2img(modelname: str, cache_dir: str = None, **kwargs):
     return pipe
 
 
-def load_img2txt(
-    modelname: str,
-    cache_dir: str = None,
-    load_in_4bit: bool = False,
-    use_fast: bool = False,
-    remote_code: bool = False,
-    local_files_only: bool = True,
-    low_cpu_mem_usage: bool = True,
-):
+def load_img2txt(modelname: str, **kwargs):
+    """image-to-text models do captions, ocr, etc"""
     T0 = clock()
-    #from transformers import AutoProcessor as T
-    #from transformers import AutoTokenizer as T
-    from transformers import DonutProcessor as T
+    from transformers import AutoProcessor as T
 
     logger.info("imported transformers.proc in %0.2fs", (clock() - T0))
 
     T0 = clock()
-    #from transformers import AutoModelForPreTraining as M
-    #from transformers import AutoModel as M
-    from transformers import VisionEncoderDecoderModel as M
+    from transformers import AutoModelForVision2Seq as M
 
     logger.info("import transformers.model in %0.2fs", (clock() - T0))
 
-    logger.info("loading '%s' from '%s'", modelname, cache_dir)
+    t, m = standard_loader(T, M, modelname, **kwargs)
 
-    try:
-        p = T.from_pretrained(
-            modelname,
-            cache_dir=cache_dir,
-            load_in_4bit=load_in_4bit,
-            use_fast=use_fast,
-            trust_remote_code=remote_code,
-            local_files_only=local_files_only,
-        )
-    except OSError as e:
-        logger.error("'%s' not in local caache [%s]", modelname, str(e))
-        raise ModelNotFoundError(modelname) from e
-    except Exception as e:
-        logger.exception("'%s' load tokenizer failed [%s]", modelname, str(e))
-        raise ModelNotFoundError(modelname) from e
+    return t, m
 
-    try:
-        m = M.from_pretrained(
-            modelname,
-            cache_dir=cache_dir,
-            load_in_4bit=load_in_4bit,
-            trust_remote_code=remote_code,
-            local_files_only=local_files_only,
-            low_cpu_mem_usage=low_cpu_mem_usage,
-        )
-    except OSError as e:
-        logger.error("'%s' not in local caache [%s]", modelname, str(e))
-        raise ModelNotFoundError(modelname) from e
-    except Exception as e:
-        logger.exception("'%s' load model failed [%s]", modelname, str(e))
-        raise ModelNotFoundError(modelname) from e
 
-    try:
-        m.eval()
-    except Exception as e:
-        logger.error("m.eval() failed [%s]", str(e))
+def load_depth(modelname: str, **kwargs):
+    """depth estimator
+    processor = AutoImageProcessor.from_pretrained("facebook/dpt-dinov2-small-kitti")
+    model = AutoModelForDepthEstimation.from_pretrained("facebook/dpt-dinov2-small-kitti")
+    """
+    T0 = clock()
+    from transformers import AutoImageProcessor as T
 
-    try:
-        cbsize = m.get_memory_footprint()
-    except Exception as e:
-        logger.error("m.get_memory_footprint() failed [%s]", str(e))
-        cbsize = 0
+    logger.info("imported transformers.autoimageprocessor in %0.2fs", (clock() - T0))
+
+    T0 = clock()
+    from transformers import AutoModelForDepthEstimation as M
 
     logger.info(
-        "loaded '%s'.model in %0.2fs into %ib",
-        modelname,
-        (clock() - T0),
-        cbsize,
+        "import transformers.automodelfordepthestimation in %0.2fs", (clock() - T0)
     )
 
-    return p, m
+    t, m = standard_loader(T, M, modelname, **kwargs)
+
+    return t, m
 
 
 if __name__ == "__main__":
@@ -257,6 +245,7 @@ if __name__ == "__main__":
         "tts": load_tts,
         "txt2img": load_txt2img,
         "img2txt": load_img2txt,
+        "depth": load_depth,
     }
 
     logger.info("args: '%s'", str(sys.argv))
@@ -275,7 +264,7 @@ if __name__ == "__main__":
                 use_fast=False,
                 remote_code=False,
                 local_files_only=False,
-                low_cpu_mem_usage=False
+                low_cpu_mem_usage=False,
             )
 
         logger.info("all models cached")

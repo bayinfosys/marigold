@@ -1,7 +1,6 @@
 from enum import Enum
 from pydantic import BaseModel, Field
-from typing import Literal, Optional
-from typing import List, Dict, Any
+from typing import List, Dict, Union
 
 
 from datetime import datetime
@@ -110,19 +109,43 @@ class InstructRole(str, Enum):
     USER = "user"
     ASSISTANT = "assistant"
 
-class InstructType(str, Enum):
+
+class InstructMessageContentType(str, Enum):
     TEXT = "text"
     IMAGE = "image"
 
 
-class InstructMessage(BaseModel):
+class InstructMessageImageContent(BaseModel):
+    image: str = Field(..., description="base64 encoded image prompt")
+
+
+class InstructMessageTextContent(BaseModel):
+    """Message content can be either (a) a string, or (b) a dict(type, text)"""
+    text: str = Field(..., description="instruction text")
+
+
+InstructMessageContentList = List[Union[InstructMessageTextContent, InstructMessageImageContent]]
+
+
+class InstructMessageContentHF(BaseModel, use_enum_values=True):
+    """Specific model type for huggingface library
+    This is translated from our specific api type
+    """
+    type_: InstructMessageContentType = Field(default=InstructMessageContentType.TEXT, alias="type", description="optional type of the content in this message")
+    text: str = Field(None, description="text content for instructions")
+
+    class Config:
+        exclude_none = True
+
+
+class InstructMessage(BaseModel, use_enum_values=True):
     """this should match the openai structure
     NB: this structure should be inside a 'message' object
     TODO: add tokens and logprobs
     """
     role: InstructRole
-    type_: InstructType = Field(default=InstructType.TEXT, alias="type", description="optional type of the content for multi-modal models")
-    content: str = Field(..., description="text message or base64 encoded image depending on type parameter")
+    #type_: InstructType = Field(default=InstructType.TEXT, alias="type", description="optional type of the content for multi-modal models")
+    content: Union[str, InstructMessageContentList] = Field(..., description="single text message or list of content types depending on model modality")
 
 
 InstructMessages = List[InstructMessage]
@@ -175,16 +198,3 @@ class Img2TxtResponse(BaseModel):
     model: str
     choices: List[InstructMessage]
     usage: ModelUsageStats
-
-
-class Img2TxtRequest(BaseModel):
-    model: str = Field(..., description="model to fulfill the request")
-    images: List[str] = Field(..., description="base64 encoded jpeg or png")
-    messages: InstructMessages = Field(..., description="messages to be submitted with the image")
-    temperature: float = Field(1.0, description="ignored")
-    max_tokens: int = Field(1000, description="maximum tokens to be generated")
-    seed: int = Field(None, description="random seed for generation")
-    top_k: int = Field(None, description="top_k tokens to consider")
-    top_p: float = Field(None, description="nucleaus sampling by p")
-    repetition_penalty: float = Field(None, description="increase to prevent repetition in output")
-    no_repeat_ngram_size: int = Field(None, description="size of ngrams to prevent repeating")

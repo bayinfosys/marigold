@@ -13,16 +13,19 @@ IMAGE_TRANSFORMERS=sentence-transformers/clip-ViT-L-14 sentence-transformers/cli
 # 1B models
 # NB: these models need keys:
 #INSTRUCTS=apple/openelm-1_1b-instruct apple/openelm-3b-instruct
-#INSTRUCTS=microsoft/phi-2 microsoft/phi-3-mini-128k-instruct llmware/bling-falcon-1b-0.1 cognitivecomputations/tinydolphin-2.8-1.1b unfilteredai/unfilteredai-1b microsoft/phi-3-mini-128k-instruct huggingfacetb/smollm-360m-instruct facebook/blenderbot-400M-distill
-INSTRUCTS=qwen/qwen2-0.5b-instruct qwen/qwen2-1.5b-instruct microsoft/phi-3-mini-128k-instruct llmware/bling-sheared-llama-1.3b-0.1 mistralai/mistral-7b-instruct-v0.3 meta-llama/llama-3.1-8b-instruct microsoft/phi-3-mini-128k-instruct meta-llama/llama-3.2-1b-instruct meta-llama/llama-3.2-3b-instruct deepseek-ai/janus-1.3b chuanli11/llama-3.2-3b-instruct-uncensored
+#INSTRUCTS=microsoft/phi-2 microsoft/phi-3-mini-128k-instruct llmware/bling-falcon-1b-0.1 cognitivecomputations/tinydolphin-2.8-1.1b unfilteredai/unfilteredai-1b microsoft/phi-3-mini-128k-instruct huggingfacetb/smollm-360m-instruct facebook/blenderbot-400M-distill microsoft/phi-3.5-vision-instruct
+INSTRUCTS=qwen/qwen2-0.5b-instruct qwen/qwen2-1.5b-instruct qwen/qwen2.5-0.5b-instruct qwen/qwen2.5-3b-instruct microsoft/phi-3-mini-128k-instruct llmware/bling-sheared-llama-1.3b-0.1 microsoft/phi-3-mini-128k-instruct microsoft/phi-3.5-mini-instruct meta-llama/llama-3.2-1b-instruct meta-llama/llama-3.2-3b-instruct chuanli11/llama-3.2-3b-instruct-uncensored tiiuae/falcon-mamba-7b-instruct h2oai/h2o-danube3.1-4b-chat
 
 # image generative models
 #TXT2IMG=unfilteredai/nsfw-gen-v2.1 stabilityai/sdxl-turbo stabilityai/stable-diffusion-2-1 playgroundai/playground-v2.5-1024px-aesthetic sd-community/sdxl-flash-mini compvis/ldm-text2im-large-256 runwayml/stable-diffusion-v1-5 dream-textures/texture-diffusion black-forest-labs/flux.1-schnell
 TXT2IMG=sd-community/sdxl-flash stabilityai/sd-turbo
 
 # image to text, OCR etc
-#IMG2TXT=llava-hf/llava-onevision-qwen2-0.5b-ov-hf jinhybr/OCR-Donut-CORD
-IMG2TXT=naver-clova-ix/donut-base-finetuned-docvqa
+#IMG2TXT=llava-hf/llava-onevision-qwen2-0.5b-ov-hf jinhybr/OCR-Donut-CORD naver-clova-ix/donut-base-finetuned-docvqa vikhyatk/moondream2 unsloth/llama-3.2-11b-vision-instruct-bnb-4bit h2oai/h2ovl-mississippi-2b
+IMG2TXT=qwen/qwen2-vl-7b-instruct huggingfacetb/smolvlm-instruct
+
+# image segmentation
+IMG2SEG=cidas/clipseg-rd64-refined
 
 # music generation models
 TXT2MUSID=facebook/musicgen-stereo-small
@@ -38,6 +41,9 @@ TXT2MODEL=openai/shap-e
 
 # upscalers
 UPSCALER=compvis/ldm-super-resolution-4x-openimages
+
+# depth estimation
+DEPTH=facebook/dpt-dinov2-small-kitti intel/dpt-large intel/dpt-hybrid-midas vinvino02/glpn-nyu
 
 # tools for processing content
 # magicka: file identifer from google
@@ -210,6 +216,7 @@ cache/img2txt/%:
 	  --entrypoint python3 \
 	  -e HF_HUB_OFFLINE=0 \
 	  -e HF_HUB_DISABLE_PROGRESS_BARS=0 \
+	  -e HF_TOKEN=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 \
 	  -e MODEL_TYPE="img2txt" \
 	  -e MODELNAME=$* \
 	  -e CACHE_DIR=/models \
@@ -224,10 +231,32 @@ cache/img2txt/%:
 cache/img2txt: $(addprefix cache/img2txt/,$(IMG2TXT))
 
 
+cache/depth/%:
+	docker run \
+	  -it \
+	  --rm \
+	  --entrypoint python3 \
+	  -e HF_HUB_OFFLINE=0 \
+	  -e HF_HUB_DISABLE_PROGRESS_BARS=0 \
+	  -e MODEL_TYPE="depth" \
+	  -e MODELNAME=$* \
+	  -e CACHE_DIR=/models \
+	  -e HF_HUB_CACHE=/models \
+	  -e LOCAL_FILES_ONLY=0 \
+	  -v ./cache/models:/models \
+	  -v ./cache/packages:/host:ro \
+	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
+	  $(PROJECT_NAME)/environment:$(TAG) \
+	  models/cache_model.py
+
+
+cache/depth: $(addprefix cache/depth/,$(DEPTH))
+
+
 #
 # cache models command
 #
-cache: cache/text-embedding cache/instruct cache/tts cache/txt2img cache/image-embedding
+cache: cache/text-embedding cache/instruct cache/tts cache/txt2img cache/image-embedding cache/depth
 
 #
 # tools

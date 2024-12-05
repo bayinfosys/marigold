@@ -22,44 +22,64 @@ States:
     Type: Task
     Resource: "${qwen2-05b-instruct}"
     ResultPath: "$.modelResult"
+    TimeoutSeconds: 299
     Next: UpdateStatusToComplete
     Catch:
       - ErrorEquals:
+          - States.Timeout
+        ResultPath: "$.error.info"
+        Next: TimeoutErrorState
+      - ErrorEquals:
           - States.ALL
-        ResultPath: "$.errorInfo"
+        ResultPath: "$.error.info"
         Next: ModelErrorState
 
   ModelQwen215bInstruct:
     Type: Task
     Resource: "${qwen2-15b-instruct}"
     ResultPath: "$.modelResult"
+    TimeoutSeconds: 299
     Next: UpdateStatusToComplete
     Catch:
       - ErrorEquals:
+          - States.Timeout
+        ResultPath: "$.error.info"
+        Next: TimeoutErrorState
+      - ErrorEquals:
           - States.ALL
-        ResultPath: "$.errorInfo"
+        ResultPath: "$.error.info"
         Next: ModelErrorState
 
   ModelPhi3Mini128kInstruct:
     Type: Task
     Resource: "${microsoft-phi-3-mini-128k-instruct}"
     ResultPath: "$.modelResult"
+    TimeoutSeconds: 299
     Next: UpdateStatusToComplete
     Catch:
       - ErrorEquals:
+          - States.Timeout
+        ResultPath: "$.error.info"
+        Next: TimeoutErrorState
+      - ErrorEquals:
           - States.ALL
-        ResultPath: "$.errorInfo"
+        ResultPath: "$.error.info"
         Next: ModelErrorState
 
   ModelLlama321BInstruct:
     Type: Task
     Resource: "${meta-llama-32-1b-instruct}"
     ResultPath: "$.modelResult"
+    TimeoutSeconds: 299
     Next: UpdateStatusToComplete
     Catch:
       - ErrorEquals:
+          - States.Timeout
+        ResultPath: "$.error.info"
+        Next: TimeoutErrorState
+      - ErrorEquals:
           - States.ALL
-        ResultPath: "$.errorInfo"
+        ResultPath: "$.error.info"
         Next: ModelErrorState
 
   UpdateStatusToComplete:
@@ -90,6 +110,24 @@ States:
 
   ModelErrorState:
     Type: Pass
+    ResultPath: "$.error.response"
+    Parameters:
+      created.$: "$$.Execution.StartTime"  # ISO8601 timestamp NOT epoch
+      finish_reason: "error"
+      model.$: "$.body.model"
+      choices: []
+      usage: {}
+    Next: UpdateToError
+
+  TimeoutErrorState:
+    Type: Pass
+    ResultPath: "$.error.response"
+    Parameters:
+      created.$: "$$.Execution.StartTime"  # ISO8601 timestamp NOT epoch
+      finish_reason: "timeout"
+      model.$: "$.body.model"
+      choices: []
+      usage: {}
     Next: UpdateToError
 
   UpdateToError:
@@ -102,13 +140,15 @@ States:
           S.$: "$.destination.userid"
         SK:
           S.$: "$.destination.message_id"
-      UpdateExpression: "SET #status = :status"
+      UpdateExpression: "SET #status = :status, #message = :message"
       ExpressionAttributeNames:
         "#status": "sts"
+        "#message": "rsp"
       ExpressionAttributeValues:
         ":status":
           S: "error"
-    ResultPath: "$.updateToErrorResult"
+        ":message":
+          S.$: "States.JsonToString($.error.response)"
     Next: GeneralErrorState
 
   GeneralErrorState:

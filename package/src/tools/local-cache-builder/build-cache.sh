@@ -30,3 +30,9 @@ pip install \
   --no-cache-dir \
   git+https://github.com/huggingface/diffusers.git
 #  diffusers
+
+# misc support libraries to avoid complex lambda/docker builds
+pip install \
+  --target $TARGET \
+  --no-cache-dir \
+  pydantic
