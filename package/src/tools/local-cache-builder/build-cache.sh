@@ -2,20 +2,17 @@
 
 #
 # install some python packages to a target directory
-# - /host-packages is the default target (FIXME: make a var)
-# - /tmp/requirements.txt is the default install (FIXME: make a var)
-
-TARGET=/host-packages
+# NB: for local install we set PIP_TARGET to /host-packages (mounted in container)
+#     for aws efs, we do not set that var so the packages go to a standard location
+#
 
 # pytorch
 pip install \
-  --target $TARGET \
   --no-cache-dir \
   --extra-index-url https://download.pytorch.org/whl/cpu torch
 
 # huggingface stuff
-pip install \
-  --target $TARGET \
+pip install --upgrade \
   --no-cache-dir \
   transformers \
   sentence-transformers \
@@ -25,14 +22,12 @@ pip install \
   protobuf \
   einops
 
-pip install \
-  --target $TARGET \
+pip install --upgrade \
   --no-cache-dir \
   git+https://github.com/huggingface/diffusers.git
 #  diffusers
 
 # misc support libraries to avoid complex lambda/docker builds
-pip install \
-  --target $TARGET \
+pip install --upgrade \
   --no-cache-dir \
   pydantic

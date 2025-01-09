@@ -16,7 +16,8 @@ data "aws_ami" "latest_amazon_linux_2" {
 
 # library package builders (pytorch, etc)
 data "local_file" "cache_library_sh" {
-  filename = "${path.module}/../../scripts/build-cache.sh"
+#  filename = "${path.module}/../../scripts/build-cache.sh"
+  filename = "${path.module}/../../package/src/tools/local-cache-builder/build-cache.sh"
 }
 
 # load the model cache script from disk

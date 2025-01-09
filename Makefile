@@ -14,14 +14,14 @@ IMAGE_TRANSFORMERS=sentence-transformers/clip-ViT-L-14 sentence-transformers/cli
 # NB: these models need keys:
 #INSTRUCTS=apple/openelm-1_1b-instruct apple/openelm-3b-instruct
 #INSTRUCTS=microsoft/phi-2 microsoft/phi-3-mini-128k-instruct llmware/bling-falcon-1b-0.1 cognitivecomputations/tinydolphin-2.8-1.1b unfilteredai/unfilteredai-1b microsoft/phi-3-mini-128k-instruct huggingfacetb/smollm-360m-instruct facebook/blenderbot-400M-distill microsoft/phi-3.5-vision-instruct
-INSTRUCTS=qwen/qwen2-0.5b-instruct qwen/qwen2-1.5b-instruct qwen/qwen2.5-0.5b-instruct qwen/qwen2.5-3b-instruct microsoft/phi-3-mini-128k-instruct llmware/bling-sheared-llama-1.3b-0.1 microsoft/phi-3-mini-128k-instruct microsoft/phi-3.5-mini-instruct meta-llama/llama-3.2-1b-instruct meta-llama/llama-3.2-3b-instruct chuanli11/llama-3.2-3b-instruct-uncensored tiiuae/falcon-mamba-7b-instruct h2oai/h2o-danube3.1-4b-chat
+INSTRUCTS=qwen/qwen2-0.5b-instruct qwen/qwen2-1.5b-instruct qwen/qwen2.5-0.5b-instruct qwen/qwen2.5-3b-instruct microsoft/phi-3-mini-128k-instruct llmware/bling-sheared-llama-1.3b-0.1 microsoft/phi-3-mini-128k-instruct microsoft/phi-3.5-mini-instruct meta-llama/llama-3.2-1b-instruct meta-llama/llama-3.2-3b-instruct chuanli11/llama-3.2-3b-instruct-uncensored tiiuae/falcon-mamba-7b-instruct h2oai/h2o-danube3.1-4b-chat ibm-granite/granite-3.0-2b-instruct
 
 # image generative models
 #TXT2IMG=unfilteredai/nsfw-gen-v2.1 stabilityai/sdxl-turbo stabilityai/stable-diffusion-2-1 playgroundai/playground-v2.5-1024px-aesthetic sd-community/sdxl-flash-mini compvis/ldm-text2im-large-256 runwayml/stable-diffusion-v1-5 dream-textures/texture-diffusion black-forest-labs/flux.1-schnell
 TXT2IMG=sd-community/sdxl-flash stabilityai/sd-turbo
 
 # image to text, OCR etc
-#IMG2TXT=llava-hf/llava-onevision-qwen2-0.5b-ov-hf jinhybr/OCR-Donut-CORD naver-clova-ix/donut-base-finetuned-docvqa vikhyatk/moondream2 unsloth/llama-3.2-11b-vision-instruct-bnb-4bit h2oai/h2ovl-mississippi-2b
+#IMG2TXT=llava-hf/llava-onevision-qwen2-0.5b-ov-hf jinhybr/OCR-Donut-CORD naver-clova-ix/donut-base-finetuned-docvqa vikhyatk/moondream2 unsloth/llama-3.2-11b-vision-instruct-bnb-4bit h2oai/h2ovl-mississippi-2b google/paligemma2-3b-pt-224
 IMG2TXT=qwen/qwen2-vl-7b-instruct huggingfacetb/smolvlm-instruct
 
 # image segmentation
@@ -44,6 +44,9 @@ UPSCALER=compvis/ldm-super-resolution-4x-openimages
 
 # depth estimation
 DEPTH=facebook/dpt-dinov2-small-kitti intel/dpt-large intel/dpt-hybrid-midas vinvino02/glpn-nyu
+
+# document segmentation
+DOC2SEG=microsoft/layoutlmv3-base
 
 # tools for processing content
 # magicka: file identifer from google
@@ -279,6 +282,7 @@ push/tools: $(addprefix push/tools/,$(TOOLS))
 build/local-cache:
 	# run make build/tools/local-cache-builder to create the image
 	docker run -it \
+	  -e PIP_TARGET=/host-packages \
 	  -v $(shell pwd)/cache/packages/python3.12/site-packages:/host-packages \
 	  $(PROJECT_NAME)/tools/local-cache-builder:$(TAG)
 
