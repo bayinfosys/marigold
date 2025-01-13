@@ -33,8 +33,9 @@ from time import perf_counter as clock
 
 from transformers import set_seed
 
-from shared import lambda_event_to_data, mk_resp, update_results_table, get_memory_usage
+from shared import get_userid_from_event, lambda_event_to_data, mk_resp, update_results_table, get_memory_usage, update_metrics
 from api.models import (
+    ModelType,
     InstructRequest,
     InstructRole,
     InstructMessage,
@@ -58,7 +59,7 @@ class EmptyMessagesError(Exception):
     pass
 
 
-def instruct_process(instruct_request: InstructRequest) -> InstructResponse:
+def instruct_process(user_id: str, instruct_request: InstructRequest) -> InstructResponse:
     """process an instruct request
     This method is the base method to be called from all lambda, sfn, batch etc handlers
     """
@@ -177,17 +178,21 @@ def instruct_process(instruct_request: InstructRequest) -> InstructResponse:
         str(outputs),
     )
 
+    usage = ModelUsageStats(
+        duration=duration,
+        inference=iduration,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        memory_usage=get_memory_usage(),
+    )
+
     response = InstructResponse(
         model=instruct_request.model,
         choices=[InstructMessage(role=InstructRole.ASSISTANT, content=outputs[0])],
-        usage=ModelUsageStats(
-            duration=duration,
-            inference=iduration,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            memory_usage=get_memory_usage(),
-        ),
+        usage=usage
     )
+
+    update_metrics(user_id, ModelType.INSTRUCT, instruct_request.model, response.usage.model_dump())
 
     return response
 
@@ -196,7 +201,13 @@ def lambda_handler(event, context):
     """run the data through the model
     TODO: capture the username and request refs in the logs
     """
-    logger.debug("event: '%s'", str(event))
+    logger.info("event: '%s'", str(event))
+
+    try:
+        user_id = get_userid_from_event(event)
+    except Exception as e:
+        logger.error("failed to get user_id from event '%s'", str(event))
+        return mk_resp(400, {"status": "error", "message": "missing userid"})
 
     try:
         data, mimetype = lambda_event_to_data(event, data_key="body")
@@ -224,7 +235,7 @@ def lambda_handler(event, context):
 
     # do the processing
     try:
-        response = instruct_process(instruct_request).model_dump()
+        response = instruct_process(user_id, instruct_request).model_dump()
     except ModelNotFoundError as e:
         logger.error("'%s' not found [%s]", instruct_request.model, str(e))
         return mk_resp(
@@ -275,7 +286,7 @@ def batch_handler():
 
     if instruct_request:
         try:
-            response = instruct_process(instruct_request).model_dump()
+            response = instruct_process(user_id, instruct_request).model_dump()
         except Exception as e:
             logger.exception(
                 "[%s/%s] failed to process request [%s]", user_id, message_id, str(e)

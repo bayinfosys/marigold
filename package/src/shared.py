@@ -10,6 +10,8 @@ import boto3
 
 from botocore.exceptions import ClientError
 
+from api.enums import ModelType
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")
@@ -28,12 +30,23 @@ def get_userid_from_event(event):
 
     TODO: check specific access method permissions (apikey perms, etc)
     """
-    try:
-        #return event["requestContext"]["identity"]["apiKey"]
-        return event["requestContext"]["authorizer"]["email"]
-    except KeyError:
-        logger.error("requestContext.authorizer.email not found in '%s'", str(event))
-        return "dummy"  # FIXME: return 400
+    dummy_username = "dummy"
+
+    if "requestContext" in event:
+        try:
+            #return event["requestContext"]["identity"]["apiKey"]
+            return event["requestContext"]["authorizer"]["email"]
+        except KeyError:
+            logger.error("requestContext.authorizer.email not found in '%s'", str(event))
+    elif "destination" in event:  # for step function pipelines
+        try:
+            return event["destination"]["userid"]
+        except KeyError:
+            logger.error("destination.userid not found in '%s'", str(event))
+    else:
+        logger.error("requestContext and destination missing from event '%s'", str(event))
+
+    return dummy_username
 
 
 def get_path_from_event(event):
@@ -188,3 +201,37 @@ def update_results_table(user_id: str, message_id: str, results_table: str, resp
     except ClientError as e:
         logger.error("[%s/%s] failed to write on dynamodb:'%s' [%s]", user_id, message_id, results_table, str(e))
         raise
+
+
+def update_metrics(user_id: str, model_type: ModelType, model_name: str, metrics: dict):
+    """write metrics to an sqs queue for logging
+    """
+    sqs_client = boto3.client("sqs", endpoint_url=os.getenv("AWS_SQS_ENDPOINT_URL"))
+
+    metrics_queue_url = os.getenv("METRICS_QUEUE_URL")
+
+    if not metrics_queue_url:
+        logger.warning("metrics_queue_url not found, no metric logging")
+        return
+
+    # send a message to the queue
+    message_body = dict(
+        user_id=user_id,
+        operation=f"{model_type.value}/{model_name}",
+        **metrics
+    )
+
+    logger.info("sending '%s' to '%s'", str(message_body), metrics_queue_url)
+
+    try:
+        # send the data
+        response = sqs_client.send_message(
+            QueueUrl=metrics_queue_url,
+            MessageBody=json.dumps(message_body)
+        )
+
+        logger.info("metrics sent to '%s' [%s]", metrics_queue_url, response["MessageId"])
+        return response["MessageId"]
+    except Exception as e:
+        logger.error("Failed to send metrics '%s' [%s]", metrics_queue_url, str(e))
+        return None

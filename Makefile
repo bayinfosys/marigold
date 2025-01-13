@@ -358,7 +358,7 @@ check-layer:
 	fi
 
 init: check-layer
-	terraform -chdir=tf/$(LAYER) init --upgrade
+	terraform -chdir=tf/$(LAYER) init -upgrade -reconfigure
 validate:
 	terraform -chdir=tf/$(LAYER) validate
 plan:
@@ -367,7 +367,7 @@ plan:
 apply:
 	terraform -chdir=tf/$(LAYER) apply -parallelism=0 new.plan && rm tf/$(LAYER)/new.plan
 destroy:
-	terraform -chdir=tf/$(LAYER) destroy -var-file=../common.tfvars -var-file=../$(ENV).tfvars" -auto-approve
+	terraform -chdir=tf/$(LAYER) destroy -var-file=../common.tfvars -var-file=../$(ENV).tfvars -auto-approve
 get-key:
 	terraform -chdir=tf/03 output -raw api_key_value
 get-asset-bucket:

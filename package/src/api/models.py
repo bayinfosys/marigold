@@ -1,4 +1,5 @@
 from enum import Enum
+
 from pydantic import BaseModel, Field
 from typing import List, Dict, Union
 
@@ -6,22 +7,7 @@ from typing import List, Dict, Union
 from datetime import datetime
 
 
-class ModelType(Enum):
-    TEXT_EMBEDDING = "text-embedding"
-    IMAGE_EMBEDDING = "image-embedding"
-    IMAGE_GEN = "image-generator"
-    AUDIO_GEN = "audio-generator"
-    TTS = "text-to-speech"
-    INSTRUCT = "instruct"
-
-
-class ModelModalities(Enum):
-    TEXT = "text"
-    IMAGE = "image"
-    AUDIO = "audio"
-    VIDEO = "video"
-    EMBEDDING = "embedding"
-    MESH = "mesh"
+from .enums import ModelType, ModelModalities
 
 
 class CacheDestination(BaseModel):
@@ -198,3 +184,7 @@ class Img2TxtResponse(BaseModel):
     model: str
     choices: List[InstructMessage]
     usage: ModelUsageStats
+
+
+# usage response
+UsageResponse = List[ModelUsageStats]

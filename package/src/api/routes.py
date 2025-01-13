@@ -6,6 +6,7 @@ from .models import ListModelsResponse
 from .models import EmbedTextRequest, EmbedImageRequest, EmbeddingsResponse
 from .models import InstructRequest, InstructResponse
 from .models import TTSRequest, TTSResponse
+from .models import UsageResponse
 
 
 lambda_auth = LambdaAuthorizer(
@@ -121,3 +122,17 @@ async def instruct_poll_response(user=Security(lambda_auth)):
 )
 async def tts(body: TTSRequest, user=Security(lambda_auth)):
     return TTSResponse()
+
+
+#
+# usage
+#
+@router.get(
+    "/usage/{key}/{period}",
+    response_model=UsageResponse,
+    aws_lambda_uri="${usage_stats_lambda_arn}",
+    aws_iam_arn="${usage_stats_lambda_iam_role_arn}",
+    tags=["usage"],
+)
+async def usage_stats_response(user=Security(lambda_auth)):
+    return

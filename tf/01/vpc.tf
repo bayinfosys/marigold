@@ -61,6 +61,22 @@ resource "aws_vpc_endpoint" "cloudwatch" {
   })
 }
 
+resource "aws_vpc_endpoint" "sqs" {
+  vpc_id              = module.vpc.vpc_id
+  service_name        = "com.amazonaws.eu-west-2.sqs"
+  vpc_endpoint_type   = "Interface"
+  private_dns_enabled = true
+  subnet_ids          = module.vpc.private_subnets
+
+  security_group_ids = [
+    module.vpc.default_security_group_id
+  ]
+
+  tags = merge(var.project_tags, {
+    Name = join("-", [var.org_name, var.project_name, var.env, "sqs"])
+  })
+}
+
 #
 # sg rules
 #

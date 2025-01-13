@@ -43,6 +43,7 @@ module "model_lambdas" {
     LOAD_IN_4BIT="0"
     REMOTE_CODE="0"
     USE_FAST="0"
+    METRICS_QUEUE_URL=aws_sqs_queue.usage.url
   })
 
   # FIXME: use the efs_access_policy from 01
@@ -54,6 +55,11 @@ module "model_lambdas" {
         "elasticfilesystem:ClientRead"
       ],
       resources = [data.aws_efs_access_point.efs_assets_ro.arn]
+    },
+    sqs_send = {
+      effect    = "Allow",
+      actions   = ["sqs:SendMessage"],
+      resources = [aws_sqs_queue.usage.arn]
     }
   }
 

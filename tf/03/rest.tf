@@ -75,6 +75,7 @@ resource "aws_iam_role_policy" "apigateway_lambda_policy" {
         Resource = [
           data.aws_lambda_function.instruct_polling.arn,
           data.aws_lambda_function.embed_polling.arn,
+          data.aws_lambda_function.usage_stats.arn,
         ]
       }
     ]
@@ -153,6 +154,10 @@ resource "aws_api_gateway_rest_api" "default" {
     lambda_authorizer_name = join("-", [var.org_name, "vecdb", var.env, "auth"])
     lambda_authorizer_uri = data.aws_lambda_function.authorizer_lambda.invoke_arn
     lambda_authorizer_iam_role_arn = aws_iam_role.invocation_role.arn
+
+    # usage
+    usage_stats_lambda_arn = data.aws_lambda_function.usage_stats.invoke_arn
+    usage_stats_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
 
     region = var.region
   })

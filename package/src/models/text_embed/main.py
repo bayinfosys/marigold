@@ -7,9 +7,9 @@ from sentence_transformers.quantization import quantize_embeddings
 
 from time import perf_counter as clock
 
-from shared import lambda_event_to_data, mk_resp, get_memory_usage
+from shared import get_userid_from_event, lambda_event_to_data, mk_resp, get_memory_usage, update_metrics
 
-from api.models import EmbedTextRequest, EmbeddingQuantization, EmbedTextResponse, ModelUsageStats
+from api.models import EmbedTextRequest, EmbeddingQuantization, EmbedTextResponse, ModelUsageStats, ModelType
 
 
 LOAD_PACKAGE_T = clock()
@@ -29,9 +29,16 @@ MODELNAME = os.environ["MODELNAME"]
 
 def lambda_handler(event, context):
     """run the data through the model
-    TODO: validate the input is a single string (should we handle array of strings?)
+    FIXME: validate the input is a single string
+    TODO: should we handle array of strings?
     """
     logger.info("event: '%s'", str(event))
+
+    try:
+        user_id = get_userid_from_event(event)
+    except Exception as e:
+        logger.error("failed to get user_id from event '%s'", str(event))
+        return mk_resp(400, {"status": "error", "message": "missing userid"})
 
     try:
         data, mimetype = lambda_event_to_data(event, data_key="body")
@@ -40,7 +47,7 @@ def lambda_handler(event, context):
         # print("[%s] missing key: '%s'" % (MODELNAME, str(e)))
         return mk_resp(400, {"status": "error", "message": "missing key: '%s'" % str(e)})
 
-    logger.info("[%s] parsed '%s' as '%s'", MODELNAME, str(data), str(mimetype))
+    logger.debug("[%s] parsed '%s' as '%s'", MODELNAME, str(data), str(mimetype))
     # print("[%s] parsed '%s' as '%s'" % (MODELNAME, str(data), str(mimetype)))
 
     #    try:
@@ -125,7 +132,7 @@ def lambda_handler(event, context):
     logger.info("'%s' %i tokens in %0.2fs", MODELNAME, len(embeddings), duration)
     # print("[%s] %i tokens in %0.2fs" % (MODELNAME, len(embeddings), duration))
 
-    embed_text_response = EmbedTextResponse(
+    response = EmbedTextResponse(
         model=MODELNAME,
         embedding=e,
         usage=ModelUsageStats(
@@ -137,8 +144,6 @@ def lambda_handler(event, context):
         ),
     )
 
-    response = embed_text_response.model_dump()
+    update_metrics(user_id, ModelType.TEXT_EMBEDDING, response.model, response.usage.model_dump())
 
-    logger.info("[%s] response '%s'", MODELNAME, str(response))
-
-    return mk_resp(200, response)
+    return mk_resp(200, response.model_dump())

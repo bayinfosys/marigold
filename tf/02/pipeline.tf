@@ -128,14 +128,3 @@ module "tts" {
 
   tags = var.project_tags
 }
-
-resource "aws_dynamodb_table" "lock_table" {
-  name         = join("-", [var.project_name, var.env, "shard-locks"])
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "ShardId"
-
-  attribute {
-    name = "ShardId"
-    type = "S"
-  }
-}
