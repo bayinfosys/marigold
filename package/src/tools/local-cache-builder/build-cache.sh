@@ -9,11 +9,13 @@
 # pytorch
 pip install \
   --no-cache-dir \
+  --break-system-packages \
   --extra-index-url https://download.pytorch.org/whl/cpu torch
 
 # huggingface stuff
 pip install --upgrade \
   --no-cache-dir \
+  --break-system-packages \
   transformers \
   sentence-transformers \
   bitsandbytes \
@@ -24,10 +26,12 @@ pip install --upgrade \
 
 pip install --upgrade \
   --no-cache-dir \
+  --break-system-packages \
   git+https://github.com/huggingface/diffusers.git
 #  diffusers
 
-# misc support libraries to avoid complex lambda/docker builds
+# misc support libraries
 pip install --upgrade \
   --no-cache-dir \
+  --break-system-packages \
   pydantic

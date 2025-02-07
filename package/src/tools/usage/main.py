@@ -53,22 +53,30 @@ def handler(event, context):
         )
         return mk_resp(400, {"status": "error", "message": "not found"})
 
+    period = event["pathParameters"].get("period")
+
+    if not period:
+        if date_range_type == "M":
+            period = datetime.now().strftime("%Y%m")
+        else:
+            period = datetime.now().strftime("%Y%m%d")
+
     # FIXME: check a query string to get the "last" parameter
     last = 10  # last 10 days/months
     operation = "ALL"
 
     # fetch from dynamodb
-    items = get_data(user_id, operation, date_range_type, last)
+    items = get_data(user_id, operation, date_range_type, period, last)
 
     logger.info("[%s/%s] found %i items", user_id, operation, len(items))
 
     if items:
         return mk_resp(200, [json.loads(item["data"]) for item in items])
     else:
-        return mk_resp(404, {"status": "not found"})
+        return mk_resp(200, [])
 
 
-def get_data(user_id, operation, date_range_type, count):
+def get_data(user_id, operation, date_range_type, period, count):
     """Retrieve the metric data from DynamoDB
     Get the `top` latest items sorted by the `date` attribute
     TODO: allow a fixed date_range_key to get from a particular date
@@ -80,7 +88,7 @@ def get_data(user_id, operation, date_range_type, count):
         "PK": PK.format(user_id=user_id),
         "SK": SK.format(
             date_range_type=date_range_type,
-            date_range_key="202501",
+            date_range_key=period,
             operation=operation,
         ),
     }

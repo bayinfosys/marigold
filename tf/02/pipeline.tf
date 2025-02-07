@@ -17,9 +17,12 @@ locals {
     }
   ))
 
-  tts_pipeline_yaml = templatefile("${path.module}/pipelines/tts.yaml", {
+  tts_pipeline_yaml = templatefile("${path.module}/pipelines/tts.yaml", merge({
     for x in keys(var.model_lambdas) : x => module.model_lambdas[x].lambda_function_arn
-  })
+    }, {
+    results_cache_table = aws_dynamodb_table.results_cache.id
+    }
+  ))
 
   # convert the yaml to json for aws
   polling_dummy_pipeline_json = yamldecode(local.polling_dummy_pipeline_yaml)
@@ -118,6 +121,9 @@ module "tts" {
   service_integrations = {
     lambda = {
       lambda = [for k, v in module.model_lambdas : v.lambda_function_arn]
+    }
+    dynamodb = {
+      dynamodb = [aws_dynamodb_table.results_cache.arn]
     }
   }
 

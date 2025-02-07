@@ -27,6 +27,10 @@ data "aws_lambda_function" "embed_polling" {
   function_name = join("-", [var.org_name, var.project_name, var.env, "embed-polling"])
 }
 
+data "aws_lambda_function" "tts_polling" {
+  function_name = join("-", [var.org_name, var.project_name, var.env, "tts-polling"])
+}
+
 data "aws_lambda_function" "usage_stats" {
   function_name = join("-", [var.org_name, var.project_name, var.env, "usage-api"])
 }

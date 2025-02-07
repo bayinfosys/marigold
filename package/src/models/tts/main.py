@@ -5,6 +5,7 @@ https://dl.fbaipublicfiles.com/mms/misc/language_coverage_mms.html
 input must include a language code which must match the model language code in the environment
 
 TODO: creating a mapping from MODELNAME to language code for validation
+TODO: convert the wav to mp3 for response (requires lame executable and subprocess call)
 """
 import os
 import io
@@ -20,8 +21,10 @@ import wave
 
 # from scipy.io.wavfile import write as write_wav
 
-from shared import lambda_event_to_data
-from models.cache_model import load_tts
+from shared import get_userid_from_event, lambda_event_to_data, mk_resp, update_metrics, get_memory_usage
+from api.models import ModelType, ModelUsageStats, TTSResponse
+
+from models.cache_model import load_tts, ModelNotFoundError
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")
@@ -31,7 +34,11 @@ MODELNAME = os.environ["MODELNAME"]
 
 T = clock()
 
-tokenizer, model = load_tts(MODELNAME)
+try:
+    tokenizer, model = load_tts(MODELNAME)
+except ModelNotFoundError as e:
+    logger.error("unable to load '%s' [%s]", str(MODELNAME), str(e))
+    tokenizer, model = None, None
 
 logger.info("'%s' loaded in '%0.2fs", MODELNAME, (clock() - T))
 
@@ -74,19 +81,37 @@ def numpy_to_wave(arr, sample_rate: int):
 
 def lambda_handler(event, context):
     """run the data through the model"""
+    logger.info("event: '%s'", str(event))
+
     try:
-        data, mimetype = lambda_event_to_data(event)
+        user_id = get_userid_from_event(event)
+    except Exception as e:
+        logger.error("failed to get user_id from event '%s' [%s]", str(event), str(e))
+        return mk_resp(400, {"status": "error", "message": "missing userid"})
+
+    try:
+        data, mimetype = lambda_event_to_data(event, data_key="body")
     except KeyError as e:
-        return {
-            "status": "error",
-            "status_code": 400,
-            "message": "missing key: '%s'" % str(e),
-        }
+        return mk_resp(400, {"status": "error", "message": "missing key: '%s'" % str(e)})
 
     logger.info("reading '%s' '%s'", str(data), mimetype)
 
+    try:
+        text = data["input"]
+    except KeyError as e:
+        logger.error("'text' not found in '%s' [%s]", str(data), str(e))
+        return mk_resp(400, {"status": "error", "message": "missing 'text' in 'input'"})
+
+    try:
+        lang_code = data["lang_code"]
+    except KeyError as e:
+        logger.warning("'lang_code' not specified in '%s' [%s]", str(data), str(e))
+        lang_code = "en-GB"
+
+    logger.info("tts over: '%s' [%i]", str(text), len(text))
+
     T = clock()
-    inputs = tokenizer(data, return_tensors="pt")
+    inputs = tokenizer(text, return_tensors="pt")
 
     T1 = clock()
     with torch.no_grad():
@@ -118,23 +143,32 @@ def lambda_handler(event, context):
 
     logger.info("wav: '%s' [%i]", str(type(wav)), len(wav))
 
-    # TODO: convert to mp3 and return
+    # convert to mp3 and return
     # import scipy
     # scipy.io.wavfile.write("techno.wav", rate=model.config.sampling_rate, data=output.float().numpy())
 
-    encoded = base64.b64encode(wav)
+    audio = base64.b64encode(wav).decode()
 
-    logger.info("%ib encoded to %ib", len(wav), len(encoded))
+    logger.info("%ib encoded to %ib", len(wav), len(audio))
 
-    return {
-        "headers": {"Content-Type": "audio/wav"},
-        "statusCode": 200,
-        "body": encoded,
-        "isBase64Encoded": True,
-        "stats": {
-            "duration": duration,
-            "inference": iduration,
-            "converion": cduration,
-            "input_tokens": inputs.input_ids.nelement(),
-        },
-    }
+    usage = ModelUsageStats(
+        duration=duration,
+        inference=iduration,
+        #conversion=cduration,
+        input_tokens=inputs.input_ids.nelement(),
+        output_tokens=0,
+        memory_usage=get_memory_usage()
+    )
+
+    # FIXME: if len(audio) > SOME_THRESHOLD write to s3 and return a link
+    response = TTSResponse(
+        model=MODELNAME,
+        usage=usage,
+        lang_code=lang_code,
+        data=audio,
+        mimetype="audio/wav"
+    )
+
+    update_metrics(user_id, ModelType.TTS, MODELNAME, response.usage.model_dump())
+
+    return mk_resp(200, response.model_dump(), isBase64Encoded=False)

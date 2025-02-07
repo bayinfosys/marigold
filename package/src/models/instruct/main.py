@@ -235,7 +235,7 @@ def lambda_handler(event, context):
 
     # do the processing
     try:
-        response = instruct_process(user_id, instruct_request).model_dump()
+        response = instruct_process(user_id, instruct_request)
     except ModelNotFoundError as e:
         logger.error("'%s' not found [%s]", instruct_request.model, str(e))
         return mk_resp(
@@ -255,8 +255,7 @@ def lambda_handler(event, context):
     # NB: this response must be a valid lambda apigw response object
     return mk_resp(
         200,
-        response,
-        headers={"Content-Type": "application/json"},
+        response.model_dump(),
         isBase64Encoded=False,
     )
 

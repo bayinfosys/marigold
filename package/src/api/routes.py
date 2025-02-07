@@ -46,6 +46,7 @@ router = AWSAPIRouter()
 async def embed_text(body: EmbedTextRequest, user=Security(lambda_auth)):
     return EmbeddingsResponse()
 
+
 @router.get(
     "/embed/text/{message_id}",
     description="retrieve previously computed embeddings",
@@ -60,7 +61,7 @@ async def fetch_embed_text(user=Security(lambda_auth)):
 
 # @router.post(
 #    "/embed/text/direct",
-#    description="call the embed text model directly, with no polling buffer. NB: this call may fail",
+#    description="call the embed text model directly, with no polling buffer.",
 #    response_model=EmbeddingsResponse,
 #    aws_lambda_uri="${text_embedding_lambda_function_arn}",
 #    aws_iam_arn="${text_embedding_invoke_lambda_iam_role_arn}",
@@ -89,12 +90,9 @@ async def embed_image(body: EmbedImageRequest, user=Security(lambda_auth)):
     response_model=InstructResponse,
     aws_lambda_uri="${instruct_polling_start_lambda_arn}",
     aws_iam_arn="${instruct_polling_start_lambda_iam_role_arn}",
-# direct invocation can happen like this:
-#    aws_sfn_sync_arn="${instruct_step_function_arn}",
-#    aws_iam_arn="${instruct_step_function_iam_role_arn}",
     tags=["models", "instruct", "chat"],
 )
-async def instruct_new_message(body: InstructRequest, user=Security(lambda_auth)):
+async def instruct_request(body: InstructRequest, user=Security(lambda_auth)):
     return InstructResponse()
 
 
@@ -116,12 +114,23 @@ async def instruct_poll_response(user=Security(lambda_auth)):
 @router.post(
     "/tts",
     response_model=TTSResponse,
-    aws_sfn_sync_arn="${tts_step_function_arn}",
-    aws_iam_arn="${tts_step_function_iam_role_arn}",
+    aws_lambda_uri="${tts_polling_start_lambda_arn}",
+    aws_iam_arn="${tts_polling_start_lambda_iam_role_arn}",
     tags=["models", "text-to-speech"],
 )
 async def tts(body: TTSRequest, user=Security(lambda_auth)):
     return TTSResponse()
+
+
+@router.get(
+    "/tts/{message_id}",
+    response_model=TTSResponse,
+    aws_lambda_uri="${tts_polling_check_lambda_arn}",
+    aws_iam_arn="${tts_polling_check_lambda_iam_role_arn}",
+    tags=["models", "tts", "chat"],
+)
+async def tts_poll_response(user=Security(lambda_auth)):
+    return
 
 
 #

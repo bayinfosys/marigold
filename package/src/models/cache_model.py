@@ -7,12 +7,6 @@ and also load the models at runtime from the cache.
 
 NB: this laods models at runtime, see these threads for HF loading optimization issues:
 https://huggingface.co/mosaicml/mpt-7b-instruct/discussions/6
-
-TODO: have a separate cache area for each model type, to separate
-      text-embedding, instruct, etc. this will aid billing and allow
-      separate premium tiers for search, chat, generation, etc.
-
-FIXME: standardise loading time/mem measurement and logging across model types
 """
 import os
 import logging
@@ -42,8 +36,6 @@ def standard_loader(
     """load a standard T.from_pretrained and M.from_pretrained
     where T is one of AutoTokenizer, AutoImageProcess etc
     and M is one of AutoModel, AutoModelForDepthEstimation etc
-
-    this just does the standard logging of times and memory usage
     """
     # can't do these asserts without needing the type imports, can we check names?
     # assert T in (AutoImageProcessor, AutoTokenizer)
@@ -111,25 +103,17 @@ def standard_loader(
 
 def load_instruct(modelname: str, **kwargs):
     """instruct models AKA chatbots"""
-    T0 = clock()
     from transformers import AutoTokenizer as T
-
-    logger.info("imported transformers.toks in %0.2fs", (clock() - T0))
-
-    T0 = clock()
     from transformers import AutoModelForCausalLM as M
 
-    logger.info("import transformers.model in %0.2fs", (clock() - T0))
-
-    t, m = standard_loader(T, M, modelname, **kwargs)
-
-    return t, m
+    return standard_loader(T, M, modelname, **kwargs)
 
 
 def load_text_embedding(modelname: str, cache_dir: str = None, **kwargs):
     """text-to-vector do text embeddings
     NB: we should avoid using the sentence-transformers lib directly, and use
         the tokenizer/model setup so we can replicate the standard flow/metrics
+    NB: SentenceTransformer has no .from_pretrained method
     """
     from transformers import AutoTokenizer as T
     from sentence_transformers import SentenceTransformer as ST
@@ -151,28 +135,30 @@ def load_image_embedding(modelname: str, cache_dir: str = None, **kwargs):
     """image-to-vector do image embeddings
     NB: we use sentence transformers to do clip models so we can support text search over images
     """
-    # from transformers import AutoImageProcessor as P
-    # from transformers import AutoModel as ST
+    from transformers import AutoImageProcessor as P
+    from transformers import AutoModel as M
 
-    # P.from_pretrained(modelname, cache_dir=cache_dir)
-    # ST.from_pretrained(modelname, cache_dir=cache_dir)
-
-    from sentence_transformers import SentenceTransformer
-
-    m = SentenceTransformer(modelname, cache_folder=cache_dir)
-
-    return m
+    return standard_loader(P, M, modelname, **kwargs)
 
 
 def load_tts(modelname: str, cache_dir: str = None, **kwargs):
     """text-to-speech"""
-    from transformers import VitsModel as M
+    from transformers import AutoModelForTextToWaveform as M
+    from transformers import AutoModelForSeq2SeqLM
     from transformers import AutoTokenizer as T
 
-    t = T.from_pretrained(modelname, cache_dir=cache_dir)
-    m = M.from_pretrained(modelname, cache_dir=cache_dir)
+    if modelname.startswith("parler-tts/"):
+        return None, AutoModelForSeq2SeqLM.from_pretrained(modelname, cache_dir=cache_dir)
+    else:
+        return standard_loader(T, M, modelname, **kwargs)
 
-    return t, m
+
+def load_txt2audio(modelname: str, cache_dir: str = None, **kwargs):
+    """txt to audio/music"""
+    from transformers import AutoTokenizer as T
+    from transformers import AutoModelForTextToWaveform as M
+
+    return standard_loader(T, M, modelname, **kwargs)
 
 
 def load_txt2img(modelname: str, cache_dir: str = None, **kwargs):
@@ -188,41 +174,22 @@ def load_txt2img(modelname: str, cache_dir: str = None, **kwargs):
 
 def load_img2txt(modelname: str, **kwargs):
     """image-to-text models do captions, ocr, etc"""
-    T0 = clock()
     from transformers import AutoProcessor as T
-
-    logger.info("imported transformers.proc in %0.2fs", (clock() - T0))
-
-    T0 = clock()
     from transformers import AutoModelForVision2Seq as M
 
-    logger.info("import transformers.model in %0.2fs", (clock() - T0))
-
-    t, m = standard_loader(T, M, modelname, **kwargs)
-
-    return t, m
+    return standard_loader(T, M, modelname, **kwargs)
 
 
 def load_depth(modelname: str, **kwargs):
-    """depth estimator
-    processor = AutoImageProcessor.from_pretrained("facebook/dpt-dinov2-small-kitti")
-    model = AutoModelForDepthEstimation.from_pretrained("facebook/dpt-dinov2-small-kitti")
-    """
-    T0 = clock()
+    """depth estimator"""
     from transformers import AutoImageProcessor as T
-
-    logger.info("imported transformers.autoimageprocessor in %0.2fs", (clock() - T0))
-
-    T0 = clock()
     from transformers import AutoModelForDepthEstimation as M
 
-    logger.info(
-        "import transformers.automodelfordepthestimation in %0.2fs", (clock() - T0)
-    )
+    return standard_loader(T, M, modelname, **kwargs)
 
-    t, m = standard_loader(T, M, modelname, **kwargs)
 
-    return t, m
+def load_img2mesh(modelname: str, **kwargs):
+    pass
 
 
 if __name__ == "__main__":
@@ -246,6 +213,8 @@ if __name__ == "__main__":
         "txt2img": load_txt2img,
         "img2txt": load_img2txt,
         "depth": load_depth,
+        "txt2audio": load_txt2audio,
+        "img2mesh": load_img2mesh
     }
 
     logger.info("args: '%s'", str(sys.argv))

@@ -75,6 +75,7 @@ resource "aws_iam_role_policy" "apigateway_lambda_policy" {
         Resource = [
           data.aws_lambda_function.instruct_polling.arn,
           data.aws_lambda_function.embed_polling.arn,
+          data.aws_lambda_function.tts_polling.arn,
           data.aws_lambda_function.usage_stats.arn,
         ]
       }
@@ -139,14 +140,21 @@ resource "aws_api_gateway_rest_api" "default" {
     instruct_polling_check_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
 
 
+    tts_polling_start_lambda_arn = data.aws_lambda_function.tts_polling.invoke_arn
+    tts_polling_start_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
+
+    tts_polling_check_lambda_arn = data.aws_lambda_function.tts_polling.invoke_arn
+    tts_polling_check_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
+
+
     image_embedding_step_function_arn = data.aws_sfn_state_machine.text_embedding.arn
     image_embedding_step_function_iam_role_arn = aws_iam_role.apigateway_stepfunctions.arn
 
 #    instruct_step_function_arn = data.aws_sfn_state_machine.instruct.arn
 #    instruct_step_function_iam_role_arn = aws_iam_role.apigateway_stepfunctions.arn
 
-    tts_step_function_arn = data.aws_sfn_state_machine.tts.arn
-    tts_step_function_iam_role_arn = aws_iam_role.apigateway_stepfunctions.arn
+#    tts_step_function_arn = data.aws_sfn_state_machine.tts.arn
+#    tts_step_function_iam_role_arn = aws_iam_role.apigateway_stepfunctions.arn
 
 #    models_definition_arn = "arn:aws:apigateway:${var.region}:s3:path/${aws_s3_bucket.www.id}/docs/models.json"
 #    models_definition_iam_role_arn = aws_iam_role.apigateway_s3_read.arn

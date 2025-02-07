@@ -13,6 +13,9 @@ available_models = {
   "qwen/qwen2-1.5b-instruct" = { model_type = "instruct" },
   "microsoft/phi-3-mini-128k-instruct" = { model_type = "instruct" },
   "meta-llama/llama-3.2-1b-instruct" = { model_type = "instruct" },
+
+  "facebook/mms-tts-eng" = { model_type = "tts" },
+  "facebook/mms-tts-cym" = { model_type = "tts" },
 }
 
 model_lambdas = {

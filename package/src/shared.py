@@ -162,7 +162,7 @@ def mk_resp(statusCode, body, headers=None, **kwargs):
         raise ValueError("statusCode must be an integer")
 
     if not isinstance(body, str):
-        raise ValueError("body must be a string")
+        raise ValueError("body must be a string [recv: '%s']" % str(type(body)))
 
     if APPEND_CORS_HEADERS:
         headers.update(cors_headers())
@@ -205,6 +205,8 @@ def update_results_table(user_id: str, message_id: str, results_table: str, resp
 
 def update_metrics(user_id: str, model_type: ModelType, model_name: str, metrics: dict):
     """write metrics to an sqs queue for logging
+
+    NB: all model_lambdas in terraform have access to this queue and envvars
     """
     sqs_client = boto3.client("sqs", endpoint_url=os.getenv("AWS_SQS_ENDPOINT_URL"))
 

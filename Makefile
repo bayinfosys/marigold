@@ -22,22 +22,23 @@ TXT2IMG=sd-community/sdxl-flash stabilityai/sd-turbo
 
 # image to text, OCR etc
 #IMG2TXT=llava-hf/llava-onevision-qwen2-0.5b-ov-hf jinhybr/OCR-Donut-CORD naver-clova-ix/donut-base-finetuned-docvqa vikhyatk/moondream2 unsloth/llama-3.2-11b-vision-instruct-bnb-4bit h2oai/h2ovl-mississippi-2b google/paligemma2-3b-pt-224
-IMG2TXT=qwen/qwen2-vl-7b-instruct huggingfacetb/smolvlm-instruct
+IMG2TXT=qwen/qwen2-vl-7b-instruct huggingfacetb/smolvlm-instruct huggingfacetb/smolvlm-256m-instruct huggingfacetb/smolvlm-500m-instruct
 
 # image segmentation
 IMG2SEG=cidas/clipseg-rd64-refined
 
-# music generation models
-TXT2MUSID=facebook/musicgen-stereo-small
+# music/audio generation models
+#TXT2AUDIO=facebook/musicgen-stereo-small suno/bark stabilityai/stable-audio-open-1.0
+TXT2AUDIO=facebook/musicgen-stereo-small suno/bark
 
 # text to speech
 # see: https://huggingface.co/models?sort=trending&search=facebook%2Fmms-tts
 #      https://dl.fbaipublicfiles.com/mms/misc/language_coverage_mms.html
 #TXT2SPEECH=facebook/mms-tts-eng facebook/mms-tts-tha facebook/mms-tts-yor facebook/mms-tts-som facebook/mms-tts-mon facebook/mms-tts-abi facebook/mms-tts-abp facebook/mms-tts-bmr facebook/mms-tts-aca facebook/mms-tts-cwe facebook/mms-tts-hak facebook/mms-tts-bmu facebook/mms-tts-kjg facebook/mms-tts-acd facebook/mms-tts-cwt facebook/mms-tts-mai facebook/mms-tts-hap facebook/mms-tts-myx facebook/mms-tts-por facebook/mms-tts-bmv facebook/mms-tts-cya facebook/mms-tts-ace facebook/mms-tts-sqi facebook/mms-tts-kjh facebook/mms-tts-cym
-TXT2SPEECH=facebook/mms-tts-eng facebook/mms-tts-cym facebook/mms-tts-deu facebook/mms-tts-fra facebook/mms-tts-spa facebook/mms-tts-fin facebook/mms-tts-nld
+TXT2SPEECH=facebook/mms-tts-eng facebook/mms-tts-cym facebook/mms-tts-deu facebook/mms-tts-fra suno/bark parler-tts/parler-tts-large-v1 parler-tts/parler-tts-mini-v1
 
 # text to model
-TXT2MODEL=openai/shap-e
+IMG2MESH=openai/shap-e tencent/hunyuan3d-2 stabilityai/triposr facebook/vfusion3d
 
 # upscalers
 UPSCALER=compvis/ldm-super-resolution-4x-openimages
@@ -47,6 +48,9 @@ DEPTH=facebook/dpt-dinov2-small-kitti intel/dpt-large intel/dpt-hybrid-midas vin
 
 # document segmentation
 DOC2SEG=microsoft/layoutlmv3-base
+
+# robot control
+ROBOT=lerobot/pi0
 
 # tools for processing content
 # magicka: file identifer from google
@@ -255,11 +259,52 @@ cache/depth/%:
 
 cache/depth: $(addprefix cache/depth/,$(DEPTH))
 
+cache/txt2audio/%:
+	docker run \
+	  -it \
+	  --rm \
+	  --entrypoint python3 \
+	  -e HF_HUB_OFFLINE=0 \
+	  -e HF_HUB_DISABLE_PROGRESS_BARS=0 \
+	  -e MODEL_TYPE="txt2audio" \
+	  -e HF_TOKEN=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 \
+	  -e MODELNAME=$* \
+	  -e CACHE_DIR=/models \
+	  -e HF_HUB_CACHE=/models \
+	  -e LOCAL_FILES_ONLY=0 \
+	  -v ./cache/models:/models \
+	  -v ./cache/packages:/host:ro \
+	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
+	  $(PROJECT_NAME)/environment:$(TAG) \
+	  models/cache_model.py
+
+cache/txt2audio: $(addprefix cache/txt2audio/,$(TXT2AUDIO))
+
+
+cache/img2mesh/%:
+	docker run \
+	  -it \
+	  --rm \
+	  --entrypoint python3 \
+	  -e HF_HUB_OFFLINE=0 \
+	  -e HF_HUB_DISABLE_PROGRESS_BARS=0 \
+	  -e MODEL_TYPE="img2mesh" \
+	  -e MODELNAME=$* \
+	  -e CACHE_DIR=/models \
+	  -e HF_HUB_CACHE=/models \
+	  -e LOCAL_FILES_ONLY=0 \
+	  -v ./cache/models:/models \
+	  -v ./cache/packages:/host:ro \
+	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
+	  $(PROJECT_NAME)/environment:$(TAG) \
+	  models/cache_model.py
+
+cache/img2mesh: $(addprefix cache/img2mesh/,$(IMG2MESH))
 
 #
 # cache models command
 #
-cache: cache/text-embedding cache/instruct cache/tts cache/txt2img cache/image-embedding cache/depth
+cache: cache/text-embedding cache/instruct cache/tts cache/txt2img cache/image-embedding cache/depth cache/txt2audio
 
 #
 # tools
@@ -326,6 +371,7 @@ build/api-definition:
 	  -v $(shell pwd)/package/src/api:/app/routes:ro \
 	  -v $(shell pwd)/tf/03/rest:/out \
 	  aws-tools/openapi_extract:v0.1 \
+	    --title mdl \
 	    --router routes.routes:router \
 	    --out-public /out/api_public_definition.json \
 	    --out-private /out/api_private_definition.json \

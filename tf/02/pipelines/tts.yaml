@@ -4,25 +4,25 @@ States:
   SelectModel:
     Type: Choice
     Choices:
-      - Variable: "$.language_code"
+      - Variable: "$.body.language_code"
         StringEquals: "en-GB"
         Next: MMSTTSEng
-      - Variable: "$.language_code"
+      - Variable: "$.body.language_code"
         StringEquals: "cy-GB"
         Next: MMSTTSCym
-      - Variable: "$.language_code"
+      - Variable: "$.body.language_code"
         StringEquals: "de-DE"
         Next: MMSTTSDeu
-      - Variable: "$.language_code"
+      - Variable: "$.body.language_code"
         StringEquals: "fr-FR"
         Next: MMSTTSFra
-      - Variable: "$.language_code"
+      - Variable: "$.body.language_code"
         StringEquals: "es-ES"
         Next: MMSTTSEsp
-      - Variable: "$.language_code"
+      - Variable: "$.body.language_code"
         StringEquals: "fn-FN"
         Next: MMSTTSFnn
-      - Variable: "$.language_code"
+      - Variable: "$.body.language_code"
         StringEquals: "nl-NL"
         Next: MMSTTSNld
     Default: FailState
@@ -30,30 +30,59 @@ States:
   MMSTTSEng:
     Type: Task
     Resource: "${mms-tts-eng}"
-    Next: SuccessState
+    ResultPath: "$.results"
+    Next: UpdateStatusToComplete
   MMSTTSCym:
     Type: Task
     Resource: "${mms-tts-cym}"
-    Next: SuccessState
+    ResultPath: "$.results"
+    Next: UpdateStatusToComplete
   MMSTTSDeu:
     Type: Task
     Resource: "${mms-tts-deu}"
-    Next: SuccessState
+    ResultPath: "$.results"
+    Next: UpdateStatusToComplete
   MMSTTSFra:
     Type: Task
     Resource: "${mms-tts-fra}"
-    Next: SuccessState
+    ResultPath: "$.results"
+    Next: UpdateStatusToComplete
   MMSTTSEsp:
     Type: Task
     Resource: "${mms-tts-spa}"
-    Next: SuccessState
+    ResultPath: "$.results"
+    Next: UpdateStatusToComplete
   MMSTTSFnn:
     Type: Task
     Resource: "${mms-tts-fin}"
-    Next: SuccessState
+    ResultPath: "$.results"
+    Next: UpdateStatusToComplete
   MMSTTSNld:
     Type: Task
     Resource: "${mms-tts-nld}"
+    ResultPath: "$.results"
+    Next: UpdateStatusToComplete
+
+  UpdateStatusToComplete:
+    Type: Task
+    Resource: "arn:aws:states:::dynamodb:updateItem"
+    Parameters:
+      TableName: "${results_cache_table}"
+      Key:
+        PK:
+          S.$: "$.destination.userid"
+        SK:
+          S.$: "$.destination.message_id"
+      UpdateExpression: "SET #status = :status, #response = :response"
+      ExpressionAttributeNames:
+        "#status": "sts"
+        "#response": "rsp"
+      ExpressionAttributeValues:
+        ":status":
+          S: "complete"
+        ":response":
+          S.$: "$.results.body"
+    ResultPath: "$.dynamoResult"
     Next: SuccessState
 
   SuccessState:

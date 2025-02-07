@@ -168,7 +168,13 @@ class InstructSFNSubmission(BaseModel):
 
 # tts
 class TTSResponse(BaseModel):
+    created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
+    finish_reason: str = "stop"
+    model: str
+    usage: ModelUsageStats
+    lang_code: str
     data: str
+    mimetype: str
 
 
 class TTSRequest(BaseModel):
