@@ -78,6 +78,14 @@ resource "aws_iam_role_policy" "apigateway_lambda_policy" {
           data.aws_lambda_function.tts_polling.arn,
           data.aws_lambda_function.usage_stats.arn,
         ]
+      },
+      {
+        Action = "s3:GetObject",
+        Effect = "Allow",
+        Resource = [
+          "${data.aws_s3_bucket.results.arn}/*",
+          "${data.aws_s3_bucket.assets.arn}/*",
+        ]
       }
     ]
   })
@@ -146,6 +154,8 @@ resource "aws_api_gateway_rest_api" "default" {
     tts_polling_check_lambda_arn = data.aws_lambda_function.tts_polling.invoke_arn
     tts_polling_check_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
 
+    s3_read_tts_object_iam_role_arn = aws_iam_role.apigateway_lambda.arn
+
 
     image_embedding_step_function_arn = data.aws_sfn_state_machine.text_embedding.arn
     image_embedding_step_function_iam_role_arn = aws_iam_role.apigateway_stepfunctions.arn
@@ -166,6 +176,13 @@ resource "aws_api_gateway_rest_api" "default" {
     # usage
     usage_stats_lambda_arn = data.aws_lambda_function.usage_stats.invoke_arn
     usage_stats_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
+
+    # cache
+    s3_cache_object_bucket_name = data.aws_s3_bucket.results.id
+
+    # web assets
+    s3_assets_bucket_name = data.aws_s3_bucket.assets.id
+    s3_read_api_object_iam_role_arn = aws_iam_role.apigateway_lambda.arn
 
     region = var.region
   })

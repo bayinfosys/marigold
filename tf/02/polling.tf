@@ -28,6 +28,30 @@ resource "aws_dynamodb_table" "results_cache" {
   tags = var.project_tags
 }
 
+resource "aws_s3_bucket" "results_bucket" {
+  bucket_prefix = join("-", [var.org_name, var.project_name, var.env, "results-cache"])
+
+  tags = var.project_tags
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "results_cache" {
+  bucket = aws_s3_bucket.results_bucket.id
+
+  rule {
+    id     = "Move to STANDARD_IA after 10 days"
+    status = "Enabled"
+
+    transition {
+      days          = 30
+      storage_class = "STANDARD_IA"
+    }
+  }
+}
+
+output "results_bucket" {
+  value = aws_s3_bucket.results_bucket.id
+}
+
 module "instruct_polling" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "~> 3.0"

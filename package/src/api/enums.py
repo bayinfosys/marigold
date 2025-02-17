@@ -13,6 +13,7 @@ class ModelType(Enum):
     AUDIO_GEN = "audio-generator"
     TTS = "text-to-speech"
     INSTRUCT = "instruct"
+    IMAGE_MASK = "segmentation"
 
 
 class ModelModalities(Enum):

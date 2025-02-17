@@ -180,6 +180,14 @@ def load_img2txt(modelname: str, **kwargs):
     return standard_loader(T, M, modelname, **kwargs)
 
 
+def load_img2mask(modelname: str, **kwargs):
+    """image-to-mask models do segemenations, instances, etc"""
+    from transformers import AutoProcessor as T
+    from transformers import AutoModelForMaskGeneration as M
+
+    return standard_loader(T, M, modelname, **kwargs)
+
+
 def load_depth(modelname: str, **kwargs):
     """depth estimator"""
     from transformers import AutoImageProcessor as T
@@ -212,6 +220,7 @@ if __name__ == "__main__":
         "tts": load_tts,
         "txt2img": load_txt2img,
         "img2txt": load_img2txt,
+        "img2mask": load_img2mask,
         "depth": load_depth,
         "txt2audio": load_txt2audio,
         "img2mesh": load_img2mesh

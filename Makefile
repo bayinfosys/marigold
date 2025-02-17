@@ -25,7 +25,8 @@ TXT2IMG=sd-community/sdxl-flash stabilityai/sd-turbo
 IMG2TXT=qwen/qwen2-vl-7b-instruct huggingfacetb/smolvlm-instruct huggingfacetb/smolvlm-256m-instruct huggingfacetb/smolvlm-500m-instruct
 
 # image segmentation
-IMG2SEG=cidas/clipseg-rd64-refined
+#IMG2MASK=cidas/clipseg-rd64-refined facebook/sam-vit-huge
+IMG2MASK=facebook/sam-vit-huge
 
 # music/audio generation models
 #TXT2AUDIO=facebook/musicgen-stereo-small suno/bark stabilityai/stable-audio-open-1.0
@@ -259,6 +260,28 @@ cache/depth/%:
 
 cache/depth: $(addprefix cache/depth/,$(DEPTH))
 
+# image segmentation
+cache/img2mask/%:
+	docker run \
+	  -it \
+	  --rm \
+	  --entrypoint python3 \
+	  -e HF_HUB_OFFLINE=0 \
+	  -e HF_HUB_DISABLE_PROGRESS_BARS=0 \
+	  -e HF_TOKEN=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 \
+	  -e MODEL_TYPE="img2mask" \
+	  -e MODELNAME=$* \
+	  -e CACHE_DIR=/models \
+	  -e HF_HUB_CACHE=/models \
+	  -e LOCAL_FILES_ONLY=0 \
+	  -v ./cache/models:/models \
+	  -v ./cache/packages:/host:ro \
+	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
+	  $(PROJECT_NAME)/environment:$(TAG) \
+	  models/cache_model.py
+
+cache/img2mask: $(addprefix cache/img2mask/,$(IMG2MASK))
+
 cache/txt2audio/%:
 	docker run \
 	  -it \
@@ -304,7 +327,7 @@ cache/img2mesh: $(addprefix cache/img2mesh/,$(IMG2MESH))
 #
 # cache models command
 #
-cache: cache/text-embedding cache/instruct cache/tts cache/txt2img cache/image-embedding cache/depth cache/txt2audio
+cache: cache/text-embedding cache/instruct cache/tts cache/txt2img cache/image-embedding cache/depth cache/txt2audio cache/img2mask
 
 #
 # tools

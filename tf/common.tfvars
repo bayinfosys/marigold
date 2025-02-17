@@ -16,6 +16,8 @@ available_models = {
 
   "facebook/mms-tts-eng" = { model_type = "tts" },
   "facebook/mms-tts-cym" = { model_type = "tts" },
+
+  "facebook/sam-vit-huge" = { model_type = "img2mask" },
 }
 
 model_lambdas = {
@@ -161,5 +163,14 @@ model_lambdas = {
       MODEL_TYPE = "depth"
     }
     command = "models.depth.main.lambda_handler"
+  },
+
+  "facebook-sam-vit-huge" = {
+    image = "environment"
+    environment_variables = {
+      MODELNAME = "facebook/sam-vit-huge"
+      MODELTYPE = "img2mask"
+    }
+    command = "models.img2mask.main.lambda_handler"
   },
 }
