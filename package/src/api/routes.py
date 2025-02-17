@@ -2,7 +2,6 @@ from fastapi import Security
 
 from fastapi_aws import AWSAPIRouter, LambdaAuthorizer
 
-from .models import ListModelsResponse
 from .models import EmbedTextRequest, EmbedImageRequest, EmbeddingsResponse
 from .models import InstructRequest, InstructResponse
 from .models import TTSRequest, TTSResponse
@@ -127,9 +126,20 @@ async def tts(body: TTSRequest, user=Security(lambda_auth)):
     response_model=TTSResponse,
     aws_lambda_uri="${tts_polling_check_lambda_arn}",
     aws_iam_arn="${tts_polling_check_lambda_iam_role_arn}",
-    tags=["models", "tts", "chat"],
+    tags=["models", "text-to-speech"],
 )
 async def tts_poll_response(user=Security(lambda_auth)):
+    return
+
+
+@router.get(
+    "/tts/{message_id}/{fieldname}",
+    aws_s3_bucket="${s3_cache_object_bucket_name}",
+    aws_object_key="{path}",
+    aws_iam_arn="${s3_read_tts_object_iam_role_arn}",
+    tags=["models", "text-to-speech"],
+)
+async def tts_object_response(user=Security(lambda_auth)):
     return
 
 
@@ -144,4 +154,18 @@ async def tts_poll_response(user=Security(lambda_auth)):
     tags=["usage"],
 )
 async def usage_stats_response(user=Security(lambda_auth)):
+    return
+
+
+#
+# api spec
+#
+@router.get(
+    "/openapi.json",
+    aws_s3_bucket="${s3_assets_bucket_name}",
+    aws_object_key="openapi.json",
+    aws_iam_arn="${s3_read_api_object_iam_role_arn}",
+    tags=["api"],
+)
+async def openapi_object_response(user=Security(lambda_auth)):
     return

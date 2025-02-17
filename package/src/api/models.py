@@ -172,14 +172,14 @@ class TTSResponse(BaseModel):
     finish_reason: str = "stop"
     model: str
     usage: ModelUsageStats
-    lang_code: str
+    language_code: str
     data: str
     mimetype: str
 
 
 class TTSRequest(BaseModel):
-    lang_code: str
-    input: str
+    language_code: str
+    text: str
 
 
 # img2txt

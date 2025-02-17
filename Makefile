@@ -370,7 +370,7 @@ build/api-definition:
 	docker run -it --rm \
 	  -v $(shell pwd)/package/src/api:/app/routes:ro \
 	  -v $(shell pwd)/tf/03/rest:/out \
-	  aws-tools/openapi_extract:v0.1 \
+	  fastapi_aws:v0.0.4 \
 	    --title mdl \
 	    --router routes.routes:router \
 	    --out-public /out/api_public_definition.json \

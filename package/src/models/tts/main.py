@@ -22,7 +22,7 @@ import wave
 # from scipy.io.wavfile import write as write_wav
 
 from shared import get_userid_from_event, lambda_event_to_data, mk_resp, update_metrics, get_memory_usage
-from api.models import ModelType, ModelUsageStats, TTSResponse
+from api.models import ModelType, ModelUsageStats, TTSRequest, TTSResponse
 
 from models.cache_model import load_tts, ModelNotFoundError
 
@@ -97,16 +97,13 @@ def lambda_handler(event, context):
     logger.info("reading '%s' '%s'", str(data), mimetype)
 
     try:
-        text = data["input"]
-    except KeyError as e:
-        logger.error("'text' not found in '%s' [%s]", str(data), str(e))
-        return mk_resp(400, {"status": "error", "message": "missing 'text' in 'input'"})
+        request = TTSRequest(**data)
+    except Exception as e:
+        logger.error("unable to validate TTSRequest as '%s'", str(data))
+        return mk_resp(400, {"status": "error", "message": "input validation error [%s]" % str(e)})
 
-    try:
-        lang_code = data["lang_code"]
-    except KeyError as e:
-        logger.warning("'lang_code' not specified in '%s' [%s]", str(data), str(e))
-        lang_code = "en-GB"
+    text = request.text
+    lang_code = request.language_code
 
     logger.info("tts over: '%s' [%i]", str(text), len(text))
 
@@ -164,7 +161,7 @@ def lambda_handler(event, context):
     response = TTSResponse(
         model=MODELNAME,
         usage=usage,
-        lang_code=lang_code,
+        language_code=lang_code,
         data=audio,
         mimetype="audio/wav"
     )
