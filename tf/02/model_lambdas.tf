@@ -16,7 +16,12 @@ module "model_lambdas" {
   cloudwatch_logs_retention_in_days = 5
 
   runtime = "python3.12"
-  source_path = join("/", [path.module, "..", "..", "package", "src"])
+  source_path = [
+    join("/", [path.module, "..", "..", "package", "src"]),
+    {
+      path = join("/", [path.module, "lambdas", "lame", "lame"])
+    }
+  ]
   handler = each.value.command
 
   memory_size = each.value.memory_size
@@ -36,6 +41,7 @@ module "model_lambdas" {
     CACHE_DIR="/mnt/shared/models"
     HF_HUB_CACHE="/mnt/shared/models"
     PYTHONPATH="/usr/local/lib/python3.12:/mnt/shared/packages/lib/python3.12/site-packages"
+    LAME_PATH="/var/task/lame"
     HF_HUB_DISABLE_PROGRESS_BARS="1"
     HF_HUB_DISABLE_TELEMETRY="1"
     HF_HOME="/tmp"

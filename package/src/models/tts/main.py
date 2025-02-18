@@ -18,6 +18,10 @@ from time import perf_counter as clock
 import torch
 
 import wave
+from pydub import AudioSegment  # mp3 conversion
+
+LAME_PATH = os.getenv("LAME_PATH", "/var/task/lame")  # lame binary for mp3 compression
+AudioSegment.converter = LAME_PATH
 
 # from scipy.io.wavfile import write as write_wav
 
@@ -50,8 +54,11 @@ def language_code_from_modelname():
 
 
 def wave_to_mp3(wav):
-    """convert a wave format to mp3"""
-    raise NotImplementedError()
+    """Convert WAV bytes to MP3 bytes using pydub."""
+    audio = AudioSegment.from_wav(io.BytesIO(wav))
+    mp3_io = io.BytesIO()
+    audio.export(mp3_io, format="mp3", bitrate="192k")
+    return mp3_io.getvalue()
 
 
 def numpy_to_wave(arr, sample_rate: int):
@@ -139,12 +146,13 @@ def lambda_handler(event, context):
     duration = clock() - T
 
     logger.info("wav: '%s' [%i]", str(type(wav)), len(wav))
+    #audio = base64.b64encode(wav).decode()
+    #mimetype="audio/wav"
 
-    # convert to mp3 and return
-    # import scipy
-    # scipy.io.wavfile.write("techno.wav", rate=model.config.sampling_rate, data=output.float().numpy())
-
-    audio = base64.b64encode(wav).decode()
+    # convert wav to mp3
+    mp3 = wave_to_mp3(wav)
+    audio = base64.b64encode(mp3).decode()
+    mimetype="audio/mp3"
 
     logger.info("%ib encoded to %ib", len(wav), len(audio))
 
@@ -163,7 +171,7 @@ def lambda_handler(event, context):
         usage=usage,
         language_code=lang_code,
         data=audio,
-        mimetype="audio/wav"
+        mimetype=mimetype
     )
 
     update_metrics(user_id, ModelType.TTS, MODELNAME, response.usage.model_dump())

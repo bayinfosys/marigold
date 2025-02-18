@@ -32,7 +32,7 @@ data "aws_lambda_function" "tts_polling" {
 }
 
 data "aws_lambda_function" "usage_stats" {
-  function_name = join("-", [var.org_name, var.project_name, var.env, "usage-api"])
+  function_name = join("-", [var.org_name, var.project_name, var.env, "usage-fetch"])
 }
 
 data "aws_s3_bucket" "assets" {

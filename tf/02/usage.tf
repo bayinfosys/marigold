@@ -28,7 +28,7 @@ module "usage_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "~> 7.7.0"
 
-  function_name = join("-", [var.org_name, var.project_name, var.env, "usage"])
+  function_name = join("-", [var.org_name, var.project_name, var.env, "usage-logger"])
   description   = "account usage stats"
 
   cloudwatch_logs_retention_in_days = 5
@@ -104,7 +104,7 @@ module "usage_stats_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "~> 7.7.0"
 
-  function_name = join("-", [var.org_name, var.project_name, var.env, "usage", "stats"])
+  function_name = join("-", [var.org_name, var.project_name, var.env, "usage", "logger-stats"])
   description   = "account usage stats summaries"
 
   cloudwatch_logs_retention_in_days = 5
@@ -169,7 +169,7 @@ module "api_usage_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "~> 7.7.0"
 
-  function_name = join("-", [var.org_name, var.project_name, var.env, "usage", "api"])
+  function_name = join("-", [var.org_name, var.project_name, var.env, "usage-fetch"])
   description   = "api access to usage stats summaries"
 
   cloudwatch_logs_retention_in_days = 5

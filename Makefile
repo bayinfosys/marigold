@@ -91,6 +91,18 @@ push/environment:
 	docker push $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG) && \
 	docker rmi $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG)
 
+.PHONEY:
+build/lame:
+	# build the lame executable for aws lambda
+	# output will go to ./tf/02/lambdas/lame
+	docker run \
+	  --rm \
+	  -it \
+	  -v ./scripts:/scripts:ro \
+	  -v ./tf/02/lambdas/lame:/var/task/lame/bin \
+	  amazonlinux:2 \
+	  bash -c '/scripts/build-lame.sh'
+
 #
 # text embeddings
 #
@@ -393,7 +405,7 @@ build/api-definition:
 	docker run -it --rm \
 	  -v $(shell pwd)/package/src/api:/app/routes:ro \
 	  -v $(shell pwd)/tf/03/rest:/out \
-	  fastapi_aws:v0.0.4 \
+	  fastapi_aws:v0.0.6 \
 	    --title mdl \
 	    --router routes.routes:router \
 	    --out-public /out/api_public_definition.json \

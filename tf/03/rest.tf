@@ -283,3 +283,14 @@ resource "aws_iam_policy" "lambda_invoke_policy" {
     ]
   })
 }
+
+#
+# openapi.json public file
+#
+resource "aws_s3_object" "api_export_object" {
+  bucket = data.aws_s3_bucket.assets.id
+  key    = "openapi.json"
+
+  content_type = "application/json"
+  content = file(local.rest_api_public_definition)
+}
