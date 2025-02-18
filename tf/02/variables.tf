@@ -11,13 +11,6 @@ variable "region" {
   default = "eu-west-2"
 }
 
-variable "available_models" {
-  description = "models available from the efs cache"
-  type = map(object({
-    model_type = string
-  }))
-}
-
 variable "model_lambdas" {
   description = "definitions of the lambda functions"
   type = map(object({

@@ -6,13 +6,6 @@ variable "project_name" {
   type = string
 }
 
-variable "available_models" {
-  description = "models available from the efs cache"
-  type = map(object({
-    model_type = string
-  }))
-}
-
 variable "project_tags" {
   description = "common tags for all project resources"
   type        = map(any)

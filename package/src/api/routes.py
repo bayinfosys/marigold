@@ -169,3 +169,14 @@ async def usage_stats_response(user=Security(lambda_auth)):
 )
 async def openapi_object_response(user=Security(lambda_auth)):
     return
+
+
+@router.get(
+    "/models.json",
+    aws_s3_bucket="${s3_assets_bucket_name}",
+    aws_object_key="models.json",
+    aws_iam_arn="${s3_read_api_object_iam_role_arn}",
+    tags=["api"],
+)
+async def model_descriptions_response(user=Security(lambda_auth)):
+    return

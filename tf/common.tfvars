@@ -4,22 +4,6 @@ project_domain = "mdl.bayis.co.uk"
 
 env = "dev"
 
-available_models = {
-  "sentence-transformers/all-minilm-l6-v2" = { model_type = "text-embedding" },
-  "sentence-transformers/paraphrase-multilingual-mpnet-base-v2" = { model_type = "text-embedding" },
-  "sentence-transformers/sentence-t5-large" = { model_type = "text-embedding" },
-
-  "qwen/qwen2-0.5b-instruct" = { model_type = "instruct" },
-  "qwen/qwen2-1.5b-instruct" = { model_type = "instruct" },
-  "microsoft/phi-3-mini-128k-instruct" = { model_type = "instruct" },
-  "meta-llama/llama-3.2-1b-instruct" = { model_type = "instruct" },
-
-  "facebook/mms-tts-eng" = { model_type = "tts" },
-  "facebook/mms-tts-cym" = { model_type = "tts" },
-
-  "facebook/sam-vit-huge" = { model_type = "img2mask" },
-}
-
 model_lambdas = {
   # text-embedding
   "embedding-paraphrase-multilingual-mpnet-base-v2" = {
@@ -30,6 +14,8 @@ model_lambdas = {
     environment_variables = {
       MODELNAME = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
       MODEL_TYPE = "text-embedding"
+      MODEL_INPUT = "text"
+      MODEL_OUTPUT = "vector/384"
     }
     command = "models.text_embed.main.lambda_handler"
   },
@@ -41,6 +27,8 @@ model_lambdas = {
     environment_variables = {
       MODELNAME = "sentence-transformers/sentence-t5-large"
       MODEL_TYPE = "text-embedding"
+      MODEL_INPUT = "text"
+      MODEL_OUTPUT = "vector/768"
     }
     command = "models.text_embed.main.lambda_handler"
   },
@@ -52,6 +40,8 @@ model_lambdas = {
     environment_variables = {
       MODELNAME = "sentence-transformers/all-minilm-l6-v2"
       MODEL_TYPE = "text-embedding"
+      MODEL_INPUT = "text"
+      MODEL_OUTPUT = "vector/384"
     }
     command = "models.text_embed.main.lambda_handler"
   },
@@ -64,6 +54,8 @@ model_lambdas = {
       MODELNAME = "qwen/qwen2-0.5b-instruct"
       MODEL_TYPE = "instruct"
       LOW_CPU_MEM_USAGE = "1"
+      MODEL_INPUT = "chat"
+      MODEL_OUTPUT = "chat"
     }
     command = "models.instruct.main.lambda_handler"
   },
@@ -74,6 +66,8 @@ model_lambdas = {
       MODELNAME = "qwen/qwen2-1.5b-instruct"
       MODEL_TYPE = "instruct"
       LOW_CPU_MEM_USAGE = "1"
+      MODEL_INPUT = "chat"
+      MODEL_OUTPUT = "chat"
     }
     command = "models.instruct.main.lambda_handler"
   },
@@ -84,6 +78,8 @@ model_lambdas = {
       MODELNAME = "microsoft/phi-3-mini-128k-instruct"
       MODEL_TYPE = "instruct"
       LOW_CPU_MEM_USAGE = "1"
+      MODEL_INPUT = "chat"
+      MODEL_OUTPUT = "chat"
     }
     command = "models.instruct.main.lambda_handler"
   },
@@ -94,6 +90,8 @@ model_lambdas = {
       MODELNAME = "meta-llama/llama-3.2-1b-instruct"
       MODEL_TYPE = "instruct"
       LOW_CPU_MEM_USAGE = "1"
+      MODEL_INPUT = "chat"
+      MODEL_OUTPUT = "chat"
     }
     command = "models.instruct.main.lambda_handler"
   },
@@ -104,6 +102,9 @@ model_lambdas = {
     environment_variables = {
       MODELNAME = "facebook/mms-tts-eng"
       MODEL_TYPE = "tts"
+      MODEL_INPUT = "text"
+      MODEL_OUTPUT = "speech"
+      MODEL_LANGCODE = "en/GB"
     }
     command = "models.tts.main.lambda_handler"
   },
@@ -112,6 +113,9 @@ model_lambdas = {
     environment_variables = {
       MODELNAME = "facebook/mms-tts-cym"
       MODEL_TYPE = "tts"
+      MODEL_INPUT = "text"
+      MODEL_OUTPUT = "speech"
+      MODEL_LANGCODE = "cy/GB"
     }
     command = "models.tts.main.lambda_handler"
   },
@@ -120,6 +124,9 @@ model_lambdas = {
     environment_variables = {
       MODELNAME = "facebook/mms-tts-deu"
       MODEL_TYPE = "tts"
+      MODEL_INPUT = "text"
+      MODEL_OUTPUT = "speech"
+      MODEL_LANGCODE = "de/DE"
     }
     command = "models.tts.main.lambda_handler"
   },
@@ -128,6 +135,9 @@ model_lambdas = {
     environment_variables = {
       MODELNAME = "facebook/mms-tts-fra"
       MODEL_TYPE = "tts"
+      MODEL_INPUT = "text"
+      MODEL_OUTPUT = "speech"
+      MODEL_LANGCODE = "fr/FR"
     }
     command = "models.tts.main.lambda_handler"
   },
@@ -136,6 +146,9 @@ model_lambdas = {
     environment_variables = {
       MODELNAME = "facebook/mms-tts-spa"
       MODEL_TYPE = "tts"
+      MODEL_INPUT = "text"
+      MODEL_OUTPUT = "speech"
+      MODEL_LANGCODE = "es/ES"
     }
     command = "models.tts.main.lambda_handler"
   },
@@ -144,6 +157,9 @@ model_lambdas = {
     environment_variables = {
       MODELNAME = "facebook/mms-tts-fin"
       MODEL_TYPE = "tts"
+      MODEL_INPUT = "text"
+      MODEL_OUTPUT = "speech"
+      MODEL_LANGCODE = "fi/FI"
     }
     command = "models.tts.main.lambda_handler"
   },
@@ -152,6 +168,9 @@ model_lambdas = {
     environment_variables = {
       MODELNAME = "facebook/mms-tts-nld"
       MODEL_TYPE = "tts"
+      MODEL_INPUT = "text"
+      MODEL_OUTPUT = "speech"
+      MODEL_LANGCODE = "nl/NL"
     }
     command = "models.tts.main.lambda_handler"
   },
@@ -161,6 +180,8 @@ model_lambdas = {
     environment_variables = {
       MODELNAME = "facebook/dpt-dinov2-small-kitti"
       MODEL_TYPE = "depth"
+      MODEL_INPUT = "image"
+      MODEL_OUTPUT = "depth"
     }
     command = "models.depth.main.lambda_handler"
   },
@@ -170,6 +191,8 @@ model_lambdas = {
     environment_variables = {
       MODELNAME = "facebook/sam-vit-huge"
       MODELTYPE = "img2mask"
+      MODEL_INPUT = "image"
+      MODEL_OUTPUT = "labels"
     }
     command = "models.img2mask.main.lambda_handler"
   },
