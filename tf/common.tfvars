@@ -190,7 +190,7 @@ model_lambdas = {
     image = "environment"
     environment_variables = {
       MODELNAME = "facebook/sam-vit-huge"
-      MODELTYPE = "img2mask"
+      MODEL_TYPE = "segmentation"
       MODEL_INPUT = "image"
       MODEL_OUTPUT = "labels"
     }

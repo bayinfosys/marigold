@@ -405,7 +405,7 @@ build/api-definition:
 	docker run -it --rm \
 	  -v $(shell pwd)/package/src/api:/app/routes:ro \
 	  -v $(shell pwd)/tf/03/rest:/out \
-	  fastapi_aws:v0.0.6 \
+	  fastapi_aws:v0.0.6-1-g44b8087 \
 	    --title mdl \
 	    --router routes.routes:router \
 	    --out-public /out/api_public_definition.json \

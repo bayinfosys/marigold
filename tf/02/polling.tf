@@ -70,7 +70,6 @@ module "instruct_polling" {
     POLL_PATH      = "/instruct/{message_id}"
     SFN_ARN        = module.instruct.state_machine_arn
     DYNAMODB_TABLE = aws_dynamodb_table.results_cache.arn
-    APPEND_CORS_HEADERS = "True"
   }
 
   policy_statements = {
@@ -118,7 +117,6 @@ module "embed_polling" {
     POLL_PATH      = "/embed/text/{message_id}"
     SFN_ARN        = module.text_embedding.state_machine_arn
     DYNAMODB_TABLE = aws_dynamodb_table.results_cache.arn
-    APPEND_CORS_HEADERS = "True"
   }
 
   policy_statements = {
@@ -165,7 +163,6 @@ module "tts_polling" {
     POLL_PATH      = "/tts/{message_id}"
     SFN_ARN        = module.tts.state_machine_arn
     DYNAMODB_TABLE = aws_dynamodb_table.results_cache.arn
-    APPEND_CORS_HEADERS = "True"
   }
 
   policy_statements = {
