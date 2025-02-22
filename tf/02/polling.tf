@@ -66,8 +66,8 @@ module "instruct_polling" {
   handler     = "tools.polling.main.handler"
 
   environment_variables = {
-    INPUT_PATH     = "/instruct"
-    POLL_PATH      = "/instruct/{message_id}"
+    SUBMISSION_PATH = "POST /instruct"
+    STATUS_PATH    = "GET /instruct/{message_id}"
     SFN_ARN        = module.instruct.state_machine_arn
     DYNAMODB_TABLE = aws_dynamodb_table.results_cache.arn
   }
@@ -113,8 +113,8 @@ module "embed_polling" {
   handler     = "tools.polling.main.handler"
 
   environment_variables = {
-    INPUT_PATH     = "/embed/text"
-    POLL_PATH      = "/embed/text/{message_id}"
+    SUBMISSION_PATH = "POST /embed/text"
+    STATUS_PATH    = "GET /embed/text/{message_id}"
     SFN_ARN        = module.text_embedding.state_machine_arn
     DYNAMODB_TABLE = aws_dynamodb_table.results_cache.arn
   }
@@ -159,8 +159,8 @@ module "tts_polling" {
   handler     = "tools.polling.main.handler"
 
   environment_variables = {
-    INPUT_PATH     = "/tts"
-    POLL_PATH      = "/tts/{message_id}"
+    SUBMISSION_PATH = "POST /tts"
+    STATUS_PATH    = "GET /tts/{message_id}"
     SFN_ARN        = module.tts.state_machine_arn
     DYNAMODB_TABLE = aws_dynamodb_table.results_cache.arn
   }

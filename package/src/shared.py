@@ -6,6 +6,7 @@ import base64
 import logging
 import json
 import boto3
+from datetime import datetime
 
 
 from botocore.exceptions import ClientError
@@ -56,7 +57,11 @@ def get_path_from_event(event):
     some without, etc. This function returns the path which matches
     the definition given in the openapi spec.
     """
-    return event["resource"]
+    event_path = " ".join((event["httpMethod"], event["resource"]))
+
+    assert event_path.split(" ")[0] in ("OPTIONS", "GET", "POST", "DELETE")
+
+    return event_path
 
 
 def path_handler(path, registry):
@@ -203,7 +208,15 @@ def update_results_table(user_id: str, message_id: str, results_table: str, resp
         raise
 
 
-def update_metrics(user_id: str, model_type: ModelType, model_name: str, metrics: dict):
+def create_metric_object(user_id, model_type, model_name, metrics):
+    return dict(
+        user_id=user_id,
+        operation=f"{model_type.value}/{model_name}",
+        **metrics
+    )
+
+
+def update_metrics_sqs(user_id: str, model_type: ModelType, model_name: str, metrics: dict):
     """write metrics to an sqs queue for logging
 
     NB: all model_lambdas in terraform have access to this queue and envvars
@@ -217,11 +230,7 @@ def update_metrics(user_id: str, model_type: ModelType, model_name: str, metrics
         return
 
     # send a message to the queue
-    message_body = dict(
-        user_id=user_id,
-        operation=f"{model_type.value}/{model_name}",
-        **metrics
-    )
+    message_body = create_metric_object(user_id, model_type, model_name, metrics)
 
     logger.info("sending '%s' to '%s'", str(message_body), metrics_queue_url)
 
@@ -237,3 +246,61 @@ def update_metrics(user_id: str, model_type: ModelType, model_name: str, metrics
     except Exception as e:
         logger.error("Failed to send metrics '%s' [%s]", metrics_queue_url, str(e))
         return None
+
+
+def update_metrics_dynamodb(user_id: str, model_type: ModelType, model_name: str, metrics: dict):
+    """write metrics directly to dynamodb
+
+    We use this because the model lambdas run a private vpc, and require a vpc interface to sqs,
+    which is more expensive (£20pm) than a vpc gateway to dynamodb (£0)
+
+    This code is shitripped from 02/lambdas/usage/main.py.
+    TODO: generalise the metric logging into a mini package.
+    TOOD: use dynawrap lib
+    """
+    pk_pattern = "METRIC#RAW#USER#{user_id}"
+    sk_pattern = "DATE#{date}#OP#{operation}"
+
+    message_body = create_metric_object(user_id, model_type, model_name, metrics)
+
+    # Extract or compute necessary fields
+    operation = message_body.get("operation", "unknown")
+    userid = message_body.get("user_id", "unknown")
+    now = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+
+    # Construct data for DynamoDB
+    item_data = dict(
+        operation=operation,
+        user_id=userid,
+        date=now,
+        data=json.dumps(message_body),
+    )
+
+    USAGE_TABLE_NAME = os.environ["DYNAMODB_USAGE_TABLE"]
+
+    # Initialize DynamoDB resource
+    dynamodb = boto3.resource("dynamodb", endpoint_url=os.getenv("AWS_DYNAMODB_URL"))
+
+    table = dynamodb.Table(USAGE_TABLE_NAME)
+
+    item = {
+        "PK": pk_pattern.format(**item_data),
+        "SK": sk_pattern.format(**item_data),
+        **item_data
+    }
+
+    try:
+        table.put_item(Item=item)
+    except Exception as e:
+        logger.exception("[%s/%s.%s] failed to write metrics to '%s' [%s]", user_id, model_type, model_name, USAGE_TABLE_NAME, str(e))
+        return
+
+
+def update_metrics(user_id: str, model_type: ModelType, model_name: str, metrics: dict):
+    """log metrics to a db via one of the implemented methods"""
+    if "DYNAMODB_USAGE_TABLE" in os.environ:
+        return update_metrics_dynamodb(user_id, model_type, model_name, metrics)
+    elif "METRICS_QUEUE_URL" in os.environ:
+        return update_metrics_sqs(user_id, model_type, model_name, metrics)
+    else:
+        logger.warning("[%s/%s.%s] metrics not logged", user_id, model_type.value(), model_name)

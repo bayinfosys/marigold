@@ -29,6 +29,7 @@ curl  -w "\n" \
 
 echo fetch embed results
 # NB: these ids will change if the above text/model payloads change
-curl -v -w "\n" -H "x-api-key: ${API_KEY}" ${HOST}/embed/text/3f418108cd36041ee11cdad405ead147
-curl -v -w "\n" -H "x-api-key: ${API_KEY}" ${HOST}/embed/text/f3ecd88f0aa5ea723f2b0c748d8e35b2
-curl -v -w "\n" -H "x-api-key: ${API_KEY}" ${HOST}/embed/text/409f8bd2c44ff6b05cfdbffd98a8874e
+#curl -w "\n" -H "Authorization: ${API_KEY}" ${HOST}/embed/text/3f418108cd36041ee11cdad405exxxxx  # 404 test
+curl -w "\n" -H "Authorization: ${API_KEY}" ${HOST}/embed/text/3f418108cd36041ee11cdad405ead147
+curl -w "\n" -H "Authorization: ${API_KEY}" ${HOST}/embed/text/f3ecd88f0aa5ea723f2b0c748d8e35b2
+curl -w "\n" -H "Authorization: ${API_KEY}" ${HOST}/embed/text/409f8bd2c44ff6b05cfdbffd98a8874e

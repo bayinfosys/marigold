@@ -45,7 +45,15 @@ data "aws_iam_policy_document" "generic_endpoint_policy" {
   }
 }
 
+#
+# cloudwatch interface for the private vpc
+#   NB: this costs money to have running (~£20pm)
+#   so we only enable it for debugging.
+#
+# this is disabled when var.private_vpc_cloudwatch is false
+#
 resource "aws_vpc_endpoint" "cloudwatch" {
+  count               = var.private_vpc_cloudwatch ? 1 : 0
   vpc_id              = module.vpc.vpc_id
   service_name        = "com.amazonaws.eu-west-2.logs"
   vpc_endpoint_type   = "Interface"
@@ -61,20 +69,25 @@ resource "aws_vpc_endpoint" "cloudwatch" {
   })
 }
 
-resource "aws_vpc_endpoint" "sqs" {
+#
+# dynamodb gateway for private vpc
+#   we write data directly from lambdas in the private vpc to dynamodb
+#   this prevents excess costs around the sqs interface (£££) and
+#   still enables some basic usage monitoring.
+#
+resource "aws_vpc_endpoint" "dynamodb" {
   vpc_id              = module.vpc.vpc_id
-  service_name        = "com.amazonaws.eu-west-2.sqs"
-  vpc_endpoint_type   = "Interface"
-  private_dns_enabled = true
-  subnet_ids          = module.vpc.private_subnets
-
-  security_group_ids = [
-    module.vpc.default_security_group_id
-  ]
+  service_name        = "com.amazonaws.eu-west-2.dynamodb"
+  vpc_endpoint_type   = "Gateway"
 
   tags = merge(var.project_tags, {
-    Name = join("-", [var.org_name, var.project_name, var.env, "sqs"])
+    Name = join("-", [var.org_name, var.project_name, var.env, "dynamodb"])
   })
+}
+
+resource "aws_vpc_endpoint_route_table_association" "private-dynamodb" {
+  vpc_endpoint_id = aws_vpc_endpoint.dynamodb.id
+  route_table_id  = module.vpc.private_route_table_ids[0]
 }
 
 #

@@ -68,7 +68,7 @@ def handler(event, context):
     # fetch from dynamodb
     items = get_data(user_id, operation, date_range_type, period, last)
 
-    logger.info("[%s/%s] found %i items", user_id, operation, len(items))
+    logger.debug("[%s/%s] found %i items", user_id, operation, len(items))
 
     if items:
         return mk_resp(200, [json.loads(item["data"]) for item in items])
@@ -95,9 +95,6 @@ def get_data(user_id, operation, date_range_type, period, count):
 
     key_expr = Key("PK").eq(key["PK"]) & Key("SK").begins_with(key["SK"])
 
-    logger.info("[%s/%s] query: '%s'", user_id, operation, str(key))
-    logger.info("[%s/%s] querying: '%s'", user_id, operation, str(key_expr))
-
     try:
         response = table.query(
             TableName=USAGE_TABLE_NAME,
@@ -106,9 +103,9 @@ def get_data(user_id, operation, date_range_type, period, count):
             Limit=count,  # FIXME: take a limit from somewhere, paginate?
         )
     except (BotoCoreError, ClientError) as e:
-        logger.error("[%s/%s] error [%s]", user_id, operation, str(e))
+        logger.error("[%s/%s] '%s' [%s]", user_id, operation, str(key), str(e))
         return None
 
-    logger.info("[%s/%s] resp: '%s'", user_id, operation, str(response))
+    logger.debug("[%s/%s] '%s': '%s'", user_id, operation, str(key), str(response))
 
     return response.get("Items")

@@ -15,3 +15,9 @@ variable "project_tags" {
 variable "env" {
   type = string
 }
+
+variable "private_vpc_cloudwatch" {
+  description = "Enable or disable the CloudWatch VPC endpoint"
+  type        = bool
+  default     = false
+}

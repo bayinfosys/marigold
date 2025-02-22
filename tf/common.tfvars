@@ -8,9 +8,8 @@ model_lambdas = {
   # text-embedding
   "embedding-paraphrase-multilingual-mpnet-base-v2" = {
     image = "environment"
-    memory_size = 1024
+    memory_size = 2048
     vector_size = 384
-    timeout = 40
     environment_variables = {
       MODELNAME = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
       MODEL_TYPE = "text-embedding"
@@ -21,9 +20,8 @@ model_lambdas = {
   },
   "embedding-sentence-t5-large" = {
     image = "environment"
-    memory_size = 1024
+    memory_size = 2048
     vector_size = 768
-    timeout = 40
     environment_variables = {
       MODELNAME = "sentence-transformers/sentence-t5-large"
       MODEL_TYPE = "text-embedding"
@@ -34,9 +32,8 @@ model_lambdas = {
   },
   "embedding-all-minilm-l6-v2" = {
     image = "environment"
-    memory_size = 1024
+    memory_size = 2048
     vector_size = 384
-    timeout = 40
     environment_variables = {
       MODELNAME = "sentence-transformers/all-minilm-l6-v2"
       MODEL_TYPE = "text-embedding"

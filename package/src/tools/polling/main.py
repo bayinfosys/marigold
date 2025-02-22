@@ -14,8 +14,8 @@ logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")
 sfn = boto3.client("stepfunctions")
 dynamodb = boto3.client("dynamodb")
 
-SUBMISSION_PATH = os.environ["INPUT_PATH"]
-STATUS_PATH = os.environ["POLL_PATH"]
+SUBMISSION_PATH = os.environ["SUBMISSION_PATH"]
+STATUS_PATH = os.environ["STATUS_PATH"]
 SFN_ARN = os.environ["SFN_ARN"]
 DYNAMODB_TABLE = os.environ["DYNAMODB_TABLE"]
 

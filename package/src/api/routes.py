@@ -12,6 +12,7 @@ lambda_auth = LambdaAuthorizer(
     authorizer_name="${lambda_authorizer_name}",
     aws_lambda_uri="${lambda_authorizer_uri}",
     aws_iam_role_arn="${lambda_authorizer_iam_role_arn}",
+    ttl=3600
 )
 
 router = AWSAPIRouter()
