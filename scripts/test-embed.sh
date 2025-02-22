@@ -33,3 +33,7 @@ echo fetch embed results
 curl -w "\n" -H "Authorization: ${API_KEY}" ${HOST}/embed/text/3f418108cd36041ee11cdad405ead147
 curl -w "\n" -H "Authorization: ${API_KEY}" ${HOST}/embed/text/f3ecd88f0aa5ea723f2b0c748d8e35b2
 curl -w "\n" -H "Authorization: ${API_KEY}" ${HOST}/embed/text/409f8bd2c44ff6b05cfdbffd98a8874e
+
+
+# clear the cache
+#curl -X DELETE -w "\n" -H "Authorization: ${API_KEY}" ${HOST}/embed/text/3f418108cd36041ee11cdad405ead147

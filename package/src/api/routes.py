@@ -6,13 +6,14 @@ from .models import EmbedTextRequest, EmbedImageRequest, EmbeddingsResponse
 from .models import InstructRequest, InstructResponse
 from .models import TTSRequest, TTSResponse
 from .models import UsageResponse
+from .models import DeleteCacheResponse
 
 
 lambda_auth = LambdaAuthorizer(
     authorizer_name="${lambda_authorizer_name}",
     aws_lambda_uri="${lambda_authorizer_uri}",
     aws_iam_role_arn="${lambda_authorizer_iam_role_arn}",
-    ttl=3600
+    ttl=3600,
 )
 
 router = AWSAPIRouter()
@@ -57,6 +58,18 @@ async def embed_text(body: EmbedTextRequest, user=Security(lambda_auth)):
 )
 async def fetch_embed_text(user=Security(lambda_auth)):
     return EmbeddingsResponse()
+
+
+@router.delete(
+    "/embed/text/{message_id}",
+    description="delete a cached response",
+    response_model=DeleteCacheResponse,
+    aws_lambda_uri="${polling_start_lambda_arn}",
+    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
+    tags=["models", "embedding"],
+)
+async def delete_embed_text_response(user=Security(lambda_auth)):
+    return DeleteCacheResponse()
 
 
 # @router.post(
@@ -105,7 +118,18 @@ async def instruct_request(body: InstructRequest, user=Security(lambda_auth)):
     tags=["models", "instruct", "chat"],
 )
 async def instruct_poll_response(user=Security(lambda_auth)):
-    return
+    return InstructResponse()
+
+
+@router.delete(
+    "/instruct/{message_id}",
+    response_model=DeleteCacheResponse,
+    aws_lambda_uri="${instruct_polling_check_lambda_arn}",
+    aws_iam_arn="${instruct_polling_check_lambda_iam_role_arn}",
+    tags=["models", "instruct", "chat"],
+)
+async def delete_instruct_cache_response(user=Security(lambda_auth)):
+    return DeleteCacheResponse()
 
 
 #

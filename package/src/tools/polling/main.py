@@ -16,6 +16,7 @@ dynamodb = boto3.client("dynamodb")
 
 SUBMISSION_PATH = os.environ["SUBMISSION_PATH"]
 STATUS_PATH = os.environ["STATUS_PATH"]
+DELETE_PATH = os.environ["DELETE_PATH"]
 SFN_ARN = os.environ["SFN_ARN"]
 DYNAMODB_TABLE = os.environ["DYNAMODB_TABLE"]
 
@@ -26,7 +27,11 @@ def handler(event, context):
     path = get_path_from_event(event)
     userid = get_userid_from_event(event)
 
-    handlers = {SUBMISSION_PATH: handle_submission, STATUS_PATH: handle_status}
+    handlers = {
+        SUBMISSION_PATH: handle_submission,
+        STATUS_PATH: handle_status,
+        DELETE_PATH: delete_status,
+    }
 
     try:
         return handlers[path](userid, event)
@@ -38,12 +43,16 @@ def handler(event, context):
         return mk_resp(500, {"status": "error", "message": "internal error"})
 
 
-def get_status(userid, message_id):
-    """Retrieve the status of an item from DynamoDB using attribute projection."""
-    key = {
+def create_key(userid, message_id):
+    return {
         "PK": {"S": userid},
         "SK": {"S": message_id},
     }
+
+
+def get_status(userid, message_id):
+    """Retrieve the status of an item from DynamoDB using attribute projection."""
+    key = create_key(userid, message_id)
 
     response = dynamodb.get_item(
         TableName=DYNAMODB_TABLE,
@@ -62,10 +71,7 @@ def get_status(userid, message_id):
 
 def get_response(userid, message_id) -> dict:
     """Retrieve the response attribute of an item from DynamoDB using attribute projection."""
-    key = {
-        "PK": {"S": userid},
-        "SK": {"S": message_id},
-    }
+    key = create_key(userid, message_id)
 
     response = dynamodb.get_item(
         TableName=DYNAMODB_TABLE,
@@ -86,6 +92,19 @@ def get_response(userid, message_id) -> dict:
         logger.warning("[%s/%s] no response for '%s'", userid, message_id, str(key))
 
     return None  # Item not found
+
+
+def delete_cache(userid, message_id):
+    """delete an item from the cache
+    TODO: add a conditional delete where we can delete all caches related to a particular model
+    """
+    key = create_key(userid, message_id)
+
+    response = dynamodb.delete_item(TableName=DYNAMODB_TABLE, Key=key)
+
+    logger.info("[%s/%s] delete: '%s'", userid, message_id, str(response))
+
+    return
 
 
 def handle_submission(userid, event):
@@ -148,7 +167,10 @@ def handle_status(userid, event):
     status = get_status(userid, message_id)
 
     if status:
-        if status in ("complete", "error"): # these are end states, and we should return the response
+        if status in (
+            "complete",
+            "error",
+        ):  # these are end states, and we should return the response
             response_content = get_response(userid, message_id)  # Get the response
             response_content.update({"status": status})
             logger.info("[%s/%s] status: '%s'", userid, message_id, status)
@@ -159,3 +181,22 @@ def handle_status(userid, event):
     else:
         logger.warning("[%s/%s] item not found", userid, message_id)
         return mk_resp(404, {"status": "not found"})
+
+
+def delete_status(userid, event):
+    """delete the response from dynamodb (clear the cache of a particular value)
+
+    NB: if the existing status is not 'complete' we should error until it is complete
+        or have way to cancel the job (I prefer not to cancel jobs tbh)
+
+    FIXME: check the cache result exists and return 404 if not
+    """
+    try:
+        message_id = event["pathParameters"]["message_id"]
+    except KeyError as e:
+        logger.error("Cannot extract message_id from event [%s]", str(e))
+        return mk_resp(400, {"status": "error", "message": "message_id required"})
+
+    delete_cache(userid, message_id)
+
+    return mk_resp(200, {"status": "ok", "message": "deleted", "message_id": message_id})

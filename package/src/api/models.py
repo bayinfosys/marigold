@@ -1,7 +1,7 @@
 from enum import Enum
 
 from pydantic import BaseModel, Field
-from typing import List, Dict, Union
+from typing import List, Dict, Union, Literal
 
 
 from datetime import datetime
@@ -194,3 +194,7 @@ class Img2TxtResponse(BaseModel):
 
 # usage response
 UsageResponse = List[ModelUsageStats]
+
+
+class DeleteCacheResponse(BaseModel):
+    status: Literal["ok"]

@@ -68,6 +68,7 @@ module "instruct_polling" {
   environment_variables = {
     SUBMISSION_PATH = "POST /instruct"
     STATUS_PATH    = "GET /instruct/{message_id}"
+    DELETE_PATH    = "DELETE /instruct/{message_id}"
     SFN_ARN        = module.instruct.state_machine_arn
     DYNAMODB_TABLE = aws_dynamodb_table.results_cache.arn
   }
@@ -87,7 +88,8 @@ module "instruct_polling" {
       actions = [
         "dynamodb:PutItem",
         "dynamodb:GetItem",
-        "dynamodb:UpdateItem"
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
       ],
       resources = [aws_dynamodb_table.results_cache.arn]
     }
@@ -115,6 +117,7 @@ module "embed_polling" {
   environment_variables = {
     SUBMISSION_PATH = "POST /embed/text"
     STATUS_PATH    = "GET /embed/text/{message_id}"
+    DELETE_PATH    = "DELETE /embed/text/{message_id}"
     SFN_ARN        = module.text_embedding.state_machine_arn
     DYNAMODB_TABLE = aws_dynamodb_table.results_cache.arn
   }
@@ -134,7 +137,8 @@ module "embed_polling" {
       actions = [
         "dynamodb:PutItem",
         "dynamodb:GetItem",
-        "dynamodb:UpdateItem"
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
       ],
       resources = [aws_dynamodb_table.results_cache.arn]
     }
@@ -161,6 +165,7 @@ module "tts_polling" {
   environment_variables = {
     SUBMISSION_PATH = "POST /tts"
     STATUS_PATH    = "GET /tts/{message_id}"
+    DELETE_PATH    = "DELETE /tts/{message_id}"
     SFN_ARN        = module.tts.state_machine_arn
     DYNAMODB_TABLE = aws_dynamodb_table.results_cache.arn
   }
@@ -180,7 +185,8 @@ module "tts_polling" {
       actions = [
         "dynamodb:PutItem",
         "dynamodb:GetItem",
-        "dynamodb:UpdateItem"
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
       ],
       resources = [aws_dynamodb_table.results_cache.arn]
     }
