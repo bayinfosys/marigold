@@ -44,6 +44,7 @@ module "usage_lambda" {
 
   environment_variables = {
     DYNAMODB_USAGE_TABLE = module.usage_table.dynamodb_table_id
+    APPEND_CORS_HEADERS = "True"
     LOG_LEVEL = "INFO"
   }
 
@@ -183,6 +184,7 @@ module "api_usage_lambda" {
 
   environment_variables = {
     DYNAMODB_USAGE_TABLE = module.usage_table.dynamodb_table_id
+    APPEND_CORS_HEADERS = "True"
     LOG_LEVEL = "INFO"
   }
 
