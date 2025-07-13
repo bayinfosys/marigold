@@ -238,7 +238,7 @@ resource "aws_iam_role_policy_attachment" "api_gw_cloudwatch_log_policy_attach" 
 
 resource "aws_api_gateway_base_path_mapping" "domain" {
   api_id      = aws_api_gateway_rest_api.default.id
-  stage_name  = aws_api_gateway_deployment.default.stage_name
+  stage_name  = aws_api_gateway_stage.default.stage_name
   domain_name = aws_api_gateway_domain_name.domain.domain_name
 }
 
