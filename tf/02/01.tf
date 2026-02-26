@@ -31,3 +31,8 @@ data "aws_security_group" "lambda_sg" {
 data "aws_iam_policy" "efs_assets_ro" {
   arn = data.terraform_remote_state.containers.outputs["efs_assets_ro_iam_policy_arn"]
 }
+
+data "aws_ecr_image" "environment_image" {
+  repository_name = data.terraform_remote_state.containers.outputs["environment_ecr_name"]
+  image_tag       = var.git_tag
+}

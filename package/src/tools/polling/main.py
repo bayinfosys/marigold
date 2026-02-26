@@ -2,11 +2,11 @@ import json
 import boto3
 import os
 import logging
-import time
 
 from hashlib import md5
 
 from shared import get_userid_from_event, get_path_from_event, mk_resp
+from .cache import create_status, get_status, get_response, delete_cache
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")
@@ -43,70 +43,6 @@ def handler(event, context):
         return mk_resp(500, {"status": "error", "message": "internal error"})
 
 
-def create_key(userid, message_id):
-    return {
-        "PK": {"S": userid},
-        "SK": {"S": message_id},
-    }
-
-
-def get_status(userid, message_id):
-    """Retrieve the status of an item from DynamoDB using attribute projection."""
-    key = create_key(userid, message_id)
-
-    response = dynamodb.get_item(
-        TableName=DYNAMODB_TABLE,
-        Key=key,
-        ProjectionExpression="sts",  # only get status attribute
-    )
-
-    if "Item" in response and "sts" in response["Item"]:
-        # FIXME: raise a notfound exception?
-        return response["Item"]["sts"]["S"]
-    else:
-        logger.warning("[%s/%s] no response for '%s'", userid, message_id, str(key))
-
-    return None  # Item not found
-
-
-def get_response(userid, message_id) -> dict:
-    """Retrieve the response attribute of an item from DynamoDB using attribute projection."""
-    key = create_key(userid, message_id)
-
-    response = dynamodb.get_item(
-        TableName=DYNAMODB_TABLE,
-        Key=key,
-        ProjectionExpression="rsp",  # only response attribute
-    )
-
-    if "Item" in response and "rsp" in response["Item"]:
-        logger.debug(
-            "[%s/%s] response: '%s' [%s]",
-            userid,
-            message_id,
-            str(response["Item"]["rsp"]["S"]),
-            str(type(response["Item"]["rsp"]["S"])),
-        )
-        return json.loads(response["Item"]["rsp"]["S"])
-    else:
-        logger.warning("[%s/%s] no response for '%s'", userid, message_id, str(key))
-
-    return None  # Item not found
-
-
-def delete_cache(userid, message_id):
-    """delete an item from the cache
-    TODO: add a conditional delete where we can delete all caches related to a particular model
-    """
-    key = create_key(userid, message_id)
-
-    response = dynamodb.delete_item(TableName=DYNAMODB_TABLE, Key=key)
-
-    logger.info("[%s/%s] delete: '%s'", userid, message_id, str(response))
-
-    return
-
-
 def handle_submission(userid, event):
     # message_id = str(uuid.uuid4())
     message_id = md5(event["body"].encode("utf-8")).hexdigest()
@@ -121,19 +57,8 @@ def handle_submission(userid, event):
         )
         return mk_resp(200, {"message_id": message_id, "status": existing_status})
 
-    # Set the TTL to be 24 hours (86400 seconds) from now
-    ttl_timestamp = int(time.time()) + 86400
-
-    # Write initial record to DynamoDB
-    dynamodb.put_item(
-        TableName=DYNAMODB_TABLE,
-        Item={
-            "PK": {"S": userid},
-            "SK": {"S": message_id},
-            "sts": {"S": "started"},
-            "ttl": {"N": str(ttl_timestamp)},
-        },
-    )
+    # create a new item
+    create_status(userid, message_id)
 
     # Start the Step Functions state machine
     # TODO: check response values
@@ -199,4 +124,6 @@ def delete_status(userid, event):
 
     delete_cache(userid, message_id)
 
-    return mk_resp(200, {"status": "ok", "message": "deleted", "message_id": message_id})
+    return mk_resp(
+        200, {"status": "ok", "message": "deleted", "message_id": message_id}
+    )

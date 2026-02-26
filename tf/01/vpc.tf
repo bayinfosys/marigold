@@ -8,14 +8,9 @@ module "vpc" {
   name = join("-", [var.org_name, var.project_name, var.env, "vpc"])
   cidr = "10.10.0.0/16"
 
-  azs             = ["eu-west-2a"]
-  private_subnets = ["10.10.102.0/24"]
-  public_subnets  = ["10.10.1.0/24"]
-
-  # TODO: only enable this when the cache-buidler instance is running
-  #enable_nat_gateway = true
-  #single_nat_gateway = true
-  #map_public_ip_on_launch = true
+  azs             = var.availability_zones
+  private_subnets = var.private_subnets
+  public_subnets  = var.public_subnets
 
   enable_dns_hostnames = true
   enable_dns_support   = true
@@ -45,50 +40,79 @@ data "aws_iam_policy_document" "generic_endpoint_policy" {
   }
 }
 
-#
-# cloudwatch interface for the private vpc
-#   NB: this costs money to have running (~£20pm)
-#   so we only enable it for debugging.
-#
-# this is disabled when var.private_vpc_cloudwatch is false
-#
-resource "aws_vpc_endpoint" "cloudwatch" {
-  count               = var.private_vpc_cloudwatch ? 1 : 0
-  vpc_id              = module.vpc.vpc_id
-  service_name        = "com.amazonaws.eu-west-2.logs"
-  vpc_endpoint_type   = "Interface"
-  private_dns_enabled = true
-  subnet_ids          = module.vpc.private_subnets
+module "vpc_endpoints" {
+  source  = "terraform-aws-modules/vpc/aws//modules/vpc-endpoints"
+  version = "~> 5.8"
 
-  security_group_ids = [
-    module.vpc.default_security_group_id
-  ]
+  vpc_id = module.vpc.vpc_id
 
-  tags = merge(var.project_tags, {
-    Name = join("-", [var.org_name, var.project_name, var.env, "cloudwatch"])
-  })
+  create_security_group      = true
+  security_group_name_prefix = join("-", [var.project_name, var.env, "vpc-endpoints-"])
+  security_group_description = "VPC endpoint security group"
+  security_group_rules = {
+    ingress_https = {
+      description = "HTTPS from VPC"
+      cidr_blocks = [module.vpc.vpc_cidr_block]
+    }
+  }
+
+  endpoints = {
+    ecr_api = {
+      service             = "ecr.api"
+      service_type        = "Interface"
+      private_dns_enabled = true
+      subnet_ids          = module.vpc.private_subnets
+      security_group_ids  = [module.vpc.default_security_group_id]
+      tags                = { Name = "ecr-api" }
+    }
+    ecr_dkr = {
+      service             = "ecr.dkr"
+      service_type        = "Interface"
+      private_dns_enabled = true
+      subnet_ids          = module.vpc.private_subnets
+      security_group_ids  = [module.vpc.default_security_group_id]
+      tags                = { Name = "ecr-dkr" }
+    }
+    logs = {
+      #
+      # cloudwatch interface for the private vpc
+      #   NB: this costs money to have running (~£20pm)
+      #   so we only enable it for debugging.
+      #
+      # this is disabled when var.private_vpc_cloudwatch is false
+      #
+      service             = "logs"
+      service_type        = "Interface"
+      private_dns_enabled = true
+      subnet_ids          = module.vpc.private_subnets
+      security_group_ids  = [module.vpc.default_security_group_id]
+      tags                = { Name = "logs" }
+    }
+    dynamodb = {
+      service      = "dynamodb"
+      service_type = "Gateway"
+      route_table_ids  = module.vpc.private_route_table_ids
+      tags = { Name = "dynamodb" }
+    }
+    s3 = {
+      service             = "s3"
+      private_dns_enabled = true
+      security_group_ids  = [module.vpc.default_security_group_id]
+      subnet_ids          = module.vpc.private_subnets
+      tags = { Name = "s3" }
+    },
+    sqs = {
+      service             = "sqs"
+      private_dns_enabled = true
+      security_group_ids  = [module.vpc.default_security_group_id]
+      subnet_ids          = module.vpc.private_subnets
+      tags                = { Name = "sqs" }
+    }
+  }
+
+  tags = var.project_tags
 }
 
-#
-# dynamodb gateway for private vpc
-#   we write data directly from lambdas in the private vpc to dynamodb
-#   this prevents excess costs around the sqs interface (£££) and
-#   still enables some basic usage monitoring.
-#
-resource "aws_vpc_endpoint" "dynamodb" {
-  vpc_id              = module.vpc.vpc_id
-  service_name        = "com.amazonaws.eu-west-2.dynamodb"
-  vpc_endpoint_type   = "Gateway"
-
-  tags = merge(var.project_tags, {
-    Name = join("-", [var.org_name, var.project_name, var.env, "dynamodb"])
-  })
-}
-
-resource "aws_vpc_endpoint_route_table_association" "private-dynamodb" {
-  vpc_endpoint_id = aws_vpc_endpoint.dynamodb.id
-  route_table_id  = module.vpc.private_route_table_ids[0]
-}
 
 #
 # sg rules
@@ -96,26 +120,29 @@ resource "aws_vpc_endpoint_route_table_association" "private-dynamodb" {
 resource "aws_vpc_security_group_egress_rule" "allow_all_out" {
   security_group_id = module.vpc.default_security_group_id
 
-  description = "allow all traffic out of the subnet"
-
-  cidr_ipv4 = "0.0.0.0/0"
-  #  from_port   = 0
-  #  to_port     = 0
+  # TODO(prod): restrict to VPC CIDR only once NAT gateway is confirmed not required.
+  # Required outbound destinations are:
+  #   - ECR (443) via ecr.api and ecr.dkr VPC endpoints
+  #   - S3 (443) via S3 gateway endpoint
+  #   - DynamoDB (443) via DynamoDB gateway endpoint
+  #   - SQS (443) via SQS interface endpoint
+  #   - EFS (2049) within private subnets
+  # All of these are within the VPC, so cidr_ipv4 = module.vpc.vpc_cidr_block
+  # is sufficient once the NAT gateway is removed.
+  description = "TEMPORARY: allow all outbound. Restrict before production."
+  cidr_ipv4   = "0.0.0.0/0"
   ip_protocol = "-1"
 }
 
-resource "aws_vpc_security_group_ingress_rule" "ecr" {
+resource "aws_vpc_security_group_ingress_rule" "vpc_internal" {
   security_group_id = module.vpc.default_security_group_id
 
-  description = "allow traffic from private subnet ips (ENI) on 443 (ecr,dynamodb,etc)"
-
-  #  cidr_ipv4 = module.vpc.private_subnets_cidr_blocks[0]
-
-  #  from_port   = 443
-  #  to_port     = 443
-  #  ip_protocol = "tcp"
-  cidr_ipv4 = "0.0.0.0/0"
-  #  from_port   = 0
-  #  to_port     = 0
+  # TODO(prod): restrict to vpc_cidr_block and remove the catch-all below.
+  # Inbound to the default SG is required from:
+  #   - VPC endpoint ENIs (HTTPS/443) for ECR, S3, SQS, DynamoDB, CloudWatch
+  #   - EFS mount traffic (NFS/2049) from private subnets (handled by efs module SG)
+  # The efs module manages its own SG ingress rules (see efs.tf).
+  description = "TEMPORARY: allow all inbound. Restrict before production."
+  cidr_ipv4   = "0.0.0.0/0"
   ip_protocol = "-1"
 }

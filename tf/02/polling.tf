@@ -52,35 +52,66 @@ output "results_bucket" {
   value = aws_s3_bucket.results_bucket.id
 }
 
-module "instruct_polling" {
+resource "aws_s3_object" "models_config_internal" {
+  bucket = aws_s3_bucket.data.id
+  key    = "models_config.json"
+
+  content_type = "application/json"
+  content = jsonencode({
+    for name, conf in var.models : md5(conf.environment_variables["MODELNAME"]) => {
+      queue_url     = aws_sqs_queue.model_queues[name].url
+      task_def_arn  = aws_ecs_task_definition.model_tasks[name].arn
+    }
+  })
+}
+
+module "instruct_polling_ecs" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "~> 3.0"
 
-  function_name = join("-", [var.org_name, var.project_name, var.env, "instruct-polling"])
-  description   = "polling lambda"
+  function_name = join("-", [var.org_name, var.project_name, var.env, "instruct-polling", "ecs"])
+  description   = "instruct polling (ecs)"
+  hash_extra    = "instruct polling ecs"
 
   cloudwatch_logs_retention_in_days = 5
 
-  runtime     = "python3.11"
+  runtime     = var.lambda_runtime
   source_path = join("/", [path.module, "..", "..", "package", "src"])
-  handler     = "tools.polling.main.handler"
+  handler     = "tools.polling.ecs.handler"
 
   environment_variables = {
     SUBMISSION_PATH = "POST /instruct"
     STATUS_PATH    = "GET /instruct/{message_id}"
     DELETE_PATH    = "DELETE /instruct/{message_id}"
-    SFN_ARN        = module.instruct.state_machine_arn
+    ECS_CLUSTER_ARN = module.ecs.cluster_arn
+    ECS_SUBNETS = join(",", [for x in data.aws_subnet.private_subnets: x.id])
+    ECS_SECURITY_GROUPS = join(",", [data.aws_security_group.lambda_sg.id])
     DYNAMODB_TABLE = aws_dynamodb_table.results_cache.arn
+    APPEND_CORS_HEADERS = "True"
+    AWS_S3_ASSETS_BUCKET_NAME = aws_s3_bucket.data.id
+    MODELS_CONFIG_S3_OBJECT = aws_s3_object.models_config_internal.key
   }
 
   policy_statements = {
-
-    trigger_sfn = {
+    ecs_list_tasks = {
       effect = "Allow"
-      actions = [
-        "states:StartExecution"
+      actions = ["ecs:ListTasks"]
+      resources = ["*"]
+    }
+
+    ecs_run_task = {
+      effect = "Allow"
+      actions = ["ecs:RunTask"]
+      resources = [for x in aws_ecs_task_definition.model_tasks: x.arn]
+    }
+
+    ecs_pass_role = {
+      effect = "Allow"
+      actions = ["iam:PassRole"]
+      resources = [
+        aws_iam_role.model_task.arn,
+        module.ecs.task_exec_iam_role_arn
       ]
-      resources = [module.instruct.state_machine_arn]
     }
 
     db_access = {
@@ -92,6 +123,24 @@ module "instruct_polling" {
         "dynamodb:DeleteItem",
       ],
       resources = [aws_dynamodb_table.results_cache.arn]
+    }
+
+    s3_list = {
+      effect = "Allow",
+      actions = ["s3:ListBucket"],
+      resources = [ aws_s3_bucket.data.arn ]
+    }
+
+    s3_read = {
+      effect = "Allow",
+      actions = ["s3:GetObject"],
+      resources = [aws_s3_object.models_config_internal.arn]
+    }
+
+    sqs_send = {
+      effect = "Allow"
+      actions = ["sqs:SendMessage"]
+      resources = [for x in aws_sqs_queue.model_queues: x.arn]
     }
   }
 
@@ -100,99 +149,6 @@ module "instruct_polling" {
   tags = var.project_tags
 }
 
-module "embed_polling" {
-  # FIXME: pass the target sfn arn at runtime and use a single polling lambda
-  source  = "terraform-aws-modules/lambda/aws"
-  version = "~> 3.0"
-
-  function_name = join("-", [var.org_name, var.project_name, var.env, "embed-polling"])
-  description   = "embed lambda"
-
-  cloudwatch_logs_retention_in_days = 5
-
-  runtime     = "python3.11"
-  source_path = join("/", [path.module, "..", "..", "package", "src"])
-  handler     = "tools.polling.main.handler"
-
-  environment_variables = {
-    SUBMISSION_PATH = "POST /embed/text"
-    STATUS_PATH    = "GET /embed/text/{message_id}"
-    DELETE_PATH    = "DELETE /embed/text/{message_id}"
-    SFN_ARN        = module.text_embedding.state_machine_arn
-    DYNAMODB_TABLE = aws_dynamodb_table.results_cache.arn
-  }
-
-  policy_statements = {
-
-    trigger_sfn = {
-      effect = "Allow"
-      actions = [
-        "states:StartExecution"
-      ]
-      resources = [module.text_embedding.state_machine_arn]
-    }
-
-    db_access = {
-      effect = "Allow",
-      actions = [
-        "dynamodb:PutItem",
-        "dynamodb:GetItem",
-        "dynamodb:UpdateItem",
-        "dynamodb:DeleteItem",
-      ],
-      resources = [aws_dynamodb_table.results_cache.arn]
-    }
-  }
-
-  attach_policy_statements = true
-
-  tags = var.project_tags
-}
-
-module "tts_polling" {
-  source  = "terraform-aws-modules/lambda/aws"
-  version = "~> 3.0"
-
-  function_name = join("-", [var.org_name, var.project_name, var.env, "tts-polling"])
-  description   = "tts polling lambda"
-
-  cloudwatch_logs_retention_in_days = 5
-
-  runtime     = "python3.11"
-  source_path = join("/", [path.module, "..", "..", "package", "src"])
-  handler     = "tools.polling.main.handler"
-
-  environment_variables = {
-    SUBMISSION_PATH = "POST /tts"
-    STATUS_PATH    = "GET /tts/{message_id}"
-    DELETE_PATH    = "DELETE /tts/{message_id}"
-    SFN_ARN        = module.tts.state_machine_arn
-    DYNAMODB_TABLE = aws_dynamodb_table.results_cache.arn
-  }
-
-  policy_statements = {
-
-    trigger_sfn = {
-      effect = "Allow"
-      actions = [
-        "states:StartExecution"
-      ]
-      resources = [module.tts.state_machine_arn]
-    }
-
-    db_access = {
-      effect = "Allow",
-      actions = [
-        "dynamodb:PutItem",
-        "dynamodb:GetItem",
-        "dynamodb:UpdateItem",
-        "dynamodb:DeleteItem",
-      ],
-      resources = [aws_dynamodb_table.results_cache.arn]
-    }
-  }
-
-  attach_policy_statements = true
-
-  tags = var.project_tags
+output "polling_lambda" {
+  value = module.instruct_polling_ecs.lambda_function_name
 }

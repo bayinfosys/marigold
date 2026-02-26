@@ -2,11 +2,10 @@
 
 {"input": "picture of a cat please"}
 
-returns image as base64 string
+returns S3 reference to the generated image
 """
 import os
 import logging
-import base64
 import torch
 import io
 
@@ -17,7 +16,8 @@ from PIL import Image
 
 from diffusers import DiffusionPipeline
 
-from shared import lambda_event_to_data
+from shared import lambda_event_to_data, mk_resp, get_memory_usage, write_binary_output
+from api.models import ModelType, ModelUsageStats, OutputReference, Txt2ImgResponse
 from models.cache_model import load_txt2img
 
 
@@ -27,6 +27,7 @@ logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")
 
 MODELNAME = os.environ["MODELNAME"]
 NUM_STEPS = int(os.getenv("NUM_STEPS") or 10)
+OUTPUT_BUCKET = os.environ["OUTPUT_BUCKET"]
 
 T = clock()
 pipe = load_txt2img(MODELNAME)
@@ -35,30 +36,26 @@ logger.info("'%s' loaded in '%0.2fs", MODELNAME, (clock() - T))
 
 def validate_input(data):
     if not isinstance(data, str):
-        raise ValueError("data must be dict")
+        raise ValueError("data must be a string prompt")
 
 
 def lambda_handler(event, context):
-    """run the data through the model"""
     try:
         data, mimetype = lambda_event_to_data(event)
     except KeyError as e:
-        return {
-            "status": "error",
-            "status_code": 400,
-            "message": "missing key: '%s'" % str(e),
-        }
+        return mk_resp(400, {"status": "error", "message": "missing key: '%s'" % str(e)})
+
+    # NB: message_id is passed in the event by the polling lambda
+    message_id = event.get("message_id")
+    if not message_id:
+        return mk_resp(400, {"status": "error", "message": "message_id required"})
 
     logger.info("reading '%s' '%s'", str(data), mimetype)
 
     try:
         validate_input(data)
     except Exception as e:
-        return {
-            "status": "error",
-            "status_code": 400,
-            "message": "invalid input [%s]" % str(e),
-        }
+        return mk_resp(400, {"status": "error", "message": "invalid input [%s]" % str(e)})
 
     prompt = data
 
@@ -73,31 +70,45 @@ def lambda_handler(event, context):
         guidance_scale=0.0,
     ).images[0]
 
-    duration = clock() - T
+    iduration = clock() - T
 
     logger.info(
         "'%s' %s.%s [%0.2f->%0.2f] in %0.2fs",
-        MODELNAME,
-        str(image.shape),
-        str(image.dtype),
-        image.min(),
-        image.max(),
-        duration,
+        MODELNAME, str(image.shape), str(image.dtype),
+        image.min(), image.max(), iduration,
     )
 
     with io.BytesIO() as output:
         img = Image.fromarray(np.uint8(image * 255.0))
         img.save(output, format="PNG")
-        contents = output.getvalue()
+        image_bytes = output.getvalue()
 
-    encoded = base64.b64encode(contents)
+    image_mimetype = "image/png"
+    duration = clock() - T
 
-    logger.info("%ib encoded to %ib", len(contents), len(encoded))
+    image_key = write_binary_output(
+        message_id=message_id,
+        model_type=ModelType.IMAGE_GEN,
+        field_name="image",
+        data=image_bytes,
+        mimetype=image_mimetype,
+        bucket=OUTPUT_BUCKET,
+    )
 
-    return {
-        "headers": {"Content-Type": "image/png"},
-        "statusCode": 200,
-        "body": encoded,
-        "isBase64Encoded": True,
-        "stats": {"duration": duration},
-    }
+    usage = ModelUsageStats(
+        duration=duration,
+        inference=iduration,
+        input_tokens=0,
+        output_tokens=0,
+        memory_usage=get_memory_usage(),
+    )
+
+    response = Txt2ImgResponse(
+        model=MODELNAME,
+        usage=usage,
+        outputs={
+            "image": OutputReference(path=image_key, mimetype=image_mimetype),
+        },
+    )
+
+    return mk_resp(200, response.model_dump(), isBase64Encoded=False)

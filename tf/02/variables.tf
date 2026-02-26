@@ -11,15 +11,16 @@ variable "region" {
   default = "eu-west-2"
 }
 
-variable "model_lambdas" {
-  description = "definitions of the lambda functions"
+variable "models" {
+  description = "definitions of the model containers"
   type = map(object({
     image = string
-    command = optional(string, "main.handler")
-    memory_size = optional(number, 3000)
+    handler = string
+    memory_size = optional(number, 9216)
     timeout = optional(number, 300)
     environment_variables = optional(map(string), {})
     vector_size = optional(number, 0)
+    log_level = optional(string, "INFO")
   }))
 }
 
@@ -31,4 +32,14 @@ variable "project_tags" {
 
 variable "env" {
   type = string
+}
+
+variable "git_tag" {
+  description = "git tag for this deployment"
+  type = string
+}
+
+variable "lambda_runtime" {
+  type = string
+  default = "python3.13"
 }

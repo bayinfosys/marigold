@@ -29,3 +29,23 @@ output "efs_assets_ro_iam_policy_arn" {
 output "lambda_sg" {
   value = aws_security_group.lambda_sg.id
 }
+
+output "efs_assets_rw_id" {
+  description = "EFS read-write access point ID (used by the cache builder for mounting)"
+  value       = module.efs.access_points["assets_rw"].id
+}
+
+output "efs_assets_rw_arn" {
+  description = "EFS read-write access point ARN (used by the cache builder IAM policy)"
+  value       = module.efs.access_points["assets_rw"].arn
+}
+
+output "efs_dns_name" {
+  description = "EFS file system DNS name (used by the cache builder for mounting)"
+  value       = module.efs.dns_name
+}
+
+output "efs_file_system_id" {
+  description = "EFS file system ID (used by the cache builder for mounting)"
+  value       = module.efs.id
+}

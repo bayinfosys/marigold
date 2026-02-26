@@ -23,7 +23,7 @@ APPEND_CORS_HEADERS = os.getenv("APPEND_CORS_HEADERS", "False").lower() in ("tru
 
 
 def get_userid_from_event(event):
-    """extract a usernae from an event
+    """extract a username from an event
 
     The custom authorizer will relate apikey, jwts, etc to user/group names.
     Here, we access that custom identifier to ensure users access the same data
@@ -35,7 +35,6 @@ def get_userid_from_event(event):
 
     if "requestContext" in event:
         try:
-            #return event["requestContext"]["identity"]["apiKey"]
             return event["requestContext"]["authorizer"]["email"]
         except KeyError:
             logger.error("requestContext.authorizer.email not found in '%s'", str(event))
@@ -67,9 +66,8 @@ def get_path_from_event(event):
 def path_handler(path, registry):
     """Decorator to register a function as a handler for a given path."""
     def decorator(func):
-        # Register the function in the global `handlers` dictionary
         registry[path] = func
-        return func  # Return the original function unmodified
+        return func
     return decorator
 
 
@@ -79,18 +77,55 @@ def get_memory_usage():
     return 1 + int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.)
 
 
+def write_binary_output(
+    message_id: str,
+    model_type: ModelType,
+    field_name: str,
+    data: bytes,
+    mimetype: str,
+    bucket: str,
+) -> str:
+    """Write binary model output to S3 and return the object key.
+
+    Key schema: outputs/{model_type}/{message_id}/{field_name}
+
+    The returned key is stored in DynamoDB as part of the response, allowing
+    the polling endpoint to return a reference the client can fetch via the
+    /output/{message_id}/{field_name} API route.
+
+    :param message_id: unique identifier for this inference request
+    :param model_type: ModelType enum value, used as the top-level prefix
+    :param field_name: name of the output field, e.g. "audio", "image"
+    :param data: raw binary content to store
+    :param mimetype: MIME type of the content, stored as S3 ContentType
+    :param bucket: name of the S3 output bucket
+    :returns: the S3 object key
+    """
+    s3_client = boto3.client("s3")
+    key = f"outputs/{model_type.value}/{message_id}/{field_name}"
+
+    try:
+        s3_client.put_object(
+            Bucket=bucket,
+            Key=key,
+            Body=data,
+            ContentType=mimetype,
+        )
+        logger.info("wrote %ib to s3://%s/%s", len(data), bucket, key)
+    except Exception as e:
+        logger.exception("failed to write output to s3://%s/%s [%s]", bucket, key, str(e))
+        raise
+
+    return key
+
+
 def lambda_event_to_data(event, data_key: str = None):
     """extract image/text data from the apigw integration
 
     NB: this is somewhat hacked, we don't have a way to reliably
         get the mimetype of the binary content from the event, so
         we rely on the user to encode correctly
-
-    NB: when each model type has an associated pydantic model for input
-        we should pass that model as a parameter and do validation on
-        the key value.
     """
-    #     data_key = "Body"
     data_key_ = data_key or "input"
     mimetype = None
 
@@ -100,7 +135,6 @@ def lambda_event_to_data(event, data_key: str = None):
         if not b64_str:
             raise ValueError("empty body [%s, %s]" % (str(event), str(type(b64_str))))
 
-        # check if the base64 string includes a mimetype
         if b64_str.startswith("data:"):
             mimetype, b64_str = b64_str[5:].split(",")
             mimetype = mimetype.split(";")[0]
@@ -144,11 +178,7 @@ def mk_error_resp(msg: str):
 
 
 def mk_resp(statusCode, body, headers=None, **kwargs):
-    """format a response for aws lambdas to aws apigw
-
-    set the APPEND_CORS_HEADERS environment variable to
-    insert cors headers into response
-    """
+    """format a response for aws lambdas to aws apigw"""
     logger.debug("resp: %03i '%s', %s", statusCode, str(body), str(kwargs))
 
     if headers is None:
@@ -181,9 +211,7 @@ def mk_resp(statusCode, body, headers=None, **kwargs):
 
 
 def update_results_table(user_id: str, message_id: str, results_table: str, response: dict, status: str = "complete"):
-    """write polled results to the results table for caching
-    NB: we pass in 'results_table' but it could be an environment variable
-    """
+    """write polled results to the results table for caching"""
     dynamodb = boto3.resource("dynamodb", endpoint_url=os.getenv("DYNAMODB_ENDPOINT"))
 
     try:
@@ -217,10 +245,7 @@ def create_metric_object(user_id, model_type, model_name, metrics):
 
 
 def update_metrics_sqs(user_id: str, model_type: ModelType, model_name: str, metrics: dict):
-    """write metrics to an sqs queue for logging
-
-    NB: all model_lambdas in terraform have access to this queue and envvars
-    """
+    """write metrics to an sqs queue for logging"""
     sqs_client = boto3.client("sqs", endpoint_url=os.getenv("AWS_SQS_ENDPOINT_URL"))
 
     metrics_queue_url = os.getenv("METRICS_QUEUE_URL")
@@ -229,18 +254,15 @@ def update_metrics_sqs(user_id: str, model_type: ModelType, model_name: str, met
         logger.warning("metrics_queue_url not found, no metric logging")
         return
 
-    # send a message to the queue
     message_body = create_metric_object(user_id, model_type, model_name, metrics)
 
     logger.info("sending '%s' to '%s'", str(message_body), metrics_queue_url)
 
     try:
-        # send the data
         response = sqs_client.send_message(
             QueueUrl=metrics_queue_url,
             MessageBody=json.dumps(message_body)
         )
-
         logger.info("metrics sent to '%s' [%s]", metrics_queue_url, response["MessageId"])
         return response["MessageId"]
     except Exception as e:
@@ -249,26 +271,16 @@ def update_metrics_sqs(user_id: str, model_type: ModelType, model_name: str, met
 
 
 def update_metrics_dynamodb(user_id: str, model_type: ModelType, model_name: str, metrics: dict):
-    """write metrics directly to dynamodb
-
-    We use this because the model lambdas run a private vpc, and require a vpc interface to sqs,
-    which is more expensive (£20pm) than a vpc gateway to dynamodb (£0)
-
-    This code is shitripped from 02/lambdas/usage/main.py.
-    TODO: generalise the metric logging into a mini package.
-    TOOD: use dynawrap lib
-    """
+    """write metrics directly to dynamodb"""
     pk_pattern = "METRIC#RAW#USER#{user_id}"
     sk_pattern = "DATE#{date}#OP#{operation}"
 
     message_body = create_metric_object(user_id, model_type, model_name, metrics)
 
-    # Extract or compute necessary fields
     operation = message_body.get("operation", "unknown")
     userid = message_body.get("user_id", "unknown")
     now = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
 
-    # Construct data for DynamoDB
     item_data = dict(
         operation=operation,
         user_id=userid,
@@ -278,7 +290,6 @@ def update_metrics_dynamodb(user_id: str, model_type: ModelType, model_name: str
 
     USAGE_TABLE_NAME = os.environ["DYNAMODB_USAGE_TABLE"]
 
-    # Initialize DynamoDB resource
     dynamodb = boto3.resource("dynamodb", endpoint_url=os.getenv("AWS_DYNAMODB_URL"))
 
     table = dynamodb.Table(USAGE_TABLE_NAME)
@@ -303,4 +314,4 @@ def update_metrics(user_id: str, model_type: ModelType, model_name: str, metrics
     elif "METRICS_QUEUE_URL" in os.environ:
         return update_metrics_sqs(user_id, model_type, model_name, metrics)
     else:
-        logger.warning("[%s/%s.%s] metrics not logged", user_id, model_type.value(), model_name)
+        logger.warning("[%s/%s.%s] metrics not logged", user_id, model_type.value, model_name)

@@ -1,101 +1,48 @@
 PROJECT_NAME=vecmdl
 
-# 3.6Gb 2.87G 1.84G
-#SENTENCE_TRANSFORMERS=sentence-transformers/labse sentence-transformers/paraphrase-multilingual-mpnet-base-v2 sentence-transformers/paraphrase-multilingual-minilm-l12-v2 sentence-transformers/all-minilm-l6-v2 intfloat/e5-small-v2 intfloat/e5-small-unsupervised intfloat/multilingual-e5-small intfloat/multilingual-e5-large-instruct intfloat/e5-large-unsupervised sentence-transformers/sentence-t5-large snowflake/snowflake-arctic-embed-xs snowflake/snowflake-arctic-embed-m taylorai/gte-tiny taylorai/bge-micro-v2 whereisai/uae-large-v1 sentence-transformers/gtr-t5-large sentence-transformers/all-minilm-l12-v2 sentence-transformers/paraphrase-multilingual-mpnet-base-v2
-SENTENCE_TRANSFORMERS=sentence-transformers/all-minilm-l6-v2
-IMAGE_TRANSFORMERS=sentence-transformers/clip-ViT-L-14 sentence-transformers/clip-vit-b-32-multilingual-v1 sentence-transformers/clip-vit-b-32
-#IMAGE_TRANSFORMERS=google/vit-base-patch16-224-in21k facebook/vit-mae-base openai/imagegpt-small facebook/dino-vitb8 facebook/dinov2-small
-
-# 16Gb
-# https://huggingface.co/microsoft
-#INSTRUCTS=microsoft/phi-2 microsoft/DialoGPT-small tiiuae/falcon-7b-instruct mistralai/mixtral-8x7b-instruct-v0.1 mistralai/Mixtral-8x22B-Instruct-v0.1 mistralai/Mistral-7B-Instruct-v0.2 stabilityai/stable-code-3b stabilityai/stablelm-2-1_6b-chat google/gemma-2b-it google/gemma-7b-it HuggingFaceH4/zephyr-7b-gemma-v0.1 mosaicml/mpt-7b-instruct databricks/dolly-v2-3b meta-llama/meta-llama-3-8b-instruct
-
-# 1B models
-# NB: these models need keys:
-#INSTRUCTS=apple/openelm-1_1b-instruct apple/openelm-3b-instruct
-#INSTRUCTS=microsoft/phi-2 microsoft/phi-3-mini-128k-instruct llmware/bling-falcon-1b-0.1 cognitivecomputations/tinydolphin-2.8-1.1b unfilteredai/unfilteredai-1b microsoft/phi-3-mini-128k-instruct huggingfacetb/smollm-360m-instruct facebook/blenderbot-400M-distill microsoft/phi-3.5-vision-instruct
-INSTRUCTS=qwen/qwen2-0.5b-instruct qwen/qwen2-1.5b-instruct qwen/qwen2.5-0.5b-instruct qwen/qwen2.5-3b-instruct microsoft/phi-3-mini-128k-instruct llmware/bling-sheared-llama-1.3b-0.1 microsoft/phi-3-mini-128k-instruct microsoft/phi-3.5-mini-instruct meta-llama/llama-3.2-1b-instruct meta-llama/llama-3.2-3b-instruct chuanli11/llama-3.2-3b-instruct-uncensored tiiuae/falcon-mamba-7b-instruct h2oai/h2o-danube3.1-4b-chat ibm-granite/granite-3.0-2b-instruct
-
-# image generative models
-#TXT2IMG=unfilteredai/nsfw-gen-v2.1 stabilityai/sdxl-turbo stabilityai/stable-diffusion-2-1 playgroundai/playground-v2.5-1024px-aesthetic sd-community/sdxl-flash-mini compvis/ldm-text2im-large-256 runwayml/stable-diffusion-v1-5 dream-textures/texture-diffusion black-forest-labs/flux.1-schnell
-TXT2IMG=sd-community/sdxl-flash stabilityai/sd-turbo
-
-# image to text, OCR etc
-#IMG2TXT=llava-hf/llava-onevision-qwen2-0.5b-ov-hf jinhybr/OCR-Donut-CORD naver-clova-ix/donut-base-finetuned-docvqa vikhyatk/moondream2 unsloth/llama-3.2-11b-vision-instruct-bnb-4bit h2oai/h2ovl-mississippi-2b google/paligemma2-3b-pt-224
-IMG2TXT=qwen/qwen2-vl-7b-instruct huggingfacetb/smolvlm-instruct huggingfacetb/smolvlm-256m-instruct huggingfacetb/smolvlm-500m-instruct
-
-# image segmentation
-#IMG2MASK=cidas/clipseg-rd64-refined facebook/sam-vit-huge
-IMG2MASK=facebook/sam-vit-huge
-
-# music/audio generation models
-#TXT2AUDIO=facebook/musicgen-stereo-small suno/bark stabilityai/stable-audio-open-1.0
-TXT2AUDIO=facebook/musicgen-stereo-small suno/bark
-
-# text to speech
-# see: https://huggingface.co/models?sort=trending&search=facebook%2Fmms-tts
-#      https://dl.fbaipublicfiles.com/mms/misc/language_coverage_mms.html
-#TXT2SPEECH=facebook/mms-tts-eng facebook/mms-tts-tha facebook/mms-tts-yor facebook/mms-tts-som facebook/mms-tts-mon facebook/mms-tts-abi facebook/mms-tts-abp facebook/mms-tts-bmr facebook/mms-tts-aca facebook/mms-tts-cwe facebook/mms-tts-hak facebook/mms-tts-bmu facebook/mms-tts-kjg facebook/mms-tts-acd facebook/mms-tts-cwt facebook/mms-tts-mai facebook/mms-tts-hap facebook/mms-tts-myx facebook/mms-tts-por facebook/mms-tts-bmv facebook/mms-tts-cya facebook/mms-tts-ace facebook/mms-tts-sqi facebook/mms-tts-kjh facebook/mms-tts-cym
-TXT2SPEECH=facebook/mms-tts-eng facebook/mms-tts-cym facebook/mms-tts-deu facebook/mms-tts-fra suno/bark parler-tts/parler-tts-large-v1 parler-tts/parler-tts-mini-v1
-
-# text to model
-IMG2MESH=openai/shap-e tencent/hunyuan3d-2 stabilityai/triposr facebook/vfusion3d
-
-# upscalers
-UPSCALER=compvis/ldm-super-resolution-4x-openimages
-
-# depth estimation
-DEPTH=facebook/dpt-dinov2-small-kitti intel/dpt-large intel/dpt-hybrid-midas vinvino02/glpn-nyu
-
-# document segmentation
-DOC2SEG=microsoft/layoutlmv3-base
-
-# robot control
-ROBOT=lerobot/pi0
-
-# tools for processing content
-# magicka: file identifer from google
-TOOLS=magika
-# FIXME: add facebook/nougat-small to convert pdf to markdown
-# FIXME: add pdf to image (via libreoffice)
-
 AWS_ACCOUNT_ID=789643290641
 AWS_REGION=eu-west-2
 
-# tag can be set on the commandline to specifcy the tag used in terraform commands, i.e.:
-# make LAYER=layer-01 TAG=v0.2-9-g195d3c1 plan
-TAG?=$(shell git describe --tags)
+# HF_TOKEN is read from the shell environment.
+# Export it before running any target that requires gated models:
+#   export HF_TOKEN=hf_xxxx
+HF_TOKEN ?=
 
+# TAG is derived from the current git tag.
+# Override on the command line: make TAG=v0.3.0 plan
+TAG ?= $(shell git describe --tags)
 
-# check vars
 ifeq ($(TAG),)
-    $(error TAG is not set)
+  $(error TAG is not set -- ensure a git tag exists or pass TAG= explicitly)
 endif
 
-#
-# model environment
-# common container to cache and host model binaries
-# model binaries are cached on the host/efs and mounted into this container
-# model packages (torch etc) are also on the host/etfs and mounted
-#
-.PHONEY:
+ENV ?= dev
+
+# ---------------------------------------------------------------------------
+# Container image
+# ---------------------------------------------------------------------------
+
+.PHONY: build/environment
 build/environment:
 	docker build \
 	  -t $(PROJECT_NAME)/environment:$(TAG) \
-	  -f package/src/models/environment/Dockerfile .
+	  -f package/src/models/environment/Dockerfile.ecs .
 
-#push/environment:
-#	we do not use the container as an environment
-#	docker tag \
-#	  $(PROJECT_NAME)/environment:$(TAG) \
-#	  $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG) && \
-#	docker push $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG) && \
-#	docker rmi $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG)
+build/model-cache: build/environment
+	docker build \
+	  --build-arg BASE_IMAGE=$(PROJECT_NAME)/environment:$(TAG) \
+	  -t $(PROJECT_NAME)/model-cache:$(TAG) \
+	  -f package/src/tools/model-cache/Dockerfile .
 
-.PHONEY:
+push/environment:
+	docker tag $(PROJECT_NAME)/environment:$(TAG) $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG) && \
+	docker push $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG) && \
+	docker rmi $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG)
+
+.PHONY: build/lame
 build/lame:
 	# build the lame executable for aws lambda
-	# output will go to ./tf/02/lambdas/lame
+	# output goes to ./tf/02/lambdas/lame
 	docker run \
 	  --rm \
 	  -it \
@@ -104,357 +51,206 @@ build/lame:
 	  amazonlinux:2 \
 	  bash -c '/scripts/build-lame.sh'
 
-#
-# text embeddings
-#
-cache/text-embedding/%:
-	# cache the model locally by mounting a local dir into the container and running commands
-	# python packages are mounted into /host
-	# on aws lambda we put these files into efs and mount into the same mount points for the lambda
-	docker run \
-	  -it \
-	  --rm \
-	  --entrypoint python3 \
-	  -e HF_HUB_OFFLINE=0 \
-	  -e HF_HUB_DISABLE_PROGRESS_BARS=0 \
-	  -e MODEL_TYPE="text-embedding" \
-	  -e MODELNAME=$* \
-	  -e CACHE_DIR=/models \
-	  -e HF_HUB_CACHE=/models \
-	  -e LOCAL_FILES_ONLY=0 \
-	  -v ./cache/models:/models \
-	  -v ./cache/packages:/host:ro \
-	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
-	  $(PROJECT_NAME)/environment:$(TAG) \
-	  models/cache_model.py
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
 
-cache/text-embedding: build/environment $(addprefix cache/text-embedding/,$(SENTENCE_TRANSFORMERS))
-
-
-#
-# instructs
-#
-cache/instruct/%:
-	# cache the model locally by mounting a local dir into the container and running commands
-	# python packages are mounted into /host
-	# on aws lambda we put these files into efs and mount into the same mount points for the lambda
-	docker run \
-	  -it \
-	  --rm \
-	  --entrypoint python3 \
-	  -e HF_HUB_OFFLINE=0 \
-	  -e HF_HUB_DISABLE_PROGRESS_BARS=0 \
-	  -e HF_TOKEN=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 \
-	  -e MODEL_TYPE="instruct" \
-	  -e MODELNAME=$* \
-	  -e CACHE_DIR=/models \
-	  -e HF_HUB_CACHE=/models \
-	  -e LOAD_IN_4BIT=0 \
-	  -e LOCAL_FILES_ONLY=0 \
-	  -v ./cache/models:/models \
-	  -v ./cache/packages:/host:ro \
-	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
-	  $(PROJECT_NAME)/environment:$(TAG) \
-	  models/cache_model.py
-
-
-cache/instruct: build/environment $(addprefix cache/instruct/,$(INSTRUCTS))
-
-
-#
-# tts
-#
-cache/tts/%:
-	docker run \
-	  -it \
-	  --rm \
-	  --entrypoint python3 \
-	  -e HF_HUB_OFFLINE=0 \
-	  -e HF_HUB_DISABLE_PROGRESS_BARS=0 \
-	  -e MODEL_TYPE="tts" \
-	  -e MODELNAME=$* \
-	  -e CACHE_DIR=/models \
-	  -e HF_HUB_CACHE=/models \
-	  -e LOAD_IN_4BIT=0 \
-	  -e LOCAL_FILES_ONLY=0 \
-	  -v ./cache/models:/models \
-	  -v ./cache/packages:/host:ro \
-	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
-	  $(PROJECT_NAME)/environment:$(TAG) \
-	  models/cache_model.py
-
-cache/tts: build/environment $(addprefix cache/tts/,$(TXT2SPEECH))
-
-
-# image embedding
-cache/image-embedding/%:
-	docker run \
-	  -it \
-	  --rm \
-	  --entrypoint python3 \
-	  -e HF_HUB_OFFLINE=0 \
-	  -e HF_HUB_DISABLE_PROGRESS_BARS=0 \
-	  -e MODEL_TYPE="image-embedding" \
-	  -e MODELNAME=$* \
-	  -e CACHE_DIR=/models \
-	  -e HF_HUB_CACHE=/models \
-	  -e LOCAL_FILES_ONLY=0 \
-	  -v ./cache/models:/models \
-	  -v ./cache/packages:/host:ro \
-	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
-	  $(PROJECT_NAME)/environment:$(TAG) \
-	  models/cache_model.py
-
-cache/image-embedding: $(addprefix cache/image-embedding/,$(IMAGE_TRANSFORMERS))
-
-
-# iamge generators
-cache/txt2img/%:
-	docker run \
-	  -it \
-	  --rm \
-	  --entrypoint python3 \
-	  -e HF_HUB_OFFLINE=0 \
-	  -e HF_HUB_DISABLE_PROGRESS_BARS=0 \
-	  -e MODEL_TYPE="txt2img" \
-	  -e MODELNAME=$* \
-	  -e CACHE_DIR=/models \
-	  -e HF_HUB_CACHE=/models \
-	  -e LOCAL_FILES_ONLY=0 \
-	  -v ./cache/models:/models \
-	  -v ./cache/packages:/host:ro \
-	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
-	  $(PROJECT_NAME)/environment:$(TAG) \
-	  models/cache_model.py
-
-cache/txt2img: $(addprefix cache/txt2img/,$(TXT2IMG))
-
-# imaget-to-text
-cache/img2txt/%:
-	docker run \
-	  -it \
-	  --rm \
-	  --entrypoint python3 \
-	  -e HF_HUB_OFFLINE=0 \
-	  -e HF_HUB_DISABLE_PROGRESS_BARS=0 \
-	  -e HF_TOKEN=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 \
-	  -e MODEL_TYPE="img2txt" \
-	  -e MODELNAME=$* \
-	  -e CACHE_DIR=/models \
-	  -e HF_HUB_CACHE=/models \
-	  -e LOCAL_FILES_ONLY=0 \
-	  -v ./cache/models:/models \
-	  -v ./cache/packages:/host:ro \
-	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
-	  $(PROJECT_NAME)/environment:$(TAG) \
-	  models/cache_model.py
-
-cache/img2txt: $(addprefix cache/img2txt/,$(IMG2TXT))
-
-
-cache/depth/%:
-	docker run \
-	  -it \
-	  --rm \
-	  --entrypoint python3 \
-	  -e HF_HUB_OFFLINE=0 \
-	  -e HF_HUB_DISABLE_PROGRESS_BARS=0 \
-	  -e MODEL_TYPE="depth" \
-	  -e MODELNAME=$* \
-	  -e CACHE_DIR=/models \
-	  -e HF_HUB_CACHE=/models \
-	  -e LOCAL_FILES_ONLY=0 \
-	  -v ./cache/models:/models \
-	  -v ./cache/packages:/host:ro \
-	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
-	  $(PROJECT_NAME)/environment:$(TAG) \
-	  models/cache_model.py
-
-
-cache/depth: $(addprefix cache/depth/,$(DEPTH))
-
-# image segmentation
-cache/img2mask/%:
-	docker run \
-	  -it \
-	  --rm \
-	  --entrypoint python3 \
-	  -e HF_HUB_OFFLINE=0 \
-	  -e HF_HUB_DISABLE_PROGRESS_BARS=0 \
-	  -e HF_TOKEN=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 \
-	  -e MODEL_TYPE="img2mask" \
-	  -e MODELNAME=$* \
-	  -e CACHE_DIR=/models \
-	  -e HF_HUB_CACHE=/models \
-	  -e LOCAL_FILES_ONLY=0 \
-	  -v ./cache/models:/models \
-	  -v ./cache/packages:/host:ro \
-	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
-	  $(PROJECT_NAME)/environment:$(TAG) \
-	  models/cache_model.py
-
-cache/img2mask: $(addprefix cache/img2mask/,$(IMG2MASK))
-
-cache/txt2audio/%:
-	docker run \
-	  -it \
-	  --rm \
-	  --entrypoint python3 \
-	  -e HF_HUB_OFFLINE=0 \
-	  -e HF_HUB_DISABLE_PROGRESS_BARS=0 \
-	  -e MODEL_TYPE="txt2audio" \
-	  -e HF_TOKEN=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 \
-	  -e MODELNAME=$* \
-	  -e CACHE_DIR=/models \
-	  -e HF_HUB_CACHE=/models \
-	  -e LOCAL_FILES_ONLY=0 \
-	  -v ./cache/models:/models \
-	  -v ./cache/packages:/host:ro \
-	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
-	  $(PROJECT_NAME)/environment:$(TAG) \
-	  models/cache_model.py
-
-cache/txt2audio: $(addprefix cache/txt2audio/,$(TXT2AUDIO))
-
-
-cache/img2mesh/%:
-	docker run \
-	  -it \
-	  --rm \
-	  --entrypoint python3 \
-	  -e HF_HUB_OFFLINE=0 \
-	  -e HF_HUB_DISABLE_PROGRESS_BARS=0 \
-	  -e MODEL_TYPE="img2mesh" \
-	  -e MODELNAME=$* \
-	  -e CACHE_DIR=/models \
-	  -e HF_HUB_CACHE=/models \
-	  -e LOCAL_FILES_ONLY=0 \
-	  -v ./cache/models:/models \
-	  -v ./cache/packages:/host:ro \
-	  -e PYTHONPATH=/usr/local/lib/python3.12:/host/python3.12/site-packages/ \
-	  $(PROJECT_NAME)/environment:$(TAG) \
-	  models/cache_model.py
-
-cache/img2mesh: $(addprefix cache/img2mesh/,$(IMG2MESH))
-
-#
-# cache models command
-#
-cache: cache/text-embedding cache/instruct cache/tts cache/txt2img cache/image-embedding cache/depth cache/txt2audio cache/img2mask
-
-#
-# tools
-#
 build/tools/%:
 	docker build \
 	  -t $(PROJECT_NAME)/tools/$*:$(TAG) \
 	  -f package/src/tools/$*/Dockerfile .
 
 push/tools/%:
-	docker tag \
-	  $(PROJECT_NAME)/tools/$*:$(TAG) \
-	  $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/tools/$*:$(TAG) && \
+	docker tag $(PROJECT_NAME)/tools/$*:$(TAG) $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/tools/$*:$(TAG) && \
 	docker push $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/tools/$*:$(TAG) && \
 	docker rmi $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/tools/$*:$(TAG)
 
-build/tools: $(addprefix build/tools/,$(TOOLS))
-push/tools: $(addprefix push/tools/,$(TOOLS))
+.PHONY: build build/tools push push/tools
+build: build/environment build/tools
+push: push/environment push/tools
 
-build/local-cache:
-	# run make build/tools/local-cache-builder to create the image
-	docker run -it \
-	  -e PIP_TARGET=/host-packages \
-	  -v $(shell pwd)/cache/packages/python3.12/site-packages:/host-packages \
-	  $(PROJECT_NAME)/tools/local-cache-builder:$(TAG)
+
+# ---------------------------------------------------------------------------
+# Local model cache
+#
+# Cache all models declared in assets/models.yaml:
+#   make cache/local
+#
+# To cache a subset, create assets/models-dev.yaml and run:
+#   make MODELS_YAML=assets/models-dev.yaml cache/local
+#
+# Inspect cache contents and drift from models.yaml:
+#   make cache/inspect
+# ---------------------------------------------------------------------------
+
+MODELS_YAML ?= assets/models.yaml
+
+CACHE_LOCAL_RUN = \
+	docker run \
+	  --rm \
+	  -e LOCAL_MODE=1 \
+	  -e MODELS_YAML_PATH=/project/assets/models.yaml \
+	  -e CACHE_DIR=/models \
+	  -e HF_HUB_CACHE=/models \
+	  -e HF_TOKEN=$(HF_TOKEN) \
+	  -v $(shell pwd)/$(MODELS_YAML):/project/assets/models.yaml:ro \
+	  -v $(shell pwd)/cache/models:/models \
+	  $(PROJECT_NAME)/model-cache:$(TAG)
+
+.PHONY: cache/local
+cache/local: build/model-cache
+	$(CACHE_LOCAL_RUN) build
+
+.PHONY: cache/inspect
+cache/inspect: build/model-cache
+	$(CACHE_LOCAL_RUN) inspect
+
+# ---------------------------------------------------------------------------
+# Docker utilities
+# ---------------------------------------------------------------------------
 
 docker-login:
 	@echo "Logging into Amazon ECR..."
 	aws ecr get-login-password --region $(AWS_REGION) | \
-	docker login --username AWS --password-stdin $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com
+	docker login --username AWS --password-stdin \
+	  $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com
 
-build: build/environment build/tools
-push: push/environment push/tools
-
-#
-# docker compose for local
-#
 run:
-	# docker compose up --build --abort-on-container-exit --remove-orphans
-	GIT_TAG=$(shell git describe --tags) docker compose up --abort-on-container-exit --remove-orphans
+	GIT_TAG=$(shell git describe --tags) \
+	docker compose up --abort-on-container-exit --remove-orphans
 
 stop:
 	docker compose stop
 	docker compose rm
 
+# ---------------------------------------------------------------------------
+# API definition
+# ---------------------------------------------------------------------------
 
-#
-# terraform
-# + LAYER=01-containers make init
-# + LAYER=01-containers make plan
-# + LAYER=01-containers make apply
-# + make build-all && make push-all
-# + make api
-# + LAYER=02-lambdas init
-# + LAYER=02-lambdas plan
-# + LAYER=02-lambdas apply
-#
-
-#
-# swagger api definition is stored in s3
-#
+.PHONY: build/api-definition
 build/api-definition:
 	docker run -it --rm \
 	  -v $(shell pwd)/package/src/api:/app/routes:ro \
 	  -v $(shell pwd)/tf/03/rest:/out \
-	  fastapi_aws:v0.0.6-1-g44b8087 \
+	  bayis/fastapi_aws:v0.0.11-1-ga17b8a1 \
 	    --title mdl \
 	    --router routes.routes:router \
 	    --out-public /out/api_public_definition.json \
 	    --out-private /out/api_private_definition.json \
 	    --version $(TAG)
 
-#
-# model definitions are a flat json file stored in s3
-#
-build/models-definition: build/model_extract
-	docker run -it --rm \
-	  -v $(shell pwd)/package/src/api:/app/api:ro \
-	  -v $(shell pwd)/package/src/models:/app/models:ro \
-	  -v $(shell pwd)/tf/03-apigw/rest:/out \
-	  vec/tools/model_extract:$(TAG) \
-	    --out /out/models.json
+.PHONY: build/deployment-artefacts
+build/deployment-artefacts: build/api-definition
 
+# ---------------------------------------------------------------------------
+# Model definitions
 #
-# build all the file artefacts deployed to s3
-#
-build/deployment-artefacts: build/api-definition build/models-definition
+# generate-models reads assets/models.yaml and writes assets/models.tfvars.
+# This must be run before plan-models / apply-models for layers 02 and 03.
+# The output file is not committed to version control.
+# ---------------------------------------------------------------------------
 
+.venv:
+	virtualenv -p python3 .venv
+	.venv/bin/pip install --quiet pyyaml
+
+.PHONY: generate-models
+generate-models: .venv assets/models.yaml
+	.venv/bin/python3 scripts/generate_models_tfvars.py
+
+# ---------------------------------------------------------------------------
+# Terraform
+#
+# Layers 01, 02, and 03
+#   LAYER=01 make init
+#   LAYER=01 make plan
+#   LAYER=01 make apply
+#
+# The cache builder is a separate tool layer with its own target:
+#   make deploy/cache-builder
+#   (set TF_VAR_hf_token in the environment before running if gated models
+#   are present in assets/models.yaml)
+# ---------------------------------------------------------------------------
 
 .ONESHELL:
-ENV ?= dev
 
 check-layer:
 	@if [ -z "$(LAYER)" ]; then \
-	  echo "Error: LAYER variable is not set."; \
+	  echo "error: LAYER is not set"; \
 	  exit 1; \
 	fi
 
 init: check-layer
 	terraform -chdir=tf/$(LAYER) init -upgrade -reconfigure
-validate:
+
+validate: check-layer
 	terraform -chdir=tf/$(LAYER) validate
-plan: validate
-	terraform -chdir=tf/$(LAYER) refresh -var-file=../common.tfvars -var-file=../$(ENV).tfvars
-	terraform -chdir=tf/$(LAYER) plan -var-file=../common.tfvars -var-file=../$(ENV).tfvars -out new.plan
-apply:
-	terraform -chdir=tf/$(LAYER) apply -parallelism=0 new.plan && rm tf/$(LAYER)/new.plan
-destroy:
-	terraform -chdir=tf/$(LAYER) destroy -var-file=../common.tfvars -var-file=../$(ENV).tfvars -auto-approve
-status:
+
+plan: generate-models validate
+	terraform -chdir=tf/$(LAYER) plan \
+	  -var-file=../common.tfvars \
+	  -var-file=../$(ENV).tfvars \
+	  -var-file=../../assets/models.tfvars \
+	  -var="git_tag=$(TAG)" \
+	  -out new.plan
+
+apply: check-layer
+	terraform -chdir=tf/$(LAYER) apply -parallelism=0 new.plan \
+	  && rm tf/$(LAYER)/new.plan
+
+destroy: check-layer
+	terraform -chdir=tf/$(LAYER) destroy \
+	  -var-file=../common.tfvars \
+	  -var-file=../$(ENV).tfvars \
+	  -var="git_tag=$(TAG)" \
+	  -auto-approve
+
+status: check-layer
 	terraform -chdir=tf/$(LAYER) state list
+
+# ---------------------------------------------------------------------------
+# Cache builder deployment
+#
+# Applies tf/tools/cache-builder, which starts an EC2 instance that
+# populates EFS with model weights declared in assets/models.yaml.
+#
+# The instance self-terminates when the cache run is complete.
+# Monitor progress via SSM Session Manager or CloudWatch Logs:
+#   aws ssm start-session --target $(make get-cache-builder-instance)
+#
+# For gated models (hf_token_required: true in models.yaml):
+#   export TF_VAR_hf_token=hf_xxxx
+#
+# To prune models removed from models.yaml:
+#   make deploy/cache-builder TF_EXTRA_VARS='-var="prune_cache=true"'
+# ---------------------------------------------------------------------------
+
+TF_EXTRA_VARS ?=
+
+.PHONY: deploy/cache-builder
+deploy/cache-builder:
+	terraform -chdir=tf/tools/cache-builder init -upgrade -reconfigure
+	terraform -chdir=tf/tools/cache-builder plan \
+	  -var-file=../../common.tfvars \
+	  -var-file=../../$(ENV).tfvars \
+	  -var="git_tag=$(TAG)" \
+	  $(TF_EXTRA_VARS) \
+	  -out new.plan
+	terraform -chdir=tf/tools/cache-builder apply -parallelism=0 new.plan \
+	  && rm tf/tools/cache-builder/new.plan
+
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
+
 get-key:
 	terraform -chdir=tf/03 output -raw api_key_value
+
 get-asset-bucket:
 	terraform -chdir=tf/02 output -raw asset_bucket_name
+
 get-api-spec:
 	terraform -chdir=tf/03 output -raw api_spec
+
+get-cache-builder-instance:
+	terraform -chdir=tf/tools/cache-builder output -raw cache_builder_instance_id

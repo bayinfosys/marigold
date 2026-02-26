@@ -1,0 +1,28 @@
+FROM python:3.12-slim
+
+ENV HF_HUB_DISABLE_PROGRESS_BARS=1
+ENV HF_HUB_DISABLE_TELEMETRY=1
+ENV HF_HOME=/tmp
+ENV HF_HUB_CACHE=/models
+ENV HF_HUB_OFFLINE=1
+
+ENV MODELNAME="UNSET"
+ENV LOAD_IN_4BIT=0
+ENV REMOTE_CODE=0
+ENV USE_FAST=0
+
+# we need git for the absolute latest version of https://github.com/huggingface/diffusers.git
+#RUN apt-get update && apt-get install -y git
+
+COPY ./package/src/models/environment/non-env-requirements.txt /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt
+
+# build the torch/hf/env
+COPY ./package/src/models/environment/build-environment.sh /usr/bin
+RUN build-environment.sh
+
+# copy code into container
+WORKDIR /app
+COPY ./package/src .
+
+CMD ["python", "-c", "import logging; logging.warning('container booted'); import time; time.sleep(30)"]

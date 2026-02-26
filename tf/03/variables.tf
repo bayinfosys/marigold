@@ -25,13 +25,29 @@ variable "region" {
   default = "eu-west-2"
 }
 
-variable "model_lambdas" {
-  description = "definitions of the lambda functions"
+variable "models" {
+  description = "definitions of model handlerss"
   type = map(object({
     image = string
-    command = optional(string)
+    handler = string
     memory_size = optional(number, 3000)
     timeout = optional(number, 300)
     environment_variables = optional(map(string), {})
   }))
+}
+
+variable "git_tag" {
+  description = "git tag for this deployment"
+  type = string
+}
+
+variable "master_key_email" {
+  description = "email address for the default master API key"
+  type        = string
+  default     = "ed@bayis.co.uk"
+}
+
+variable "lambda_runtime" {
+  type = string
+  default = "python3.13"
 }

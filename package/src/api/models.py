@@ -33,6 +33,15 @@ class ModelDescription(BaseModel):
     outputs: List[ModelModalities]
 
 
+class InternalModelDescription(BaseModel):
+    name: str
+    type: ModelType
+    handler: str
+    environment_variables: Dict[str, str]
+    queue_url: str
+    task_definition: str
+
+
 ListModelsResponse = List[ModelDescription]
 
 Embedding = List[float]
@@ -60,6 +69,15 @@ class ModelUsageStats(BaseModel):
     input_tokens: int = Field(..., description="number of tokens in the input")
     output_tokens: int = Field(..., description="number of tokens in the output")
     memory_usage: int = Field(..., description="process max memory usage in kb")
+
+
+class OutputReference(BaseModel):
+    """Reference to a binary output stored in S3.
+    Returned in model responses in place of inline binary data.
+    The path follows the schema: outputs/{model_type}/{message_id}/{field_name}
+    """
+    path: str = Field(..., description="S3 object key")
+    mimetype: str = Field(..., description="MIME type of the stored object")
 
 
 # embedding request/response
@@ -130,7 +148,6 @@ class InstructMessage(BaseModel, use_enum_values=True):
     TODO: add tokens and logprobs
     """
     role: InstructRole
-    #type_: InstructType = Field(default=InstructType.TEXT, alias="type", description="optional type of the content for multi-modal models")
     content: Union[str, InstructMessageContentList] = Field(..., description="single text message or list of content types depending on model modality")
 
 
@@ -138,7 +155,6 @@ InstructMessages = List[InstructMessage]
 
 
 class InstructResponse(BaseModel):
-    #id: str = Field(None, description="unique id for this response (not used)")
     created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
     finish_reason: str = "stop"
     model: str
@@ -173,8 +189,7 @@ class TTSResponse(BaseModel):
     model: str
     usage: ModelUsageStats
     language_code: str
-    data: str
-    mimetype: str
+    outputs: Dict[str, OutputReference] = Field(..., description="named binary outputs stored in S3, keyed by field name")
 
 
 class TTSRequest(BaseModel):
@@ -182,9 +197,17 @@ class TTSRequest(BaseModel):
     text: str
 
 
+# txt2img
+class Txt2ImgResponse(BaseModel):
+    created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
+    finish_reason: str = "stop"
+    model: str
+    usage: ModelUsageStats
+    outputs: Dict[str, OutputReference] = Field(..., description="named binary outputs stored in S3, keyed by field name")
+
+
 # img2txt
 class Img2TxtResponse(BaseModel):
-    #id: str = Field(None, description="unique id for this response (not used)")
     created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
     finish_reason: str = "stop"
     model: str

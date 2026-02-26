@@ -1,6 +1,6 @@
 from fastapi import Security
 
-from fastapi_aws import AWSAPIRouter, LambdaAuthorizer
+from fastapi_aws import AWSAPIRouter, APIKeyAuthorizer, CognitoAuthorizer
 
 from .models import EmbedTextRequest, EmbedImageRequest, EmbeddingsResponse
 from .models import InstructRequest, InstructResponse
@@ -9,28 +9,16 @@ from .models import UsageResponse
 from .models import DeleteCacheResponse
 
 
-lambda_auth = LambdaAuthorizer(
-    authorizer_name="${lambda_authorizer_name}",
-    aws_lambda_uri="${lambda_authorizer_uri}",
-    aws_iam_role_arn="${lambda_authorizer_iam_role_arn}",
-    ttl=3600,
+apikey_auth = APIKeyAuthorizer(
+    authorizer_name="${apikey_authorizer_name}"
 )
 
+#cognito_auth = CognitoAuthorizer(
+#    authorizer_name="${cognito_authorizer_name}"
+#)
+cognito_auth = None
+
 router = AWSAPIRouter()
-
-
-#
-# model descriptions
-#
-# @router.get(
-#    "/models",
-#    response_model=ListModelsResponse,
-#    aws_sfn_sync_arn="${models_definition_arn}", # FIXME: this is an s3 arn
-#    aws_iam_arn="${models_definition_iam_role_arn}",
-#    tags=["models"],
-# )
-# async def list_models():
-#    return ListModelsResponse()
 
 
 #
@@ -40,11 +28,11 @@ router = AWSAPIRouter()
     "/embed/text",
     description="embed text into a feature space",
     response_model=EmbeddingsResponse,
-    aws_lambda_uri="${polling_start_lambda_arn}",
+    aws_lambda_arn="${polling_start_lambda_arn}",
     aws_iam_arn="${polling_start_lambda_iam_role_arn}",
     tags=["models", "embedding"],
 )
-async def embed_text(body: EmbedTextRequest, user=Security(lambda_auth)):
+async def embed_text(body: EmbedTextRequest, user=Security(apikey_auth)):
     return EmbeddingsResponse()
 
 
@@ -52,11 +40,11 @@ async def embed_text(body: EmbedTextRequest, user=Security(lambda_auth)):
     "/embed/text/{message_id}",
     description="retrieve previously computed embeddings",
     response_model=EmbeddingsResponse,
-    aws_lambda_uri="${polling_start_lambda_arn}",
+    aws_lambda_arn="${polling_start_lambda_arn}",
     aws_iam_arn="${polling_start_lambda_iam_role_arn}",
     tags=["models", "embedding"],
 )
-async def fetch_embed_text(user=Security(lambda_auth)):
+async def fetch_embed_text(user=Security(apikey_auth)):
     return EmbeddingsResponse()
 
 
@@ -64,34 +52,22 @@ async def fetch_embed_text(user=Security(lambda_auth)):
     "/embed/text/{message_id}",
     description="delete a cached response",
     response_model=DeleteCacheResponse,
-    aws_lambda_uri="${polling_start_lambda_arn}",
+    aws_lambda_arn="${polling_start_lambda_arn}",
     aws_iam_arn="${polling_start_lambda_iam_role_arn}",
     tags=["models", "embedding"],
 )
-async def delete_embed_text_response(user=Security(lambda_auth)):
+async def delete_embed_text_response(user=Security(apikey_auth)):
     return DeleteCacheResponse()
-
-
-# @router.post(
-#    "/embed/text/direct",
-#    description="call the embed text model directly, with no polling buffer.",
-#    response_model=EmbeddingsResponse,
-#    aws_lambda_uri="${text_embedding_lambda_function_arn}",
-#    aws_iam_arn="${text_embedding_invoke_lambda_iam_role_arn}",
-#    tags=["models", "embedding"],
-# )
-# async def embed_text(body: EmbedTextRequest, user=Security(lambda_auth)):
-#    return EmbeddingsResponse()
 
 
 @router.post(
     "/embed/image",
     response_model=EmbeddingsResponse,
-    aws_sfn_sync_arn="${image_embedding_step_function_arn}",
-    aws_iam_arn="${image_embedding_step_function_iam_role_arn}",
+    aws_lambda_arn="${polling_start_lambda_arn}",
+    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
     tags=["models", "embedding"],
 )
-async def embed_image(body: EmbedImageRequest, user=Security(lambda_auth)):
+async def embed_image(body: EmbedImageRequest, user=Security(apikey_auth)):
     return EmbeddingsResponse()
 
 
@@ -101,34 +77,33 @@ async def embed_image(body: EmbedImageRequest, user=Security(lambda_auth)):
 @router.post(
     "/instruct",
     response_model=InstructResponse,
-    aws_lambda_uri="${instruct_polling_start_lambda_arn}",
-    aws_iam_arn="${instruct_polling_start_lambda_iam_role_arn}",
+    aws_lambda_arn="${polling_start_lambda_arn}",
+    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
     tags=["models", "instruct", "chat"],
 )
-async def instruct_request(body: InstructRequest, user=Security(lambda_auth)):
+async def instruct_request(body: InstructRequest, user=Security(apikey_auth)):
     return InstructResponse()
 
 
-# instruct polling response
 @router.get(
     "/instruct/{message_id}",
     response_model=InstructResponse,
-    aws_lambda_uri="${instruct_polling_check_lambda_arn}",
-    aws_iam_arn="${instruct_polling_check_lambda_iam_role_arn}",
+    aws_lambda_arn="${polling_start_lambda_arn}",
+    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
     tags=["models", "instruct", "chat"],
 )
-async def instruct_poll_response(user=Security(lambda_auth)):
+async def instruct_poll_response(user=Security(apikey_auth)):
     return InstructResponse()
 
 
 @router.delete(
     "/instruct/{message_id}",
     response_model=DeleteCacheResponse,
-    aws_lambda_uri="${instruct_polling_check_lambda_arn}",
-    aws_iam_arn="${instruct_polling_check_lambda_iam_role_arn}",
+    aws_lambda_arn="${polling_start_lambda_arn}",
+    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
     tags=["models", "instruct", "chat"],
 )
-async def delete_instruct_cache_response(user=Security(lambda_auth)):
+async def delete_instruct_cache_response(user=Security(apikey_auth)):
     return DeleteCacheResponse()
 
 
@@ -138,33 +113,71 @@ async def delete_instruct_cache_response(user=Security(lambda_auth)):
 @router.post(
     "/tts",
     response_model=TTSResponse,
-    aws_lambda_uri="${tts_polling_start_lambda_arn}",
-    aws_iam_arn="${tts_polling_start_lambda_iam_role_arn}",
+    aws_lambda_arn="${polling_start_lambda_arn}",
+    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
     tags=["models", "text-to-speech"],
 )
-async def tts(body: TTSRequest, user=Security(lambda_auth)):
+async def tts(body: TTSRequest, user=Security(apikey_auth)):
     return TTSResponse()
 
 
 @router.get(
     "/tts/{message_id}",
+    aws_lambda_arn="${polling_start_lambda_arn}",
+    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
     response_model=TTSResponse,
-    aws_lambda_uri="${tts_polling_check_lambda_arn}",
-    aws_iam_arn="${tts_polling_check_lambda_iam_role_arn}",
     tags=["models", "text-to-speech"],
 )
-async def tts_poll_response(user=Security(lambda_auth)):
+async def tts_poll_response(user=Security(apikey_auth)):
+    return
+
+
+#
+# binary output retrieval
+#
+# All model types that produce binary outputs (audio, image, mesh, etc) write
+# to S3 under the key schema: outputs/{model_type}/{message_id}/{field_name}
+#
+# The polling response includes an OutputReference for each named output field,
+# and clients fetch the content via this single route.
+#
+# Model-specific convenience routes below map to the same S3 integration with
+# fixed field names, avoiding the need for clients to inspect the polling
+# response to discover output field names.
+#
+@router.get(
+    "/output/{message_id}/{field_name}",
+    description="retrieve a named binary output for a completed model invocation",
+    aws_s3_bucket="${s3_output_bucket_name}",
+    aws_s3_object_key="outputs/{message_id}/{field_name}",
+    aws_iam_arn="${s3_read_output_iam_role_arn}",
+    tags=["output"],
+)
+async def get_output(user=Security(apikey_auth)):
     return
 
 
 @router.get(
-    "/tts/{message_id}/{fieldname}",
-    aws_s3_bucket="${s3_cache_object_bucket_name}",
-    aws_object_key="{path}",
-    aws_iam_arn="${s3_read_tts_object_iam_role_arn}",
-    tags=["models", "text-to-speech"],
+    "/tts/{message_id}/audio",
+    description="retrieve audio output for a completed TTS invocation",
+    aws_s3_bucket="${s3_output_bucket_name}",
+    aws_s3_object_key="outputs/text-to-speech/{message_id}/audio",
+    aws_iam_arn="${s3_read_output_iam_role_arn}",
+    tags=["models", "text-to-speech", "output"],
 )
-async def tts_object_response(user=Security(lambda_auth)):
+async def get_tts_audio(user=Security(apikey_auth)):
+    return
+
+
+@router.get(
+    "/image/{message_id}/image",
+    description="retrieve image output for a completed text-to-image invocation",
+    aws_s3_bucket="${s3_output_bucket_name}",
+    aws_s3_object_key="outputs/image-generator/{message_id}/image",
+    aws_iam_arn="${s3_read_output_iam_role_arn}",
+    tags=["models", "image-generation", "output"],
+)
+async def get_generated_image(user=Security(apikey_auth)):
     return
 
 
@@ -174,11 +187,11 @@ async def tts_object_response(user=Security(lambda_auth)):
 @router.get(
     "/usage/{key}/{period}",
     response_model=UsageResponse,
-    aws_lambda_uri="${usage_stats_lambda_arn}",
+    aws_lambda_arn="${usage_stats_lambda_arn}",
     aws_iam_arn="${usage_stats_lambda_iam_role_arn}",
     tags=["usage"],
 )
-async def usage_stats_response(user=Security(lambda_auth)):
+async def usage_stats_response(user=Security(apikey_auth)):
     return
 
 
@@ -188,20 +201,56 @@ async def usage_stats_response(user=Security(lambda_auth)):
 @router.get(
     "/openapi.json",
     aws_s3_bucket="${s3_assets_bucket_name}",
-    aws_object_key="openapi.json",
+    aws_s3_object_key="openapi.json",
     aws_iam_arn="${s3_read_api_object_iam_role_arn}",
     tags=["api"],
 )
-async def openapi_object_response(user=Security(lambda_auth)):
+async def openapi_object_response(user=Security(apikey_auth)):
     return
 
 
 @router.get(
     "/models.json",
     aws_s3_bucket="${s3_assets_bucket_name}",
-    aws_object_key="models.json",
+    aws_s3_object_key="models.json",
     aws_iam_arn="${s3_read_api_object_iam_role_arn}",
     tags=["api"],
 )
-async def model_descriptions_response(user=Security(lambda_auth)):
+async def model_descriptions_response(user=Security(apikey_auth)):
+    return
+
+
+#
+# api key management
+#
+@router.post(
+    "/users/keys",
+    description="create an api key for programmatic access",
+    aws_lambda_arn="${key_management_lambda_arn}",
+    aws_iam_arn="${key_management_lambda_iam_role_arn}",
+    tags=["keys"],
+)
+async def create_api_key(user=Security(cognito_auth)):
+    return
+
+
+@router.get(
+    "/users/keys",
+    description="list api keys for the current user",
+    aws_lambda_arn="${key_management_lambda_arn}",
+    aws_iam_arn="${key_management_lambda_iam_role_arn}",
+    tags=["keys"],
+)
+async def list_api_keys(user=Security(cognito_auth)):
+    return
+
+
+@router.delete(
+    "/users/keys/{key_id}",
+    description="delete an api key",
+    aws_lambda_arn="${key_management_lambda_arn}",
+    aws_iam_arn="${key_management_lambda_iam_role_arn}",
+    tags=["keys"],
+)
+async def delete_api_key(user=Security(cognito_auth)):
     return
