@@ -13,20 +13,15 @@ https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-cpu-memory-erro
 """
 
 import json
-import boto3
-import os
 import logging
+import os
 from hashlib import md5
 
-from shared import get_userid_from_event, get_path_from_event, mk_resp
-from api.models import (
-    InternalModelDescription,
-    ModelType,
-    InstructModelRequest,
-    EmbedTextRequest,
-    # TTSRequest,
-)
-from .cache import create_status, get_status, get_response, delete_cache
+import boto3
+from api.models import ModelDispatch, ModelDispatchRoutes
+from shared import get_path_from_event, get_userid_from_event, mk_resp
+
+from .cache import create_status, delete_cache, get_response, get_status
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")
@@ -38,17 +33,14 @@ dynamodb = boto3.client("dynamodb")
 # env vars
 DYNAMODB_TABLE = os.environ["DYNAMODB_TABLE"]
 
-# API paths
-SUBMISSION_PATH = os.environ["SUBMISSION_PATH"]
-STATUS_PATH = os.environ["STATUS_PATH"]
-DELETE_PATH = os.environ["DELETE_PATH"]
 
-_config: dict[str, InternalModelDescription] = {}
+_config: ModelDispatchRoutes = {}
 
 
-def load_model_config() -> dict[str, InternalModelDescription]:
+def load_model_config() -> ModelDispatchRoutes:
     global _config
-    if _config is not None:
+
+    if _config:
         return _config
 
     bucket = os.environ["AWS_S3_ASSETS_BUCKET_NAME"]
@@ -56,9 +48,7 @@ def load_model_config() -> dict[str, InternalModelDescription]:
     try:
         obj = s3.get_object(Bucket=bucket, Key=key)
         data = json.loads(obj["Body"].read())
-        _config = {
-            model_name: InternalModelDescription(**v) for model_name, v in data.items()
-        }
+        _config = {model_name: ModelDispatch(**v) for model_name, v in data.items()}
         logger.info("loaded %d models", len(_config))
     except Exception as e:
         logger.exception("failed to load model config from s3: %s", str(e))
@@ -70,7 +60,7 @@ def load_model_config() -> dict[str, InternalModelDescription]:
 ## get it at launch
 load_model_config()
 
-assert _config is not None, "unable to load MODELS_CONFIG"
+assert _config, "unable to load MODELS_CONFIG"
 
 
 class TaskLauncher:
@@ -80,25 +70,24 @@ class TaskLauncher:
         self.subnets = subnets
         self.security_groups = security_groups
 
-    def is_running(self, model: InternalModelDescription) -> bool:
+    def is_running(self, model: ModelDispatch) -> bool:
         """check if a task for this model is already running
         TODO: move this to a dynamodb 'running_models' table rather than an ecs lookup
         TODO: check sqs queue depth with `ApproximateNumberOfMessages` and start extra task if needed
         """
         # NB: we do not sortkeys in the hash here because the hash originally happened in
         # step functions and we could not sort. So, we allow cache-miss on key order change.
-        family = md5(model.name.encode()).hexdigest()
         resp = self.ecs.list_tasks(
             cluster=self.cluster,
             desiredStatus="RUNNING",
-            family=family,
+            family=model.family,
             maxResults=5,
         )
         return bool(resp.get("taskArns"))
 
-    def launch(self, model: InternalModelDescription):
+    def launch(self, model: ModelDispatch):
         """launch the ecs task for this model"""
-        logger.info("launching ecs task for '%s'", model.name)
+        logger.info("launching ecs task for '%s'", model.family)
 
         self.ecs.run_task(
             cluster=self.cluster,
@@ -110,16 +99,6 @@ class TaskLauncher:
                     "subnets": self.subnets,
                     "securityGroups": self.security_groups,
                 }
-            },
-            overrides={
-                "containerOverrides": [
-                    {
-                        "name": "infer",
-                        "environment": [
-                            {"name": "AWS_SQS_QUEUE_URL", "value": model.queue_url},
-                        ],
-                    }
-                ]
             },
         )
 
@@ -136,19 +115,22 @@ def handler(event, context):
     logger.info("event: '%s'", str(event))
 
     path = get_path_from_event(event)
+    method = event["httpMethod"]
     userid = get_userid_from_event(event)
 
-    handlers = {
-        SUBMISSION_PATH: handle_submission,
-        STATUS_PATH: handle_status,
-        DELETE_PATH: delete_status,
+    dispatch = {
+        "POST": handle_submission,
+        "GET": handle_status,
+        "DELETE": delete_status,
+        "OPTIONS": lambda u, e: mk_resp(200, {}),
     }
 
+    fn = dispatch.get(method)
+    if fn is None:
+        return mk_resp(405, {"status": "error", "message": "method not allowed"})
+
     try:
-        return handlers[path](userid, event)
-    except KeyError:
-        logger.error("invalid path: '%s'", path)
-        return mk_resp(400, {"status": "error", "message": "invalid path"})
+        return fn(userid, event)
     except Exception as e:
         logger.exception("error in handler: %s", str(e))
         return mk_resp(500, {"status": "error", "message": "internal error"})
@@ -157,6 +139,10 @@ def handler(event, context):
 def handle_submission(userid, event):
     message_id = md5(event["body"].encode("utf-8")).hexdigest()
     message_content = json.loads(event["body"])
+
+    model_name = message_content.get("model")
+    if not model_name:
+        return mk_resp(400, {"status": "error", "message": "model field required"})
 
     # check cache first
     existing_status = get_status(userid, message_id)
@@ -167,63 +153,29 @@ def handle_submission(userid, event):
 
     # load the model store metadata
     models = load_model_config()
-    model_name = message_content["model"]
-    model_name_md5 = md5(message_content["model"].encode()).hexdigest()
+    model_name_md5 = md5(model_name.encode()).hexdigest()
 
-    # NB: we must parse `message_content` into an appropriate request
-    # (InstructRequest, EmbeddingRequest, TTSRequest, etc)
-    # TODO: ensure api.models has a common Request base model which we can use
-    #       and differentiate based on model.model_type
+    # find the model we are supposed to use for this message
     try:
-        model = models[model_name_md5]
-    except KeyError as e:
-        logger.error(
-            "cannot find '%s' in %s [%s]",
-            model_name,
-            str([k for k in _config]),
-            str(type(e)),
-        )
+        dispatch = models[model_name_md5]
+    except KeyError:
+        logger.warning("[%s] unknown model requested: '%s'", userid, model_name)
         return mk_resp(400, {"status": "error", "message": "unknown model"})
 
-    # parse the object according to the model
-    try:
-        match model.type:
-            case ModelType.INSTRUCT:
-                request = InstructModelRequest.model_validate(message_content)
-            case ModelType.TEXT_EMBEDDING:
-                request = EmbedTextRequest.model_validate(message_content)
-            case _:
-                return mk_resp(
-                    400,
-                    {
-                        "status": "error",
-                        "message": "unknown model type '%s'" % model.type.value,
-                    },
-                )
-    except Exception as e:
-        logger.error(
-            "unable to parse submission '%s' for '%s' [%s]",
-            str(message_content),
-            model_name,
-            str(e),
-        )
-        return mk_resp(
-            400, {"status": "error", "message": "unable to parse submission"}
-        )
+    # TODO: validate the request against the model type, so we can return 400 error without starting a task...
 
-    # the submission is valid, so create a new item in the cache
-    create_status(userid, message_id)
-    logger.info("[%s/%s] new cache item created", userid, message_id)
+    create_status(userid, message_id, status="queued")
+    logger.info("[%s/%s] queued for model '%s'", userid, message_id, model_name)
 
     # submit the request to the model via sqs
     try:
         sqs.send_message(
-            QueueUrl=model.queue_url,
+            QueueUrl=dispatch.queue_url,
             MessageBody=json.dumps(
                 {
                     "userid": userid,
                     "message_id": message_id,
-                    "request": request.model_dump(),
+                    "request": message_content,
                 }
             ),
         )
@@ -232,7 +184,7 @@ def handle_submission(userid, event):
             "[%s/%s] queue does not exist: %s [%s]",
             userid,
             message_id,
-            model.queue_url,
+            dispatch.queue_url,
             str(e),
         )
         return mk_resp(500, {"status": "error", "message": "internal routing error"})
@@ -241,9 +193,9 @@ def handle_submission(userid, event):
         return mk_resp(500, {"status": "error", "message": "internal error"})
 
     # launch an ecs task for processing if necessary
-    if not launcher.is_running(model):
+    if not launcher.is_running(dispatch):
         logger.info("[%s/%s] launching task for %s", userid, message_id, model_name)
-        launcher.launch(model)
+        launcher.launch(dispatch)
 
     # return the message_id for cache polling
     return mk_resp(200, {"message_id": message_id})
@@ -257,13 +209,14 @@ def handle_status(userid, event):
     status = get_status(userid, message_id)
 
     if status in ("complete", "error"):
-        response = get_response(userid, message_id)
-        response["status"] = status
-        return mk_resp(200, response)
+        result = get_response(userid, message_id)
+        return mk_resp(
+            200, {"status": status, "message_id": message_id, "result": result}
+        )
     elif status:
-        return mk_resp(202, {"status": status})
+        return mk_resp(202, {"status": status, "message_id": message_id})
     else:
-        return mk_resp(404, {"status": "not found"})
+        return mk_resp(404, {"status": "not found", "message_id": message_id})
 
 
 def delete_status(userid, event):

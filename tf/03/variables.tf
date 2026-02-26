@@ -26,14 +26,8 @@ variable "region" {
 }
 
 variable "models" {
-  description = "definitions of model handlerss"
-  type = map(object({
-    image = string
-    handler = string
-    memory_size = optional(number, 3000)
-    timeout = optional(number, 300)
-    environment_variables = optional(map(string), {})
-  }))
+  description = "definitions of the model containers"
+  type = any
 }
 
 variable "git_tag" {

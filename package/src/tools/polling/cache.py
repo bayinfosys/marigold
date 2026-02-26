@@ -1,11 +1,11 @@
 """common cache managment code"""
 
 import json
-import boto3
-import os
 import logging
+import os
 import time
 
+import boto3
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")
@@ -22,19 +22,18 @@ def create_key(userid, message_id):
     }
 
 
-def create_status(userid: str, message_id: str, ttl: int = -1):
+def create_status(userid: str, message_id: str, ttl: int = -1, status: str = "queued"):
     # Set the TTL to be 24 hours (86400 seconds) from now
     if ttl < 0:
         ttl = int(time.time()) + 86400
 
     # Write initial record to DynamoDB
-    # FIXME: move this to cache.py
     dynamodb.put_item(
         TableName=DYNAMODB_TABLE,
         Item={
             "PK": {"S": userid},
             "SK": {"S": message_id},
-            "sts": {"S": "started"},
+            "sts": {"S": status},
             "ttl": {"N": str(ttl)},
         },
     )

@@ -1,4 +1,4 @@
-PROJECT_NAME=vecmdl
+#PROJECT_NAME=vecmdl
 
 AWS_ACCOUNT_ID=789643290641
 AWS_REGION=eu-west-2
@@ -145,18 +145,45 @@ build/deployment-artefacts: build/api-definition
 # ---------------------------------------------------------------------------
 # Model definitions
 #
-# generate-models reads assets/models.yaml and writes assets/models.tfvars.
-# This must be run before plan-models / apply-models for layers 02 and 03.
-# The output file is not committed to version control.
+# validate-models     validate models.yaml schema -- no output files
+# generate-models     write models.tfvars and models.json (no network needed)
+# generate-catalogue  write public_models_reference.json (fetches provider APIs)
+#
+# Typical workflow after editing models.yaml:
+#   make validate-models
+#   make generate-models
+#   make generate-catalogue   # set HF_TOKEN if any auth_required: true entries
+#   git add assets/models.yaml \
+#           assets/models.tfvars \
+#           assets/models.json \
+#           assets/public_models_reference.json
+#   LAYER=02 make plan && LAYER=02 make apply
+#   make deploy/cache-builder
+#
+# Layer 03 no longer needs a separate apply step for the model catalogue.
 # ---------------------------------------------------------------------------
 
 .venv:
 	virtualenv -p python3 .venv
-	.venv/bin/pip install --quiet pyyaml
+	.venv/bin/pip install --quiet pyyaml pydantic requests
 
-.PHONY: generate-models
-generate-models: .venv assets/models.yaml
-	.venv/bin/python3 scripts/generate_models_tfvars.py
+.PHONY: models/validate
+models/validate: .venv assets/models.yaml
+	.venv/bin/python3 scripts/generate_models_tfvars.py \
+	  assets/models.yaml validate
+
+.PHONY: models/generate
+models/generate: .venv assets/models.yaml
+	.venv/bin/python3 scripts/generate_models_tfvars.py \
+	  assets/models.yaml tfvars > assets/models.tfvars
+	.venv/bin/python3 scripts/generate_models_tfvars.py \
+	  assets/models.yaml json > assets/models.json
+
+.PHONY: models/catalogue
+models/catalogue: .venv assets/models.yaml
+	HF_TOKEN=$(HF_TOKEN) \
+	.venv/bin/python3 scripts/generate_models_tfvars.py \
+	  assets/models.yaml public > assets/public_models_reference.json
 
 # ---------------------------------------------------------------------------
 # Terraform

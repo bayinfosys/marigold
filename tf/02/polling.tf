@@ -53,19 +53,20 @@ output "results_bucket" {
 }
 
 resource "aws_s3_object" "models_config_internal" {
-  bucket = aws_s3_bucket.data.id
-  key    = "models_config.json"
-
+  bucket       = aws_s3_bucket.data.id
+  key          = "models_config.json"
   content_type = "application/json"
+
   content = jsonencode({
     for name, conf in var.models : md5(conf.environment_variables["MODELNAME"]) => {
-      queue_url     = aws_sqs_queue.model_queues[name].url
-      task_def_arn  = aws_ecs_task_definition.model_tasks[name].arn
+      queue_url       = aws_sqs_queue.model_queues[name].url
+      task_definition = aws_ecs_task_definition.model_tasks[name].arn
+      family          = aws_ecs_task_definition.model_tasks[name].family
     }
   })
 }
 
-module "instruct_polling_ecs" {
+module "polling_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "~> 3.0"
 
@@ -80,13 +81,10 @@ module "instruct_polling_ecs" {
   handler     = "tools.polling.ecs.handler"
 
   environment_variables = {
-    SUBMISSION_PATH = "POST /instruct"
-    STATUS_PATH    = "GET /instruct/{message_id}"
-    DELETE_PATH    = "DELETE /instruct/{message_id}"
     ECS_CLUSTER_ARN = module.ecs.cluster_arn
     ECS_SUBNETS = join(",", [for x in data.aws_subnet.private_subnets: x.id])
     ECS_SECURITY_GROUPS = join(",", [data.aws_security_group.lambda_sg.id])
-    DYNAMODB_TABLE = aws_dynamodb_table.results_cache.arn
+    DYNAMODB_TABLE = aws_dynamodb_table.results_cache.id
     APPEND_CORS_HEADERS = "True"
     AWS_S3_ASSETS_BUCKET_NAME = aws_s3_bucket.data.id
     MODELS_CONFIG_S3_OBJECT = aws_s3_object.models_config_internal.key
@@ -150,5 +148,5 @@ module "instruct_polling_ecs" {
 }
 
 output "polling_lambda" {
-  value = module.instruct_polling_ecs.lambda_function_name
+  value = module.polling_lambda.lambda_function_name
 }

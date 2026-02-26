@@ -128,21 +128,8 @@ resource "aws_api_gateway_rest_api" "default" {
     # cognito_authorizer_name = "cognito_auth"  # FIXME
     # cognito_user_pool_arn = "cognito_user_pool_arn"  # FIXME
 
-    polling_start_lambda_arn = data.aws_lambda_function.embed_polling.invoke_arn
+    polling_start_lambda_arn = data.aws_lambda_function.polling_start_lambda_arn.invoke_arn
     polling_start_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
-
-    instruct_polling_start_lambda_arn = data.aws_lambda_function.instruct_polling.invoke_arn
-    instruct_polling_start_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
-
-    instruct_polling_check_lambda_arn = data.aws_lambda_function.instruct_polling.invoke_arn
-    instruct_polling_check_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
-
-
-    tts_polling_start_lambda_arn = data.aws_lambda_function.tts_polling.invoke_arn
-    tts_polling_start_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
-
-    tts_polling_check_lambda_arn = data.aws_lambda_function.tts_polling.invoke_arn
-    tts_polling_check_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
 
     # usage
     usage_stats_lambda_arn = data.aws_lambda_function.usage_stats.invoke_arn

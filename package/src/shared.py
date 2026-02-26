@@ -1,25 +1,31 @@
 """shared functions usable by all models
 + lambda base64 decoder
 """
-import os
+
 import base64
-import logging
+import io
 import json
-import boto3
+import logging
+import os
+from base64 import b64decode
 from datetime import datetime
 
-
-from botocore.exceptions import ClientError
-
+import boto3
 from api.enums import ModelType
-
+from api.models import ModelUsageStats, OutputReference
+from botocore.exceptions import ClientError
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")
 
 
 DEFAULT_MIMETYPE = "text/plain"
-APPEND_CORS_HEADERS = os.getenv("APPEND_CORS_HEADERS", "False").lower() in ("true", "1", "t")
+APPEND_CORS_HEADERS = os.getenv("APPEND_CORS_HEADERS", "False").lower() in (
+    "true",
+    "1",
+    "t",
+)
 
 
 def get_userid_from_event(event):
@@ -37,14 +43,18 @@ def get_userid_from_event(event):
         try:
             return event["requestContext"]["authorizer"]["email"]
         except KeyError:
-            logger.error("requestContext.authorizer.email not found in '%s'", str(event))
+            logger.error(
+                "requestContext.authorizer.email not found in '%s'", str(event)
+            )
     elif "destination" in event:  # for step function pipelines
         try:
             return event["destination"]["userid"]
         except KeyError:
             logger.error("destination.userid not found in '%s'", str(event))
     else:
-        logger.error("requestContext and destination missing from event '%s'", str(event))
+        logger.error(
+            "requestContext and destination missing from event '%s'", str(event)
+        )
 
     return dummy_username
 
@@ -65,16 +75,19 @@ def get_path_from_event(event):
 
 def path_handler(path, registry):
     """Decorator to register a function as a handler for a given path."""
+
     def decorator(func):
         registry[path] = func
         return func
+
     return decorator
 
 
 def get_memory_usage():
     """return the memory used by the process in MB"""
     import resource
-    return 1 + int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.)
+
+    return 1 + int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0)
 
 
 def write_binary_output(
@@ -84,7 +97,7 @@ def write_binary_output(
     data: bytes,
     mimetype: str,
     bucket: str,
-) -> str:
+) -> OutputReference:
     """Write binary model output to S3 and return the object key.
 
     Key schema: outputs/{model_type}/{message_id}/{field_name}
@@ -99,7 +112,7 @@ def write_binary_output(
     :param data: raw binary content to store
     :param mimetype: MIME type of the content, stored as S3 ContentType
     :param bucket: name of the S3 output bucket
-    :returns: the S3 object key
+    :returns: OutputReference containing the key and mimetype of the stored binary
     """
     s3_client = boto3.client("s3")
     key = f"outputs/{model_type.value}/{message_id}/{field_name}"
@@ -113,10 +126,12 @@ def write_binary_output(
         )
         logger.info("wrote %ib to s3://%s/%s", len(data), bucket, key)
     except Exception as e:
-        logger.exception("failed to write output to s3://%s/%s [%s]", bucket, key, str(e))
+        logger.exception(
+            "failed to write output to s3://%s/%s [%s]", bucket, key, str(e)
+        )
         raise
 
-    return key
+    return OutputReference(path=key, mimetype=mimetype)
 
 
 def lambda_event_to_data(event, data_key: str = None):
@@ -148,15 +163,28 @@ def lambda_event_to_data(event, data_key: str = None):
         try:
             data = json.loads(event[data_key_])
         except KeyError as e:
-            logger.error("'%s' not found in event %s [%s]", data_key_, str(list(event.keys())), str(e))
+            logger.error(
+                "'%s' not found in event %s [%s]",
+                data_key_,
+                str(list(event.keys())),
+                str(e),
+            )
             raise ValueError("expected %s key in event" % data_key_) from e
         except Exception as e:
-            logger.error("could not parse '%s' as json [%s]", data_key_, str(event[data_key_]))
-            raise ValueError("expected '%s' to be json formatted string" % data_key_) from e
+            logger.error(
+                "could not parse '%s' as json [%s]", data_key_, str(event[data_key_])
+            )
+            raise ValueError(
+                "expected '%s' to be json formatted string" % data_key_
+            ) from e
     elif isinstance(event[data_key_], (dict, list)):
         data = event[data_key_]
     else:
-        logger.error("unhandled submission type: '%s' [%s]", str(event[data_key_]), str(type(event[data_key_])))
+        logger.error(
+            "unhandled submission type: '%s' [%s]",
+            str(event[data_key_]),
+            str(type(event[data_key_])),
+        )
 
     if not data:
         logger.error("no data found in body")
@@ -202,49 +230,52 @@ def mk_resp(statusCode, body, headers=None, **kwargs):
     if APPEND_CORS_HEADERS:
         headers.update(cors_headers())
 
-    return {
-        "statusCode": statusCode,
-        "body": body,
-        "headers": headers,
-        **kwargs
-    }
+    return {"statusCode": statusCode, "body": body, "headers": headers, **kwargs}
 
 
-def update_results_table(user_id: str, message_id: str, results_table: str, response: dict, status: str = "complete"):
+_dynamodb = boto3.client("dynamodb", endpoint_url=os.getenv("DYNAMODB_ENDPOINT"))
+
+
+def update_results_table(
+    user_id: str,
+    message_id: str,
+    results_table: str,
+    response: dict,
+    status: str = "complete",
+):
     """write polled results to the results table for caching"""
-    dynamodb = boto3.resource("dynamodb", endpoint_url=os.getenv("DYNAMODB_ENDPOINT"))
-
     try:
-        table = dynamodb.Table(results_table)
-    except Exception as e:
-        logger.exception("[%s/%s] unable to find dynamodb:'%s'", user_id, message_id, results_table)
-        raise e
-
-    try:
-        table.update_item(
-            Key={"PK": user_id, "SK": message_id},
+        _dynamodb.update_item(
+            TableName=results_table,
+            Key={"PK": {"S": user_id}, "SK": {"S": message_id}},
             UpdateExpression="SET #status = :status, #response = :response",
-            ExpressionAttributeNames={"#status": "Status", "#response": "Response"},
+            ExpressionAttributeNames={"#status": "sts", "#response": "rsp"},
             ExpressionAttributeValues={
-                ":status": status,
-                ":response": json.dumps(response),
+                ":status": {"S": status},
+                ":response": {"S": json.dumps(response)},
             },
         )
         logger.info("[%s/%s] updated dynamodb", user_id, message_id)
     except ClientError as e:
-        logger.error("[%s/%s] failed to write on dynamodb:'%s' [%s]", user_id, message_id, results_table, str(e))
+        logger.error(
+            "[%s/%s] failed to write on dynamodb:'%s' [%s]",
+            user_id,
+            message_id,
+            results_table,
+            str(e),
+        )
         raise
 
 
 def create_metric_object(user_id, model_type, model_name, metrics):
     return dict(
-        user_id=user_id,
-        operation=f"{model_type.value}/{model_name}",
-        **metrics
+        user_id=user_id, operation=f"{model_type.value}/{model_name}", **metrics
     )
 
 
-def update_metrics_sqs(user_id: str, model_type: ModelType, model_name: str, metrics: dict):
+def update_metrics_sqs(
+    user_id: str, model_type: ModelType, model_name: str, metrics: dict
+):
     """write metrics to an sqs queue for logging"""
     sqs_client = boto3.client("sqs", endpoint_url=os.getenv("AWS_SQS_ENDPOINT_URL"))
 
@@ -260,17 +291,20 @@ def update_metrics_sqs(user_id: str, model_type: ModelType, model_name: str, met
 
     try:
         response = sqs_client.send_message(
-            QueueUrl=metrics_queue_url,
-            MessageBody=json.dumps(message_body)
+            QueueUrl=metrics_queue_url, MessageBody=json.dumps(message_body)
         )
-        logger.info("metrics sent to '%s' [%s]", metrics_queue_url, response["MessageId"])
+        logger.info(
+            "metrics sent to '%s' [%s]", metrics_queue_url, response["MessageId"]
+        )
         return response["MessageId"]
     except Exception as e:
         logger.error("Failed to send metrics '%s' [%s]", metrics_queue_url, str(e))
         return None
 
 
-def update_metrics_dynamodb(user_id: str, model_type: ModelType, model_name: str, metrics: dict):
+def update_metrics_dynamodb(
+    user_id: str, model_type: ModelType, model_name: str, metrics: dict
+):
     """write metrics directly to dynamodb"""
     pk_pattern = "METRIC#RAW#USER#{user_id}"
     sk_pattern = "DATE#{date}#OP#{operation}"
@@ -290,20 +324,27 @@ def update_metrics_dynamodb(user_id: str, model_type: ModelType, model_name: str
 
     USAGE_TABLE_NAME = os.environ["DYNAMODB_USAGE_TABLE"]
 
-    dynamodb = boto3.resource("dynamodb", endpoint_url=os.getenv("AWS_DYNAMODB_URL"))
-
-    table = dynamodb.Table(USAGE_TABLE_NAME)
-
-    item = {
-        "PK": pk_pattern.format(**item_data),
-        "SK": sk_pattern.format(**item_data),
-        **item_data
-    }
-
     try:
-        table.put_item(Item=item)
+        _dynamodb.put_item(
+            TableName=USAGE_TABLE_NAME,
+            Item={
+                "PK": {"S": pk_pattern.format(**item_data)},
+                "SK": {"S": sk_pattern.format(**item_data)},
+                "operation": {"S": operation},
+                "user_id": {"S": userid},
+                "date": {"S": now},
+                "data": {"S": json.dumps(message_body)},
+            },
+        )
     except Exception as e:
-        logger.exception("[%s/%s.%s] failed to write metrics to '%s' [%s]", user_id, model_type, model_name, USAGE_TABLE_NAME, str(e))
+        logger.exception(
+            "[%s/%s.%s] failed to write metrics to '%s' [%s]",
+            user_id,
+            model_type,
+            model_name,
+            USAGE_TABLE_NAME,
+            str(e),
+        )
         return
 
 
@@ -314,4 +355,44 @@ def update_metrics(user_id: str, model_type: ModelType, model_name: str, metrics
     elif "METRICS_QUEUE_URL" in os.environ:
         return update_metrics_sqs(user_id, model_type, model_name, metrics)
     else:
-        logger.warning("[%s/%s.%s] metrics not logged", user_id, model_type.value, model_name)
+        logger.warning(
+            "[%s/%s.%s] metrics not logged", user_id, model_type.value, model_name
+        )
+
+
+def record_usage(
+    user_id: str,
+    model_type: ModelType,
+    modelname: str,
+    duration: float,
+    inference: float,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+) -> ModelUsageStats:
+    """simple wrapper to build a ModelUsageStats and call updated_metrics()"""
+    usage = ModelUsageStats(
+        duration=duration,
+        inference=inference,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        memory_usage=get_memory_usage(),
+    )
+    update_metrics(user_id, model_type, modelname, usage.model_dump())
+    return usage
+
+
+def decode_image(b64_str: str) -> Image.Image:
+    """Decode a base64 image string to a PIL Image.
+
+    Accepts raw base64 or a data-URI prefix (data:image/jpeg;base64,...).
+    """
+    if b64_str.startswith("data:"):
+        b64_str = b64_str.split(",", 1)[1]
+    return Image.open(io.BytesIO(b64decode(b64_str))).convert("RGB")
+
+
+def image_to_png_bytes(image: Image.Image) -> bytes:
+    """convert an image to a png byte sequence"""
+    with io.BytesIO() as buf:
+        image.save(buf, format="PNG")
+        return buf.getvalue()

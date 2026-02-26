@@ -18,7 +18,7 @@ import logging
 import os
 from datetime import datetime
 
-from dynawrap import DynamodbWrapper, DBItem
+from dynawrap import DBItem, DynamodbWrapper
 
 logger = logging.getLogger()
 logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))

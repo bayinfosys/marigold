@@ -14,14 +14,11 @@ produces:
 
 which is correct
 """
-import io
-import json
 
 from dataclasses import asdict
 
-from shared import lambda_event_to_data
-
 from magika import Magika
+from shared import lambda_event_to_data
 
 m = Magika()
 

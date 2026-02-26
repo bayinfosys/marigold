@@ -13,11 +13,11 @@ and resolving owner and label from the name without additional storage.
 NB: the raw key value is only returned at creation time. It cannot be
     retrieved afterwards. The caller must store it immediately.
 """
-import boto3
-import os
-import logging
 import json
+import logging
+import os
 
+import boto3
 from shared import mk_resp
 
 logger = logging.getLogger()

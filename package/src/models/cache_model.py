@@ -1,18 +1,20 @@
-"""cache a hugging face model
+"""Load HuggingFace models from the EFS cache.
 
-assumes the host env has a network connection
+Used by:
+  - ECS task handlers at runtime (local_files_only=True by default)
+  - The cache-builder EC2 instance during cache population (local_files_only=False)
 
-This is used to cache models (as an ec2 startup script)
-and also load the models at runtime from the cache.
+All loader functions return (processor_or_tokenizer, model) except load_txt2img
+which returns a pipeline directly. load_img2mesh is a stub.
 
-NB: this laods models at runtime, see these threads for HF loading optimization issues:
-https://huggingface.co/mosaicml/mpt-7b-instruct/discussions/6
+The standard_loader handles the common AutoTokenizer/AutoProcessor +
+AutoModel pattern. Model-type-specific loaders import the correct
+transformer classes and delegate to standard_loader.
 """
-import os
+
 import logging
-
+import os
 from time import perf_counter as clock
-
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")
@@ -23,173 +25,183 @@ class ModelNotFoundError(Exception):
 
 
 def standard_loader(
-    T,
-    M,
-    modelname,
+    TokenizerClass,
+    ModelClass,
+    modelname: str,
     cache_dir: str = None,
-    load_in_4bit: bool = False,
     use_fast: bool = False,
     remote_code: bool = False,
     local_files_only: bool = True,
     low_cpu_mem_usage: bool = True,
+    load_in_4bit: bool = False,
 ):
-    """load a standard T.from_pretrained and M.from_pretrained
-    where T is one of AutoTokenizer, AutoImageProcess etc
-    and M is one of AutoModel, AutoModelForDepthEstimation etc
+    """Load a tokenizer/processor and a model using the from_pretrained pattern.
+
+    TokenizerClass and ModelClass should be HuggingFace Auto classes, e.g.
+    AutoTokenizer and AutoModelForCausalLM.
+
+    load_in_4bit is applied only to the model, not to the tokenizer.
+    use_fast and remote_code apply to both.
     """
-    # can't do these asserts without needing the type imports, can we check names?
-    # assert T in (AutoImageProcessor, AutoTokenizer)
-    # assert M in (AutoModelForDepthEstimation, AutoModelForCausalLM)
     T0 = clock()
 
     try:
-        t = T.from_pretrained(
+        processor = TokenizerClass.from_pretrained(
             modelname,
             cache_dir=cache_dir,
-            load_in_4bit=load_in_4bit,
             use_fast=use_fast,
             trust_remote_code=remote_code,
             local_files_only=local_files_only,
         )
     except OSError as e:
-        logger.error("'%s' not in local caache [%s]", modelname, str(e))
+        logger.error("'%s' not in local cache [%s]", modelname, str(e))
         raise ModelNotFoundError(modelname) from e
     except Exception as e:
-        logger.exception("'%s' load tokenizer failed [%s]", modelname, str(e))
+        logger.exception("'%s' tokenizer load failed [%s]", modelname, str(e))
         raise ModelNotFoundError(modelname) from e
 
-    logger.info("loaded '%s'.tok in %0.2fs", modelname, (clock() - T0))
-
+    logger.info("loaded '%s' tokenizer in %0.2fs", modelname, clock() - T0)
     T0 = clock()
 
-    # NB: do not set the dtype for CPU loading (only float32 is performant)
     try:
-        m = M.from_pretrained(
+        model = ModelClass.from_pretrained(
             modelname,
             cache_dir=cache_dir,
-            load_in_4bit=load_in_4bit,
             trust_remote_code=remote_code,
             local_files_only=local_files_only,
             low_cpu_mem_usage=low_cpu_mem_usage,
+            load_in_4bit=load_in_4bit,
         )
     except OSError as e:
-        logger.error("'%s' not in local caache [%s]", modelname, str(e))
+        logger.error("'%s' not in local cache [%s]", modelname, str(e))
         raise ModelNotFoundError(modelname) from e
     except Exception as e:
-        logger.exception("'%s' load model failed [%s]", modelname, str(e))
+        logger.exception("'%s' model load failed [%s]", modelname, str(e))
         raise ModelNotFoundError(modelname) from e
 
     try:
-        m.eval()
+        model.eval()
     except Exception as e:
-        logger.error("m.eval() failed [%s]", str(e))
+        logger.warning("model.eval() failed [%s]", str(e))
 
     try:
-        cbsize = m.get_memory_footprint()
-    except Exception as e:
-        logger.error("m.get_memory_footprint() failed [%s]", str(e))
-        cbsize = 0
+        footprint = model.get_memory_footprint()
+    except Exception:
+        footprint = 0
 
     logger.info(
-        "loaded '%s'.model in %0.2fs into %ib [%s]",
+        "loaded '%s' model in %0.2fs footprint=%ib dtype=%s",
         modelname,
-        (clock() - T0),
-        cbsize,
-        m.config.torch_dtype,
+        clock() - T0,
+        footprint,
+        getattr(getattr(model, "config", None), "torch_dtype", "unknown"),
     )
 
-    return t, m
+    return processor, model
 
 
 def load_instruct(modelname: str, **kwargs):
-    """instruct models AKA chatbots"""
-    from transformers import AutoTokenizer as T
+    """Instruction-following / chat models."""
     from transformers import AutoModelForCausalLM as M
+    from transformers import AutoTokenizer as T
 
     return standard_loader(T, M, modelname, **kwargs)
 
 
 def load_text_embedding(modelname: str, cache_dir: str = None, **kwargs):
-    """text-to-vector do text embeddings
-    NB: we should avoid using the sentence-transformers lib directly, and use
-        the tokenizer/model setup so we can replicate the standard flow/metrics
-    NB: SentenceTransformer has no .from_pretrained method
+    """Text-to-vector embedding via sentence-transformers.
+
+    Returns (tokenizer, SentenceTransformer). The SentenceTransformer handles
+    pooling internally so the tokenizer is provided for token-counting only.
     """
-    from transformers import AutoTokenizer as T
     from sentence_transformers import SentenceTransformer as ST
+    from transformers import AutoTokenizer as T
 
     T0 = clock()
-    t = T.from_pretrained(modelname, cache_dir=cache_dir)
-    m = ST(modelname, cache_folder=cache_dir)
-
-    logger.info(
-        "loaded '%s'.model in %0.2fs",
-        modelname,
-        (clock() - T0),
-    )
-
-    return t, m
+    tokenizer = T.from_pretrained(modelname, cache_dir=cache_dir)
+    model = ST(modelname, cache_folder=cache_dir)
+    logger.info("loaded '%s' in %0.2fs", modelname, clock() - T0)
+    return tokenizer, model
 
 
 def load_image_embedding(modelname: str, cache_dir: str = None, **kwargs):
-    """image-to-vector do image embeddings
-    NB: we use sentence transformers to do clip models so we can support text search over images
+    """Image-to-vector embedding.
+
+    Uses sentence-transformers for CLIP-compatible models so that image and
+    text embeddings share a vector space.
+
+    For non-CLIP checkpoints falls back to AutoImageProcessor + AutoModel.
     """
+    from sentence_transformers import SentenceTransformer as ST
+
+    T0 = clock()
+    try:
+        model = ST(modelname, cache_folder=cache_dir)
+        logger.info(
+            "loaded '%s' as SentenceTransformer in %0.2fs", modelname, clock() - T0
+        )
+        return None, model
+    except Exception:
+        pass
+
     from transformers import AutoImageProcessor as P
     from transformers import AutoModel as M
 
-    return standard_loader(P, M, modelname, **kwargs)
+    return standard_loader(P, M, modelname, cache_dir=cache_dir, **kwargs)
 
 
 def load_tts(modelname: str, cache_dir: str = None, **kwargs):
-    """text-to-speech"""
+    """Text-to-speech models."""
     from transformers import AutoModelForTextToWaveform as M
-    from transformers import AutoModelForSeq2SeqLM
     from transformers import AutoTokenizer as T
 
     if modelname.startswith("parler-tts/"):
-        return None, AutoModelForSeq2SeqLM.from_pretrained(modelname, cache_dir=cache_dir)
-    else:
-        return standard_loader(T, M, modelname, **kwargs)
+        from transformers import AutoModelForSeq2SeqLM as ParlerM
+
+        parler_model = ParlerM.from_pretrained(modelname, cache_dir=cache_dir)
+        return None, parler_model
+
+    return standard_loader(T, M, modelname, cache_dir=cache_dir, **kwargs)
 
 
 def load_txt2audio(modelname: str, cache_dir: str = None, **kwargs):
-    """txt to audio/music"""
-    from transformers import AutoTokenizer as T
+    """Text-to-audio / music generation."""
     from transformers import AutoModelForTextToWaveform as M
+    from transformers import AutoTokenizer as T
 
-    return standard_loader(T, M, modelname, **kwargs)
+    return standard_loader(T, M, modelname, cache_dir=cache_dir, **kwargs)
 
 
 def load_txt2img(modelname: str, cache_dir: str = None, **kwargs):
-    """text-to-image are image generators"""
-    from diffusers import DiffusionPipeline as PPL
+    """Text-to-image via diffusers DiffusionPipeline."""
+    from diffusers import DiffusionPipeline
 
-    pipe = PPL.from_pretrained(modelname, cache_dir=cache_dir).to("cpu")
+    T0 = clock()
+    pipe = DiffusionPipeline.from_pretrained(modelname, cache_dir=cache_dir).to("cpu")
     pipe.safety_checker = None
     pipe.requires_safety_checker = False
-
+    logger.info("loaded '%s' pipeline in %0.2fs", modelname, clock() - T0)
     return pipe
 
 
 def load_img2txt(modelname: str, **kwargs):
-    """image-to-text models do captions, ocr, etc"""
-    from transformers import AutoProcessor as T
+    """Image-to-text: captioning, OCR, VQA."""
     from transformers import AutoModelForVision2Seq as M
+    from transformers import AutoProcessor as T
 
     return standard_loader(T, M, modelname, **kwargs)
 
 
 def load_img2mask(modelname: str, **kwargs):
-    """image-to-mask models do segemenations, instances, etc"""
-    from transformers import AutoProcessor as T
+    """Image segmentation / mask generation."""
     from transformers import AutoModelForMaskGeneration as M
+    from transformers import AutoProcessor as T
 
     return standard_loader(T, M, modelname, **kwargs)
 
 
 def load_depth(modelname: str, **kwargs):
-    """depth estimator"""
+    """Monocular depth estimation."""
     from transformers import AutoImageProcessor as T
     from transformers import AutoModelForDepthEstimation as M
 
@@ -197,23 +209,27 @@ def load_depth(modelname: str, **kwargs):
 
 
 def load_img2mesh(modelname: str, **kwargs):
-    pass
+    # stub: no compatible model available yet
+    raise NotImplementedError("img2mesh loader not implemented")
 
+
+# ---------------------------------------------------------------------------
+# CLI entry point (used by the cache-builder and for local testing)
+# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import sys
     import json
+    import sys
 
     logger = logging.getLogger()
     logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")
     handler = logging.StreamHandler(sys.stdout)
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     )
-    handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-    cachers = {
+    _LOADERS = {
         "text-embedding": load_text_embedding,
         "image-embedding": load_image_embedding,
         "instruct": load_instruct,
@@ -223,58 +239,44 @@ if __name__ == "__main__":
         "img2mask": load_img2mask,
         "depth": load_depth,
         "txt2audio": load_txt2audio,
-        "img2mesh": load_img2mesh
+        "img2mesh": load_img2mesh,
     }
 
     logger.info("args: '%s'", str(sys.argv))
 
     if len(sys.argv) > 1:
         model_defs_filename = sys.argv[-1]
-        model_defs = json.load(open(model_defs_filename))
+        with open(model_defs_filename) as fh:
+            model_defs = json.load(fh)
         logger.info("parsed '%s'", model_defs_filename)
 
         for modelname, model_def in model_defs.items():
-            logger.info("caching '%s/%s'", model_def["model_type"], modelname)
-            cachers[model_def["model_type"]](
+            model_type = model_def["model_type"]
+            logger.info("caching '%s/%s'", model_type, modelname)
+            _LOADERS[model_type](
                 modelname=modelname,
                 cache_dir="/data/cache/models",
-                load_in_4bit=False,
-                use_fast=False,
-                remote_code=False,
                 local_files_only=False,
                 low_cpu_mem_usage=False,
             )
 
         logger.info("all models cached")
-
         sys.exit(0)
 
     else:
-        # load from env
         TYPE = os.environ["MODEL_TYPE"]
         MODELNAME = os.environ["MODELNAME"]
         CACHE_DIR = os.getenv("CACHE_DIR", "/models")
-        LOAD_IN_4BIT = bool(int(os.getenv("LOAD_IN_4BIT") or False))
-        USE_FAST = bool(int(os.getenv("USE_FAST") or False))  # tokenizer
-        REMOTE_CODE = bool(int(os.getenv("REMOTE_CODE") or False))
-        LOCAL_FILES_ONLY = bool(
-            os.getenv("LOCAL_FILES_ONLY", "False").lower() in ("true", "1", "t")
-        )
-        LOW_CPU_MEM_USAGE = bool(
-            os.getenv("LOW_CPU_MEM_USAGE", "False").lower() in ("true", "1", "t")
-        )
 
-        assert TYPE in cachers, "%s not in %s" % (TYPE, str(list(cachers.keys())))
+        assert TYPE in _LOADERS, "'%s' not in %s" % (TYPE, sorted(_LOADERS))
 
         try:
-            cachers[TYPE](
+            _LOADERS[TYPE](
                 modelname=MODELNAME,
                 cache_dir=CACHE_DIR,
-                load_in_4bit=LOAD_IN_4BIT,
-                use_fast=USE_FAST,
-                remote_code=REMOTE_CODE,
-                local_files_only=LOCAL_FILES_ONLY,
-                low_cpu_mem_usage=LOW_CPU_MEM_USAGE,
+                local_files_only=False,
+                low_cpu_mem_usage=False,
             )
         except KeyError as e:
-            print("FATAL: unknown cacher type '%s'" % str(e))
+            print("FATAL: unknown loader type '%s'" % str(e))
+            sys.exit(1)
