@@ -1,10 +1,13 @@
 ARG BASE_IMAGE=python:3.12
-# set base image to the environment container
 
 FROM $BASE_IMAGE
 
-COPY package/src/tools/model-cache/main.py /opt/model-cache-builder.py
+COPY package/src/tools/cache_builder_shared.py /opt/cache_builder_shared.py
+COPY package/src/tools/cache_builder_aws.py /opt/cache_builder_aws.py
+COPY package/src/tools/cache_builder_local.py /opt/cache_builder_local.py
 
-ENTRYPOINT ["python3", "/opt/model-cache-builder.py"]
+WORKDIR /opt
 
-CMD ["-h"]
+ENTRYPOINT ["python3", "/opt/cache_builder_aws.py"]
+
+CMD ["build"]

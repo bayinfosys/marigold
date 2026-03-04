@@ -2,11 +2,9 @@
 
 Takes an image (base64) and an optional text prompt, returns generated text.
 
-The request uses the InstructRequest message format so that the API is
-consistent with the instruct endpoint. Clients submit a messages list where
-image content items carry a base64-encoded image and text content items
-carry the prompt. A minimal single-image request with no prompt uses the
-DEFAULT_PROMPT below.
+The request uses the Img2TxtRequest format. Clients submit a base64 image
+in the input field and an optional prompt. A minimal request with no prompt
+uses the DEFAULT_PROMPT below.
 
 Compatible models:
     any AutoProcessor + AutoModelForVision2Seq (LLaVA, Idefics, PaliGemma, etc.)
@@ -17,12 +15,21 @@ import os
 from time import perf_counter as clock
 
 import torch
-from api.models import (Img2TxtRequest, Img2TxtResponse, InstructMessage,
-                        InstructRole, ModelType)
-from models import BaseModelHandler
-from models.cache_model import load_img2txt
-from shared import decode_image, record_usage
 from transformers import set_seed
+
+from shared.enums import ModelMode, ModelType
+from shared.outputs import decode_image
+from shared.registry import BaseModelHandler, model_spec
+from shared.usage import record_usage
+from models.standard_loader import ModelLoaderResult, standard_loader
+from api.models import (
+    Img2TxtRequest,
+    Img2TxtResponse,
+)
+from shared.models import (
+    InstructMessage,
+    InstructRole,
+)
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -30,15 +37,19 @@ logger = logging.getLogger(__name__)
 DEFAULT_PROMPT = "Describe this image."
 
 
+def load_img2txt(modelname: str, **kwargs) -> ModelLoaderResult:
+    """Image-to-text: captioning, OCR, VQA."""
+    from transformers import AutoModelForVision2Seq as M
+    from transformers import AutoProcessor as T
+
+    return standard_loader(T, M, modelname, **kwargs)
+
+
 def _build_hf_prompt(request: Img2TxtRequest) -> tuple:
     """Extract images and build a HuggingFace-compatible prompt list from the request.
 
-    Img2TxtRequest carries a base64 image in `input` and an optional text
-    prompt in `prompt`. This translates to a single user message containing
-    one image content item followed by one text content item.
-
     Returns (hf_prompt, images) where hf_prompt is the list passed to
-    tokenizer.apply_chat_template and images is the list of PIL Images.
+    processor.apply_chat_template and images is the list of PIL Images.
     """
     prompt_text = request.prompt or DEFAULT_PROMPT
 
@@ -61,17 +72,19 @@ def _build_hf_prompt(request: Img2TxtRequest) -> tuple:
     return hf_prompt, [image]
 
 
+@model_spec(
+    model_type=ModelType.IMG2TXT,
+    mode=ModelMode.GEN,
+    output_fields=[],
+    loader=load_img2txt,
+    request_model=Img2TxtRequest,
+    response_model=Img2TxtResponse,
+    route="/gen/img2txt",
+)
 class Img2TxtModel(BaseModelHandler):
 
     def __init__(self, modelname: str):
         super().__init__(modelname)
-        _T = clock()
-        self.processor, self.model = load_img2txt(modelname)
-        logger.info("'%s' loaded in %0.2fs", modelname, clock() - _T)
-
-    def process(self, user_id: str, message_id: str, request: dict) -> Img2TxtResponse:
-        req = Img2TxtRequest.model_validate(request)
-        return self._run(user_id, message_id, req)
 
     def _run(
         self, user_id: str, message_id: str, request: Img2TxtRequest
@@ -113,7 +126,7 @@ class Img2TxtModel(BaseModelHandler):
         iduration = clock() - T1
 
         generated_ids = [
-            output_ids[len(input_ids) :]
+            output_ids[len(input_ids):]
             for input_ids, output_ids in zip(model_inputs.input_ids, model_outputs)
         ]
 
@@ -135,13 +148,13 @@ class Img2TxtModel(BaseModelHandler):
         )
 
         usage = record_usage(
-            user_id,
-            ModelType.IMG2TXT,
-            self.modelname,
-            duration,
-            iduration,
-            input_tokens,
-            output_tokens,
+            user_id=user_id,
+            model_type=ModelType.IMG2TXT,
+            modelname=self.modelname,
+            duration=duration,
+            inference=iduration,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
 
         return Img2TxtResponse(

@@ -36,4 +36,5 @@ pip install --upgrade \
   --no-cache-dir \
   --break-system-packages \
   pydantic \
+  pydub \
   pyyaml

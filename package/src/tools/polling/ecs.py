@@ -19,9 +19,9 @@ from hashlib import md5
 
 import boto3
 from api.models import ModelDispatch, ModelDispatchRoutes
-from shared import get_path_from_event, get_userid_from_event, mk_resp
+from shared.lambda_proxy import get_path_from_event, get_userid_from_event, mk_resp
 
-from .cache import create_status, delete_cache, get_response, get_status
+from .cache import create_status, delete_cache, get_response, get_status, update_status
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")
@@ -187,9 +187,11 @@ def handle_submission(userid, event):
             dispatch.queue_url,
             str(e),
         )
+        update_status(userid, message_id, status="error")
         return mk_resp(500, {"status": "error", "message": "internal routing error"})
     except Exception as e:
-        logger.exception("[%s/%s] unknown error: '%s'", userid, message_id, str(e))
+        logger.exception("[%s/%s] unknown error sending to SQS: '%s'", userid, message_id, str(e))
+        update_status(userid, message_id, status="error")
         return mk_resp(500, {"status": "error", "message": "internal error"})
 
     # launch an ecs task for processing if necessary

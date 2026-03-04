@@ -26,11 +26,13 @@ from time import perf_counter as clock
 
 import numpy as np
 import torch
-from api.models import ModelType, TTSRequest, TTSResponse
-from models import BaseModelHandler
-from models.cache_model import load_tts
 from pydub import AudioSegment
-from shared import record_usage, write_binary_output
+
+from shared.enums import ModelMode, ModelType, OutputMimeType
+from shared.registry import BaseModelHandler, OutputField, model_spec
+from shared.usage import record_usage
+from models.standard_loader import ModelLoaderResult, standard_loader
+from api.models import TTSRequest, TTSResponse
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -38,7 +40,24 @@ logger = logging.getLogger(__name__)
 LAME_PATH = os.getenv("LAME_PATH", "/var/task/lame")
 AudioSegment.converter = LAME_PATH
 
-OUTPUT_BUCKET = os.environ["OUTPUT_BUCKET"]
+
+def load_tts(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
+    """Text-to-speech models.
+
+    The parler-tts family uses a seq2seq architecture and bypasses
+    standard_loader. processor is None for that path; the model is called
+    directly with text inputs at inference time.
+    """
+    from transformers import AutoModelForTextToWaveform as M
+    from transformers import AutoTokenizer as T
+
+    if modelname.startswith("parler-tts/"):
+        from transformers import AutoModelForSeq2SeqLM as ParlerM
+
+        parler_model = ParlerM.from_pretrained(modelname, cache_dir=cache_dir)
+        return ModelLoaderResult(processor=None, model=parler_model)
+
+    return standard_loader(T, M, modelname, cache_dir=cache_dir, **kwargs)
 
 
 def _numpy_to_wave(arr: np.ndarray, sample_rate: int) -> bytes:
@@ -68,18 +87,20 @@ def _wave_to_mp3(wav_bytes: bytes) -> bytes:
     return buf.getvalue()
 
 
+@model_spec(
+    model_type=ModelType.TTS,
+    mode=ModelMode.GEN,
+    output_fields=[OutputField(name="audio", mimetype=OutputMimeType.AUDIO_MP3)],
+    loader=load_tts,
+    request_model=TTSRequest,
+    response_model=TTSResponse,
+    route="/gen/tts",
+)
 class TTSModel(BaseModelHandler):
 
     def __init__(self, modelname: str):
         super().__init__(modelname)
         self.lang_code = os.getenv("MODEL_LANGCODE", "")
-        _T = clock()
-        self.tokenizer, self.model = load_tts(modelname)
-        logger.info("'%s' loaded in %0.2fs", modelname, clock() - _T)
-
-    def process(self, user_id: str, message_id: str, request: dict) -> TTSResponse:
-        req = TTSRequest.model_validate(request)
-        return self._run(user_id, message_id, req)
 
     def _run(self, user_id: str, message_id: str, request: TTSRequest) -> TTSResponse:
         if self.lang_code and request.language_code != self.lang_code:
@@ -100,7 +121,7 @@ class TTSModel(BaseModelHandler):
         )
 
         T = clock()
-        inputs = self.tokenizer(request.text, return_tensors="pt")
+        inputs = self.processor(request.text, return_tensors="pt")
 
         T1 = clock()
         with torch.no_grad():
@@ -120,7 +141,6 @@ class TTSModel(BaseModelHandler):
             waveform.squeeze().numpy(), self.model.config.sampling_rate
         )
         mp3 = _wave_to_mp3(wav)
-        audio_mimetype = "audio/mpeg"
         duration = clock() - T
 
         logger.info(
@@ -133,21 +153,14 @@ class TTSModel(BaseModelHandler):
             iduration,
         )
 
-        output_reference = write_binary_output(
-            message_id=message_id,
-            model_type=ModelType.TTS,
-            field_name="audio",
-            data=mp3,
-            mimetype=audio_mimetype,
-            bucket=OUTPUT_BUCKET,
-        )
+        output_reference = self.write_output("audio", mp3, message_id)
 
         usage = record_usage(
-            user_id,
-            ModelType.TTS,
-            self.modelname,
-            duration,
-            iduration,
+            user_id=user_id,
+            model_type=ModelType.TTS,
+            modelname=self.modelname,
+            duration=duration,
+            inference=iduration,
             input_tokens=inputs.input_ids.nelement(),
         )
 

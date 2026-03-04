@@ -1,4 +1,4 @@
-#PROJECT_NAME=vecmdl
+PROJECT_NAME=vecmdl
 
 AWS_ACCOUNT_ID=789643290641
 AWS_REGION=eu-west-2
@@ -88,14 +88,14 @@ MODELS_YAML ?= assets/models.yaml
 CACHE_LOCAL_RUN = \
 	docker run \
 	  --rm \
-	  -e LOCAL_MODE=1 \
 	  -e MODELS_YAML_PATH=/project/assets/models.yaml \
 	  -e CACHE_DIR=/models \
 	  -e HF_HUB_CACHE=/models \
 	  -e HF_TOKEN=$(HF_TOKEN) \
 	  -v $(shell pwd)/$(MODELS_YAML):/project/assets/models.yaml:ro \
 	  -v $(shell pwd)/cache/models:/models \
-	  $(PROJECT_NAME)/model-cache:$(TAG)
+	  $(PROJECT_NAME)/model-cache:$(TAG) \
+	  python3 cache_builder_local.py
 
 .PHONY: cache/local
 cache/local: build/model-cache
@@ -169,20 +169,20 @@ build/deployment-artefacts: build/api-definition
 
 .PHONY: models/validate
 models/validate: .venv assets/models.yaml
-	.venv/bin/python3 scripts/generate_models_tfvars.py \
+	cd package/src && ../../.venv/bin/python3 tools/generate_models_tfvars.py \
 	  assets/models.yaml validate
 
 .PHONY: models/generate
 models/generate: .venv assets/models.yaml
-	.venv/bin/python3 scripts/generate_models_tfvars.py \
+	.venv/bin/python3 package/src/tools/generate_models_tfvars.py \
 	  assets/models.yaml tfvars > assets/models.tfvars
-	.venv/bin/python3 scripts/generate_models_tfvars.py \
+	.venv/bin/python3 package/src/tools/generate_models_tfvars.py \
 	  assets/models.yaml json > assets/models.json
 
 .PHONY: models/catalogue
 models/catalogue: .venv assets/models.yaml
 	HF_TOKEN=$(HF_TOKEN) \
-	.venv/bin/python3 scripts/generate_models_tfvars.py \
+	.venv/bin/python3 package/src/tools/generate_models_tfvars.py \
 	  assets/models.yaml public > assets/public_models_reference.json
 
 # ---------------------------------------------------------------------------
@@ -213,7 +213,7 @@ init: check-layer
 validate: check-layer
 	terraform -chdir=tf/$(LAYER) validate
 
-plan: generate-models validate
+plan: # models/generate validate
 	terraform -chdir=tf/$(LAYER) plan \
 	  -var-file=../common.tfvars \
 	  -var-file=../$(ENV).tfvars \

@@ -12,34 +12,53 @@ import os
 from time import perf_counter as clock
 
 import torch
-from api.models import (EmbeddingQuantization, EmbedTextRequest,
-                        EmbedTextResponse, ModelType)
-from models import BaseModelHandler
-from models.cache_model import load_text_embedding
 from sentence_transformers.quantization import quantize_embeddings
-from shared import record_usage
+
+from shared.enums import ModelMode, ModelType
+from shared.registry import BaseModelHandler, model_spec
+from shared.usage import record_usage
+from models.standard_loader import ModelLoaderResult
+from api.models import EmbeddingQuantization, EmbedTextRequest, EmbeddingResponse
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
+EmbedTextResponse = EmbeddingResponse
 
+
+def load_text_embedding(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
+    """Text-to-vector embedding via sentence-transformers.
+
+    The SentenceTransformer handles pooling internally. The tokenizer is
+    loaded separately and stored as processor for token-counting only.
+    """
+    from sentence_transformers import SentenceTransformer as ST
+    from transformers import AutoTokenizer as T
+
+    T0 = clock()
+    tokenizer = T.from_pretrained(modelname, cache_dir=cache_dir)
+    model = ST(modelname, cache_folder=cache_dir)
+    logger.info("loaded '%s' in %0.2fs", modelname, clock() - T0)
+    return ModelLoaderResult(processor=tokenizer, model=model)
+
+
+@model_spec(
+    model_type=ModelType.TEXT_EMBEDDING,
+    mode=ModelMode.EMBED,
+    output_fields=[],
+    loader=load_text_embedding,
+    request_model=EmbedTextRequest,
+    response_model=EmbeddingResponse,
+    route="/embed/text",
+)
 class TextEmbeddingModel(BaseModelHandler):
 
     def __init__(self, modelname: str):
         super().__init__(modelname)
-        _T = clock()
-        self.tokenizer, self.model = load_text_embedding(modelname)
-        logger.info("'%s' loaded in %0.2fs", modelname, clock() - _T)
-
-    def process(
-        self, user_id: str, message_id: str, request: dict
-    ) -> EmbedTextResponse:
-        req = EmbedTextRequest.model_validate(request)
-        return self._run(user_id, message_id, req)
 
     def _run(
         self, user_id: str, message_id: str, request: EmbedTextRequest
-    ) -> EmbedTextResponse:
+    ) -> EmbeddingResponse:
         if request.model != self.modelname:
             raise ValueError(
                 "model mismatch: expected %s, got %s" % (self.modelname, request.model)
@@ -48,7 +67,7 @@ class TextEmbeddingModel(BaseModelHandler):
             raise TypeError("request.input must be a string")
 
         T = clock()
-        encoded = self.tokenizer(
+        encoded = self.processor(
             [request.input], padding=True, truncation=True, return_tensors="pt"
         )
         input_tokens = encoded.input_ids.nelement()
@@ -75,15 +94,15 @@ class TextEmbeddingModel(BaseModelHandler):
         )
 
         usage = record_usage(
-            user_id,
-            ModelType.TEXT_EMBEDDING,
-            self.modelname,
-            duration,
-            inference_time,
+            user_id=user_id,
+            model_type=ModelType.TEXT_EMBEDDING,
+            modelname=self.modelname,
+            duration=duration,
+            inference=inference_time,
             input_tokens=input_tokens,
         )
 
-        return EmbedTextResponse(
+        return EmbeddingResponse(
             model=self.modelname,
             embedding=vector,
             usage=usage,

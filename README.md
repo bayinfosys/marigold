@@ -3,15 +3,69 @@
 A model zoo and inference API. Hosts HuggingFace models on AWS and exposes
 them via a unified REST API with async job submission and polling.
 
-The model set covers text embedding, instruction-following (chat), text-to-speech,
-depth estimation, and image segmentation. All models run from a shared model weight
-cache on EFS, loaded by a single environment container image.
+The model set covers text and image embedding, instruction-following (chat),
+text-to-speech, image generation, depth estimation, image segmentation, and
+a suite of eval models for text and image quality scoring. All models run
+from a shared model weight cache on EFS, loaded by a single environment
+container image.
 
 
 ## Architecture
 
-Three Terraform layers build on each other:
+```mermaid
+flowchart LR
+    C([Client])
 
+    subgraph APIGW[API Gateway]
+        POST[POST /$model/$task]
+        GET[GET /$model/$task/$message_id]
+    end
+
+    LFN[Dispatch]
+
+    subgraph SQS[SQS queues]
+        Q1[instruct]
+        Q2[tts]
+        Q3[txt2img]
+        Q4[text-embed]
+        Q5[image-eval]
+        Q6[text-eval]
+    end
+
+    subgraph HANDLERS[ECS]
+        H1[instruct]
+        H2[tts]
+        H3[txt2img]
+        H4[text-embed]
+        H5[image-eval]
+        H6[text-eval]
+    end
+
+    subgraph PERSIST[Persistence]
+        D[(DynamoDB)]
+        S[(S3)]
+    end
+
+    C --> POST --> LFN --> Q1 & Q2 & Q3 & Q4 & Q5 & Q6
+
+    Q1 --> H1
+    Q2 --> H2
+    Q3 --> H3
+    Q4 --> H4
+    Q5 --> H5
+    Q6 --> H6
+
+    H1 -->|text| D
+    H4 -->|vector| S
+    H2 -->|audio| S
+    H3 -->|image| S
+    H5 -->|score| D
+    H6 -->|score| D
+
+    C --> GET --> PERSIST
+```
+
+Three Terraform layers build on each other:
 ```
 tf/01  -- VPC, EFS (model cache), ECR (container registry)
 tf/02  -- ECS cluster, SQS queues, S3 buckets, DynamoDB tables, polling lambda
@@ -26,18 +80,42 @@ tf/cache-builder  -- EC2 instance that populates EFS from HuggingFace, then self
 
 ### Inference flow
 
-```
-API client
-  -> API Gateway (REST, API key auth)
-  -> polling lambda (submits job, returns message_id)
-  -> SQS queue (one per model)
-  -> ECS Fargate task (loads model from EFS, runs inference)
-  -> DynamoDB results cache + S3 model outputs
-  -> API client polls GET /{resource}/{message_id} for result
+```mermaid
+sequenceDiagram
+    participant C as API client
+    participant G as API Gateway
+    participant L as Polling Lambda
+    participant Q as SQS queue
+    participant T as ECS Fargate task
+    participant E as EFS model cache
+    participant D as DynamoDB results
+    participant S as S3 outputs
+
+    C->>G: POST /{mode}/{task}  (API key)
+    G->>L: invoke
+    L->>D: check results cache (cache hit returns immediately)
+    L->>D: write status=queued
+    L->>Q: send job message
+    L->>T: run task (if not already running)
+    L-->>C: 200 {message_id}
+
+    T->>E: load model weights (read-only mount)
+    T->>Q: receive job message
+    Note over T: run inference
+    T->>D: write status=complete + inline result
+    T->>S: write binary output (images, audio, depth maps)
+
+    C->>G: GET /{mode}/{task}/{message_id}
+    G->>L: invoke
+    L->>D: read status + result
+    L-->>C: 200 {status, result}
+
+    Note over C,S: Text and vector outputs returned inline from DynamoDB.<br/>Binary outputs (images, audio) retrieved via S3 output endpoint.
 ```
 
-Large binary outputs (audio, images, depth maps) are written to S3 and returned
-as presigned URLs. Text and vector outputs are returned inline from DynamoDB.
+Large binary outputs (audio, images, depth maps) are written to S3 and
+retrieved via a dedicated output endpoint. Text and vector outputs are
+returned inline from DynamoDB.
 
 ### Model cache
 
@@ -46,17 +124,11 @@ The cache is populated by running `make cache/local` (local) or by deploying
 `tf/cache-builder` (AWS). The cache manager reads `assets/models.yaml` as its
 source of truth and prunes any weights no longer declared.
 
-### API usage tracking
-
-API Gateway access logs are forwarded via CloudWatch subscription to a logger
-lambda which writes structured events to a DynamoDB table. Every authenticated
-request produces one row. The API exposes a `/usage` endpoint for billing queries.
-
 ### ECS capacity
 
-The cluster runs on FARGATE and FARGATE_SPOT by default. A GPU capacity provider
-backed by an EC2 auto-scaling group (g4dn family) is defined at zero capacity and
-can be activated by routing specific task definitions to it.
+The cluster runs on FARGATE and FARGATE_SPOT by default. A GPU capacity
+provider backed by an EC2 auto-scaling group (g4dn family) is defined at zero
+capacity and can be activated by routing specific task definitions to it.
 
 
 ## Model types
@@ -64,34 +136,44 @@ can be activated by routing specific task definitions to it.
 | Type | Input | Output | Example models |
 |---|---|---|---|
 | text-embedding | text | vector | paraphrase-multilingual-mpnet-base-v2, all-minilm-l6-v2 |
+| image-embedding | image | vector | clip-ViT-B-32 |
 | instruct | chat | chat | qwen2-0.5b, qwen2-1.5b, phi-3-mini, llama-3.2-1b |
-| tts | text | speech (mp3) | mms-tts-eng, mms-tts-cym, mms-tts-deu, mms-tts-fra |
-| depth | image | depth map | dpt-dinov2-small-kitti |
-| img2mask | image | segmentation masks | sam-vit-huge |
+| tts | text | audio (mp3) | mms-tts-eng, mms-tts-cym, mms-tts-deu, mms-tts-fra |
+| txt2img | text | image (png) | stable-diffusion-v1-5 |
+| img2txt | image | text | llava, paligemma |
+| depth | image | depth map (png) | dpt-dinov2-small-kitti |
+| img2mask | image | segmentation mask (png) | sam-vit-huge |
+| text-eval | text | scores | toxic-bert, distilbert-sst2 |
+| text-similarity | text pair | similarity score | all-minilm-l6-v2 |
+| image-eval | image | scores | nsfw-image-detection, cafe-aesthetic |
+| image-text-eval | image + text | alignment score | clip-ViT-B-32 |
 
 
 ## Repository structure
 
 ```
 assets/
-  models.yaml          -- model registry (single source of truth)
-  models.tfvars        -- generated from models.yaml by generate-models (not committed)
-  models.json          -- generated by Terraform from models.tfvars, uploaded to S3
+  models.yaml                   -- model registry (single source of truth)
+  models.tfvars                 -- generated by models/generate (not committed)
+  models.json                   -- generated by models/generate, uploaded to S3
+  public_models_reference.json  -- generated by models/catalogue, served at /models.json
 
 package/src/
-  models/              -- model handler code (one directory per model type)
+  api/                          -- API route and request/response model definitions
+  models/                       -- model handler code (one file per model type)
+  shared/                       -- enums, registry, output persistence, usage tracking
   tools/
-    model-cache/       -- cache manager container (build, inspect subcommands)
-    magika/            -- file type identification tool
-  api/                 -- API route definitions
-  shared.py            -- shared utilities
+    cache_builder_shared.py     -- cache build/inspect logic (no AWS dependency)
+    cache_builder_local.py      -- local cache builder entry point (reads YAML)
+    cache_builder_aws.py        -- AWS cache builder entry point (reads S3, self-terminates)
+    generate_tfvars.py          -- generates models.tfvars, models.json, public catalogue
 
 tf/
-  01/                  -- infrastructure layer (VPC, EFS, ECR)
-  02/                  -- application layer (ECS, queues, tables)
-  03/                  -- API layer (gateway, domain, auth)
-  cache-builder/       -- EFS population tool
-  common.tfvars        -- shared variables (models, domain, org)
+  01/                           -- infrastructure layer (VPC, EFS, ECR)
+  02/                           -- application layer (ECS, queues, tables)
+  03/                           -- API layer (gateway, domain, auth)
+  cache-builder/                -- EFS population tool (EC2, self-terminates on completion)
+  common.tfvars                 -- shared variables (domain, org)
 ```
 
 
@@ -107,7 +189,8 @@ tf/
 
 ## Deployment
 
-Deploy layers in order. Each layer reads outputs from the previous via S3 remote state.
+Deploy layers in order. Each layer reads outputs from the previous via S3
+remote state.
 
 ```bash
 # 1. Build and push the environment container
@@ -118,7 +201,7 @@ make push/environment
 make LAYER=01 init plan apply
 
 # 3. Generate model tfvars from models.yaml
-make generate-models
+make models/generate
 
 # 4. Application layer
 make LAYER=02 init plan apply
@@ -133,7 +216,7 @@ make deploy/cache-builder
 To redeploy after adding or removing models from `assets/models.yaml`:
 
 ```bash
-make generate-models
+make models/generate
 make LAYER=02 apply
 make LAYER=03 apply
 make deploy/cache-builder
@@ -142,7 +225,8 @@ make deploy/cache-builder
 
 ## Model cache
 
-Build the local cache (useful for testing model handlers without deploying to AWS):
+Build the local cache (useful for testing model handlers without deploying
+to AWS):
 
 ```bash
 make cache/local
@@ -162,14 +246,115 @@ make MODELS_YAML=assets/models-dev.yaml cache/local
 ```
 
 
-## Adding a model
+## Handler architecture
+
+### Registry and decorator
+
+Every model type is registered at import time using the `@model_spec` decorator
+from `shared.registry`. The decorator populates the `_SPECS` singleton dict,
+keyed by `ModelType.value`. A `ModelSpec` instance couples:
+
+- the `ModelType` enum value
+- the `ModelMode` (embed / eval / gen), which determines the URL prefix
+- the loader function, called once at task start to load weights from EFS
+- the handler class, which implements `_run()`
+- the request and response Pydantic models
+- the list of binary `OutputField` declarations
+- the API route path
+
+`_SPECS` is populated by calling `models.load_all()`, which imports every
+handler module. This must be called before any code that looks up a spec by
+model type. Importing `models` alone does not trigger handler imports.
+
+### Loader contract
+
+Every loader function must return a `ModelLoaderResult` instance:
+
+```python
+@dataclass
+class ModelLoaderResult:
+    processor: Any   # tokenizer, image processor, or None
+    model: Any       # the model, pipeline, or SentenceTransformer
+```
+
+`BaseModelHandler.__init__` calls `spec.loader(modelname, cache_dir)` and
+unpacks the result into `self.processor` and `self.model`. Loaders that
+produce a single object (e.g. a diffusers pipeline) set `processor=None`.
+Loaders using sentence-transformers, which handle tokenisation internally,
+also set `processor=None`.
+
+`standard_loader` in `models/standard_loader.py` handles the common
+`AutoTokenizer` / `AutoProcessor` + `AutoModel` pattern and returns a
+`ModelLoaderResult`. Model-type-specific loaders select the correct
+transformer classes and delegate to `standard_loader`.
+
+### Handler contract
+
+`BaseModelHandler.process()` validates the raw request dict against
+`ModelSpec.request_model` and calls `self._run()` with the typed result.
+Subclasses implement only `_run()`:
+
+```python
+def _run(self, user_id: str, message_id: str, request: SpecificRequest) -> SpecificResponse:
+    ...
+```
+
+`process()` is not overridden by subclasses. The `SQSWorker` calls
+`model.process(user_id, message_id, request_dict)` and expects a Pydantic
+`BaseModel` instance in return.
+
+### Adding a model
 
 1. Add an entry to `assets/models.yaml` with the HuggingFace model name, type,
-   input/output types, and handler path.
-2. Implement the handler under `package/src/models/{type}/` if the type is new.
-3. Run `make generate-models` to regenerate `assets/models.tfvars`.
-4. Run `make cache/local` to verify the model caches correctly.
-5. Redeploy layers 02 and 03, then run `make deploy/cache-builder`.
+   input/output modalities, and memory/timeout settings.
+2. If the type is new, create a handler file in `package/src/models/` following
+   the pattern below. If the type already exists, the new model will be served
+   by the existing handler.
+3. Register the new handler import in `models/load_all()` in
+   `package/src/models/__init__.py`.
+4. Run `make models/validate` to check the `models.yaml` schema.
+5. Run `make models/generate` to regenerate `assets/models.tfvars` and
+   `assets/models.json`.
+6. Run `make cache/local` to verify the model caches and loads correctly.
+7. Redeploy layers 02 and 03, then run `make deploy/cache-builder`.
+
+### Handler file template
+
+```python
+from shared.enums import ModelMode, ModelType
+from shared.registry import BaseModelHandler, model_spec
+from models.standard_loader import standard_loader, ModelLoaderResult
+from api.models import MyRequest, MyResponse
+
+
+def load_my_type(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
+    from transformers import AutoTokenizer as T
+    from transformers import AutoModelForSomeTask as M
+    return standard_loader(T, M, modelname, cache_dir=cache_dir, **kwargs)
+
+
+@model_spec(
+    model_type=ModelType.MY_TYPE,
+    mode=ModelMode.GEN,
+    output_fields=[],
+    loader=load_my_type,
+    request_model=MyRequest,
+    response_model=MyResponse,
+    route="/gen/my-type",
+)
+class MyTypeModel(BaseModelHandler):
+
+    def _run(self, user_id: str, message_id: str, request: MyRequest) -> MyResponse:
+        # inference here
+        ...
+```
+
+### routes.py and Terraform interpolation
+
+`package/src/api/routes.py` is a template file. The `${...}` placeholders
+are Terraform variable references interpolated during `make LAYER=03 apply`.
+The file is not valid Python until after interpolation. Do not attempt to
+import or execute it directly from the source tree.
 
 
 ## API keys
@@ -180,7 +365,7 @@ A master API key is created by Terraform and retrievable with:
 terraform -chdir=tf/03 output -raw master_api_key_value
 ```
 
-Additional keys are managed via the `/apikey` endpoint.
+Additional keys are managed via the `/users/keys` endpoint.
 
 
 ## Notes
@@ -195,3 +380,6 @@ Additional keys are managed via the `/apikey` endpoint.
 - Fargate tasks run on CPU. For large instruct models, inference is slower than
   GPU-based runtimes. The architecture supports adding GPU capacity without
   changes to the API or model handler code.
+- `img2mesh` (3D mesh reconstruction from images) is declared as a stub and
+  not yet implemented. The depth handler produces the depth map that would
+  serve as its primary input.

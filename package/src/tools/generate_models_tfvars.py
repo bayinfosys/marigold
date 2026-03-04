@@ -66,7 +66,6 @@ Requirements:
 import json
 import os
 import sys
-from enum import Enum
 from hashlib import md5
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -89,50 +88,34 @@ try:
 except ImportError:
     _requests = None
 
+from shared.enums import ModelProvider, ModelType
 
 # ---------------------------------------------------------------------------
 # Schema
 # ---------------------------------------------------------------------------
 
-# TODO: must match api.enums.ModelType enum values exactly.
-class ModelType(str, Enum):
-    TEXT_EMBEDDING  = "text-embedding"
-    IMAGE_EMBEDDING = "image-embedding"
-    INSTRUCT        = "instruct"
-    TTS             = "tts"
-    DEPTH           = "depth"
-    IMG2TXT         = "img2txt"
-    TXT2IMG         = "txt2img"
-    IMG2MASK        = "img2mask"
-    TXT2AUDIO       = "txt2audio"
-    IMG2MESH        = "img2mesh"
-
-
-class ModelProvider(str, Enum):
-    HUGGINGFACE = "huggingface"
-    # future: AWS_BEDROCK = "aws-bedrock"
-
 
 class ModelParameters(BaseModel):
     """Model-specific metadata for the API layer. Not used by Terraform."""
+
     vector_size: Optional[int] = None
     model_config = {"extra": "allow"}
 
 
 class ModelDefinition(BaseModel):
-    name:          str
-    provider:      ModelProvider
-    type:          ModelType
-    input:         str
-    output:        str
-    memory_size:   int  = Field(9216, ge=512)
-    timeout:       int  = Field(300,  ge=30)
-    idle_timeout:  int  = Field(0,    ge=0)
+    name: str
+    provider: ModelProvider
+    type: ModelType
+    input: str
+    output: str
+    memory_size: int = Field(9216, ge=512)
+    timeout: int = Field(300, ge=30)
+    idle_timeout: int = Field(0, ge=0)
     auth_required: bool = False
-    langcode:      Optional[str]   = None
-    log_level:     str             = "INFO"
-    extra_env:     Dict[str, str]  = Field(default_factory=dict)
-    parameters:    ModelParameters = Field(default_factory=ModelParameters)
+    langcode: Optional[str] = None
+    log_level: str = "INFO"
+    extra_env: Dict[str, str] = Field(default_factory=dict)
+    parameters: ModelParameters = Field(default_factory=ModelParameters)
 
     @field_validator("log_level")
     @classmethod
@@ -161,6 +144,7 @@ class ModelsConfig(BaseModel):
 # Key derivation
 # ---------------------------------------------------------------------------
 
+
 def make_key(name: str) -> str:
     """Derive a deterministic fixed-length key from a model name.
 
@@ -180,6 +164,7 @@ def make_key(name: str) -> str:
 # Provider metadata fetches
 # ---------------------------------------------------------------------------
 
+
 def fetch_huggingface(model: ModelDefinition, token: str = "") -> dict:
     """Fetch model metadata from the HuggingFace model API."""
     if _requests is None:
@@ -189,7 +174,7 @@ def fetch_huggingface(model: ModelDefinition, token: str = "") -> dict:
         )
         return _empty_huggingface(model)
 
-    url     = "https://huggingface.co/api/models/%s" % model.name
+    url = "https://huggingface.co/api/models/%s" % model.name
     headers = {"Accept": "application/json"}
     if token:
         headers["Authorization"] = "Bearer %s" % token
@@ -201,7 +186,9 @@ def fetch_huggingface(model: ModelDefinition, token: str = "") -> dict:
         return _empty_huggingface(model)
 
     if resp.status_code == 401:
-        print("warning: '%s' requires HF_TOKEN (HTTP 401)" % model.name, file=sys.stderr)
+        print(
+            "warning: '%s' requires HF_TOKEN (HTTP 401)" % model.name, file=sys.stderr
+        )
         return _empty_huggingface(model)
 
     if not resp.ok:
@@ -217,29 +204,29 @@ def fetch_huggingface(model: ModelDefinition, token: str = "") -> dict:
         print("warning: invalid JSON for '%s' [%s]" % (model.name, e), file=sys.stderr)
         return _empty_huggingface(model)
 
-    card_data       = data.get("cardData") or {}
-    safetensors     = data.get("safetensors") or {}
+    card_data = data.get("cardData") or {}
+    safetensors = data.get("safetensors") or {}
     parameter_count = int(safetensors.get("total") or 0)
 
     return {
-        "auth_required":   model.auth_required,
-        "organization":    data.get("author") or "",
-        "license":         data.get("license") or card_data.get("license") or "",
-        "sha":             data.get("sha") or "",
-        "last_modified":   data.get("lastModified") or "",
-        "tags":            data.get("tags") or [],
+        "auth_required": model.auth_required,
+        "organization": data.get("author") or "",
+        "license": data.get("license") or card_data.get("license") or "",
+        "sha": data.get("sha") or "",
+        "last_modified": data.get("lastModified") or "",
+        "tags": data.get("tags") or [],
         "parameter_count": parameter_count,
     }
 
 
 def _empty_huggingface(model: ModelDefinition) -> dict:
     return {
-        "auth_required":   model.auth_required,
-        "organization":    "",
-        "license":         "",
-        "sha":             "",
-        "last_modified":   "",
-        "tags":            [],
+        "auth_required": model.auth_required,
+        "organization": "",
+        "license": "",
+        "sha": "",
+        "last_modified": "",
+        "tags": [],
         "parameter_count": 0,
     }
 
@@ -260,12 +247,13 @@ def fetch_provider_parameters(model: ModelDefinition, token: str = "") -> dict:
 # Environment variable construction
 # ---------------------------------------------------------------------------
 
+
 def make_env_vars(model: ModelDefinition) -> Dict[str, str]:
     """Construct the environment_variables map for this model's ECS task."""
     env: Dict[str, str] = {
-        "MODELNAME":    model.name,
-        "MODEL_TYPE":   model.type.value,
-        "MODEL_INPUT":  model.input,
+        "MODELNAME": model.name,
+        "MODEL_TYPE": model.type.value,
+        "MODEL_INPUT": model.input,
         "MODEL_OUTPUT": model.output,
     }
 
@@ -284,6 +272,7 @@ def make_env_vars(model: ModelDefinition) -> Dict[str, str]:
 # ---------------------------------------------------------------------------
 # HCL rendering
 # ---------------------------------------------------------------------------
+
 
 def hcl_str(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
@@ -304,10 +293,12 @@ def render_tfvars(config: ModelsConfig) -> str:
         env = make_env_vars(model)
 
         lines.append("  %s = {" % hcl_str(key))
-        lines.append("    memory_size   = %i"  % model.memory_size)
-        lines.append("    timeout       = %i"  % model.timeout)
-        lines.append("    idle_timeout  = %i"  % model.idle_timeout)
-        lines.append("    auth_required = %s"  % ("true" if model.auth_required else "false"))
+        lines.append("    memory_size   = %i" % model.memory_size)
+        lines.append("    timeout       = %i" % model.timeout)
+        lines.append("    idle_timeout  = %i" % model.idle_timeout)
+        lines.append(
+            "    auth_required = %s" % ("true" if model.auth_required else "false")
+        )
         lines.append("    environment_variables = {")
         for k, v in env.items():
             lines.append("      %s = %s" % (hcl_str(k), hcl_str(v)))
@@ -323,6 +314,7 @@ def render_tfvars(config: ModelsConfig) -> str:
 # JSON rendering
 # ---------------------------------------------------------------------------
 
+
 def render_internal_json(config: ModelsConfig) -> str:
     """Write the internal model catalogue.
 
@@ -335,16 +327,16 @@ def render_internal_json(config: ModelsConfig) -> str:
     for model in config.models:
         key = make_key(model.name)
         result[key] = {
-            "name":          model.name,
-            "type":          model.type.value,
-            "provider":      model.provider.value,
-            "input":         model.input,
-            "output":        model.output,
-            "memory_size":   model.memory_size,
-            "timeout":       model.timeout,
-            "idle_timeout":  model.idle_timeout,
+            "name": model.name,
+            "type": model.type.value,
+            "provider": model.provider.value,
+            "input": model.input,
+            "output": model.output,
+            "memory_size": model.memory_size,
+            "timeout": model.timeout,
+            "idle_timeout": model.idle_timeout,
             "auth_required": model.auth_required,
-            "parameters":    model.parameters.model_dump(exclude_none=True),
+            "parameters": model.parameters.model_dump(exclude_none=True),
         }
 
     return json.dumps(result, indent=2) + "\n"
@@ -364,12 +356,12 @@ def render_public_json(config: ModelsConfig, token: str = "") -> str:
         provider_parameters = fetch_provider_parameters(model, token=token)
 
         result[key] = {
-            "name":                model.name,
-            "type":                model.type.value,
-            "provider":            model.provider.value,
-            "input":               model.input,
-            "output":              model.output,
-            "parameters":          model.parameters.model_dump(exclude_none=True),
+            "name": model.name,
+            "type": model.type.value,
+            "provider": model.provider.value,
+            "input": model.input,
+            "output": model.output,
+            "parameters": model.parameters.model_dump(exclude_none=True),
             "provider_parameters": provider_parameters,
         }
 
@@ -407,7 +399,7 @@ def main():
         sys.exit(1)
 
     yaml_path = Path(sys.argv[1])
-    command   = sys.argv[2]
+    command = sys.argv[2]
 
     if command not in COMMANDS:
         usage()

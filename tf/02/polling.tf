@@ -70,7 +70,7 @@ module "polling_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "~> 3.0"
 
-  function_name = join("-", [var.org_name, var.project_name, var.env, "instruct-polling", "ecs"])
+  function_name = join("-", [var.org_name, var.project_name, var.env, "polling", "ecs"])
   description   = "instruct polling (ecs)"
   hash_extra    = "instruct polling ecs"
 

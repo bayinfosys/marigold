@@ -18,7 +18,7 @@ which is correct
 from dataclasses import asdict
 
 from magika import Magika
-from shared import lambda_event_to_data
+from shared.lambda_proxy import lambda_event_to_data
 
 m = Magika()
 

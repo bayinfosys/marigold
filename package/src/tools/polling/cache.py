@@ -23,11 +23,10 @@ def create_key(userid, message_id):
 
 
 def create_status(userid: str, message_id: str, ttl: int = -1, status: str = "queued"):
-    # Set the TTL to be 24 hours (86400 seconds) from now
+    # Default TTL: one week from submission time
     if ttl < 0:
-        ttl = int(time.time()) + 86400
+        ttl = int(time.time()) + (86400 * 7)
 
-    # Write initial record to DynamoDB
     dynamodb.put_item(
         TableName=DYNAMODB_TABLE,
         Item={
@@ -37,6 +36,31 @@ def create_status(userid: str, message_id: str, ttl: int = -1, status: str = "qu
             "ttl": {"N": str(ttl)},
         },
     )
+
+
+def update_status(userid: str, message_id: str, status: str):
+    """Update the status field of an existing record without touching the TTL.
+
+    Used to mark a job as 'error' after a failed SQS submission, ensuring the
+    record does not remain as a stale 'queued' entry that blocks client retries.
+    """
+    try:
+        dynamodb.update_item(
+            TableName=DYNAMODB_TABLE,
+            Key={"PK": {"S": userid}, "SK": {"S": message_id}},
+            UpdateExpression="SET #sts = :status",
+            ExpressionAttributeNames={"#sts": "sts"},
+            ExpressionAttributeValues={":status": {"S": status}},
+        )
+        logger.info("[%s/%s] status updated to '%s'", userid, message_id, status)
+    except Exception as e:
+        logger.exception(
+            "[%s/%s] failed to update status to '%s' [%s]",
+            userid,
+            message_id,
+            status,
+            str(e),
+        )
 
 
 def get_status(userid, message_id):
