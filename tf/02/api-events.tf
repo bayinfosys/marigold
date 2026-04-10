@@ -22,10 +22,8 @@ module "usage_table" {
     { name = "SK", type = "S" },
   ]
 
-  ttl {
-    attribute_name = "ttl"
-    enabled        = true
-  }
+  ttl_attribute_name = "ttl"
+  ttl_enabled        = true
 
   stream_enabled = true
   stream_view_type = "NEW_IMAGE"

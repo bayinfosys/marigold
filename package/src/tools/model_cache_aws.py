@@ -25,7 +25,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from cache_builder_shared import (
+from .model_cache_shared import (
     print_build_summary,
     run_build,
     run_inspect,

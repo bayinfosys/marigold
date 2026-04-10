@@ -18,6 +18,8 @@ import os
 from dataclasses import dataclass
 from time import perf_counter as clock
 from typing import Any
+from transformers import BitsAndBytesConfig
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")
@@ -87,6 +89,9 @@ def standard_loader(
     logger.info("loaded '%s' tokenizer in %0.2fs", modelname, clock() - T0)
     T0 = clock()
 
+    # create a quantisation configuration based on parameters
+    quantization_config = BitsAndBytesConfig(load_in_4bit=True) if load_in_4bit else None
+
     try:
         model = ModelClass.from_pretrained(
             modelname,
@@ -94,7 +99,7 @@ def standard_loader(
             trust_remote_code=remote_code,
             local_files_only=local_files_only,
             low_cpu_mem_usage=low_cpu_mem_usage,
-            load_in_4bit=load_in_4bit,
+            quantization_config=quantization_config,
         )
     except OSError as e:
         logger.error("'%s' not in local cache [%s]", modelname, str(e))

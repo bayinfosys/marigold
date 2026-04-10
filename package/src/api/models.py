@@ -7,14 +7,12 @@ code can import it without depending on the API layer.
 """
 
 from datetime import datetime
-from enum import Enum
-from typing import Dict, Generic, List, Literal, Optional, TypeVar, Union
+from typing import Dict, Generic, List, Literal, Optional, TypeVar
 
 from pydantic import BaseModel, Field
-
-from shared.enums import ModelModalities, ModelType
-from shared.usage import ModelUsageStats  # noqa: F401 -- re-exported for call-site convenience
-from shared.models import Embedding, EmbeddingQuantization, InstructMessage, InstructMessages, OutputReference
+from shared.models import (Embedding, EmbeddingQuantization, InstructMessage,
+                           InstructMessages, OutputReference)
+from shared.usage_models import ModelUsageStats
 
 T = TypeVar("T")
 
@@ -59,7 +57,9 @@ class ModelRequest(BaseModel):
     """Common fields present on every model request."""
 
     model: str = Field(..., description="HuggingFace model identifier")
-    seed: Optional[int] = Field(None, description="random seed for reproducible outputs")
+    seed: Optional[int] = Field(
+        None, description="random seed for reproducible outputs"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +159,8 @@ class Txt2AudioRequest(ModelRequest):
         ),
     )
     guidance_scale: float = Field(
-        3.0, description="classifier-free guidance scale; higher values follow the prompt more closely"
+        3.0,
+        description="classifier-free guidance scale; higher values follow the prompt more closely",
     )
     num_inference_steps: Optional[int] = Field(
         None,

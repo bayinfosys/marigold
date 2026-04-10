@@ -4,7 +4,7 @@ Handles the Lambda proxy contract: parsing API Gateway events, extracting
 identity, and formatting responses. Only needed by Lambda handler functions;
 ECS SQS workers do not use this module.
 """
-
+import boto3
 import base64
 import json
 import logging
@@ -15,7 +15,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_MIMETYPE = "text/plain"
 
 APPEND_CORS_HEADERS = os.getenv("APPEND_CORS_HEADERS", "False").lower() in (
-    "true", "1", "t",
+    "true",
+    "1",
+    "t",
 )
 
 
@@ -23,23 +25,52 @@ APPEND_CORS_HEADERS = os.getenv("APPEND_CORS_HEADERS", "False").lower() in (
 # Identity
 # ---------------------------------------------------------------------------
 
+_apigw = boto3.client("apigateway")
+_key_cache: dict[str, str] = {}
+
+
+def _resolve_api_key(api_key_id: str) -> str:
+    """
+    Resolve an API Gateway key ID to a user identity via GetApiKey.
+
+    Uses the key name as the user identity -- set this to the user's
+    email or account identifier when creating the key via POST /users/keys.
+
+    Result is cached at container level; key-to-identity mapping is stable.
+    """
+    if api_key_id in _key_cache:
+        return _key_cache[api_key_id]
+
+    response = _apigw.get_api_key(apiKey=api_key_id)
+
+    if not response.get("enabled"):
+        raise RuntimeError(f"API key {api_key_id!r} is disabled")
+
+    name = response.get("name")
+    if not name:
+        raise RuntimeError(f"API key {api_key_id!r} has no name")
+
+    # name format is {email}/{label} -- extract email as the user identity
+    user_id = name.split("/")[0]
+    _key_cache[api_key_id] = user_id
+    return user_id
+
 
 def get_userid_from_event(event: dict) -> str:
-    """Extract the authenticated user identifier from an API Gateway event.
-
-    The custom authorizer maps API keys to a canonical user identifier stored
-    in requestContext.authorizer.email. Raises RuntimeError if the authorizer
-    context is absent or malformed -- this should never occur in a correctly
-    configured deployment and must not be silently swallowed.
-    """
     if "requestContext" in event:
-        try:
-            return event["requestContext"]["authorizer"]["email"]
-        except KeyError:
-            raise RuntimeError(
-                "requestContext.authorizer.email not found in event. "
-                "Check the API Gateway authorizer configuration. event=%s" % str(event)
-            )
+        authorizer = event["requestContext"].get("authorizer", {})
+        if authorizer.get("email"):
+            return authorizer["email"]
+
+        identity = event["requestContext"].get("identity", {})
+        api_key_id = identity.get("apiKeyId")
+        if api_key_id:
+            return _resolve_api_key(api_key_id)
+
+        raise RuntimeError(
+            "requestContext present but no identity path found. "
+            "event=%s" % str(event)
+        )
 
     if "destination" in event:
         try:
@@ -111,9 +142,7 @@ def lambda_event_to_data(event: dict, data_key: str = None):
         except KeyError as e:
             raise ValueError("expected '%s' key in event" % data_key_) from e
         except Exception as e:
-            raise ValueError(
-                "expected '%s' to be a JSON string" % data_key_
-            ) from e
+            raise ValueError("expected '%s' to be a JSON string" % data_key_) from e
 
     elif isinstance(event.get(data_key_), (dict, list)):
         data = event[data_key_]
@@ -137,7 +166,7 @@ def lambda_event_to_data(event: dict, data_key: str = None):
 
 def cors_headers() -> dict:
     return {
-        "Access-Control-Allow-Origin":  "*",
+        "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Api-Key",
         "Access-Control-Allow-Methods": "OPTIONS,GET,POST,PUT,DELETE,PATCH",
     }

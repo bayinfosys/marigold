@@ -19,9 +19,9 @@
 #
 
 locals {
-  models_yaml_raw             = file("${path.module}/../assets/models.yaml")
-  models_json_raw             = file("${path.module}/../assets/models.json")
-  public_models_reference_raw = file("${path.module}/../assets/public_models_reference.json")
+  models_yaml_raw             = file("${path.module}/../../assets/models.yaml")
+  models_json_raw             = file("${path.module}/../../assets/models.json")
+  public_models_reference_raw = file("${path.module}/../../assets/public_models_reference.json")
 }
 
 resource "aws_s3_object" "models_yaml" {
@@ -60,12 +60,15 @@ resource "aws_s3_object" "public_models_reference" {
   tags = var.project_tags
 }
 
+# TODO: this cache model script has been more complex now, i don't think this is correct.
+# we should use the environment container to populate the EFS disk, which i think is what we do
+# and therefore this object in s3 is deprecated
 resource "aws_s3_object" "cache_model_script" {
   bucket       = aws_s3_bucket.data.id
   key          = "scripts/cache_model.py"
-  content      = file("${path.module}/../../package/src/models/cache_model.py")
+  content      = file("${path.module}/../../package/src/tools/model_cache_aws.py")
   content_type = "text/x-python"
-  etag         = filemd5("${path.module}/../../package/src/models/cache_model.py")
+  etag         = filemd5("${path.module}/../../package/src/tools/model_cache_aws.py")
 
   tags = var.project_tags
 }

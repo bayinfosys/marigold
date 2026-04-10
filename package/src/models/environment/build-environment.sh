@@ -11,7 +11,7 @@ pip install \
   --no-cache-dir \
   --break-system-packages \
   --extra-index-url https://download.pytorch.org/whl/cpu \
-  torch
+  torch torchvision
 
 # huggingface stuff
 pip install --upgrade \

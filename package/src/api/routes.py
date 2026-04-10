@@ -6,8 +6,8 @@ All submission paths are two segments deep:
     /gen/{task}
 
 This allows poll and delete to be covered by two generic routes:
-    GET    /{mode}/{task}/{message_id}
-    DELETE /{mode}/{task}/{message_id}
+    GET    /output/{mode}/{task}/{message_id}
+    DELETE /output/{mode}/{task}/{message_id}
 
 Binary output retrieval uses a single generic route:
     GET    /output/{mode}/{task}/{message_id}/{field}
@@ -24,15 +24,12 @@ from .models import (
     DepthRequest,
     EmbedImageRequest,
     EmbedTextRequest,
-    EmbeddingResponse,
     EvalImageRequest,
-    EvalResponse,
     EvalTextRequest,
     ImageTextEvalRequest,
     Img2MaskRequest,
     Img2TxtRequest,
     InstructRequest,
-    InstructResponse,
     PollResponse,
     SubmissionResponse,
     TextSimilarityRequest,
@@ -41,6 +38,7 @@ from .models import (
     Txt2ImgRequest,
     UsageResponse,
 )
+from .workflow.routes import router as workflow_router
 
 apikey_auth = APIKeyAuthorizer(authorizer_name="${apikey_authorizer_name}")
 
@@ -51,10 +49,13 @@ cognito_auth = None
 
 router = AWSAPIRouter()
 
+router.include_router(workflow_router, prefix="/workflows", tags=["workflow"])
+
 
 # ---------------------------------------------------------------------------
 # Embed
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "/embed/text",
@@ -83,6 +84,7 @@ async def embed_image(body: EmbedImageRequest, user=Security(apikey_auth)):
 # ---------------------------------------------------------------------------
 # Eval
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "/eval/text",
@@ -135,6 +137,7 @@ async def eval_image_text(body: ImageTextEvalRequest, user=Security(apikey_auth)
 # ---------------------------------------------------------------------------
 # Gen
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "/gen/instruct",
@@ -229,8 +232,9 @@ async def gen_img2mask(body: Img2MaskRequest, user=Security(apikey_auth)):
 # of the mode/task path parameters.
 # ---------------------------------------------------------------------------
 
+
 @router.get(
-    "/{mode}/{task}/{message_id}",
+    "/output/{mode}/{task}/{message_id}",
     description="poll for the status and result of a submitted job",
     response_model=PollResponse,
     aws_lambda_arn="${polling_start_lambda_arn}",
@@ -242,7 +246,7 @@ async def poll_result(user=Security(apikey_auth)):
 
 
 @router.delete(
-    "/{mode}/{task}/{message_id}",
+    "/output/{mode}/{task}/{message_id}",
     description="delete a cached job result",
     response_model=DeleteCacheResponse,
     aws_lambda_arn="${polling_start_lambda_arn}",
@@ -264,6 +268,7 @@ async def delete_result(user=Security(apikey_auth)):
 # output_fields list (e.g. audio, image, depth, mask).
 # ---------------------------------------------------------------------------
 
+
 @router.get(
     "/output/{mode}/{task}/{message_id}/{field}",
     description="retrieve a named binary output for a completed job",
@@ -280,6 +285,7 @@ async def get_output(user=Security(apikey_auth)):
 # Usage
 # ---------------------------------------------------------------------------
 
+
 @router.get(
     "/usage/{key}/{period}",
     response_model=UsageResponse,
@@ -294,6 +300,7 @@ async def usage_stats(user=Security(apikey_auth)):
 # ---------------------------------------------------------------------------
 # API spec and model catalogue
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "/openapi.json",
@@ -320,6 +327,7 @@ async def model_list(user=Security(apikey_auth)):
 # ---------------------------------------------------------------------------
 # API key management
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "/users/keys",

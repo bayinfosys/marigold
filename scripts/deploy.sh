@@ -20,7 +20,7 @@ make docker-login
 make push/environment
 
 # layer 02: ECS, SQS, lambdas, usage, static assets
-#make generate-models
+make models/generate
 LAYER=02 make init
 LAYER=02 make plan
 LAYER=02 make apply

@@ -1,0 +1,11 @@
+name: single_step
+
+steps:
+  - op: echo
+    input:
+      model_type: dummy
+      model_name: dummy
+      text: {"var": "input.text"}
+
+outputs:
+  result: {"var": "steps.echo.output.text"}

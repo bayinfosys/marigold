@@ -1,6 +1,6 @@
 """Usage tracking and metrics.
 
-ModelUsageStats is defined here rather than in api/models.py so that
+ModelUsageStats is defined in usage_models rather than in api/models.py so that
 handler modules and shared infrastructure can import it without depending
 on the API layer.
 """
@@ -10,33 +10,19 @@ import logging
 import os
 from datetime import datetime
 
+from botocore.exceptions import NoRegionError
 import boto3
-from pydantic import BaseModel, Field
-
 from shared.enums import ModelType
+
+from .usage_models import ModelUsageStats
 
 logger = logging.getLogger(__name__)
 
-_dynamodb = boto3.client("dynamodb", endpoint_url=os.getenv("DYNAMODB_ENDPOINT"))
-
-
-# ---------------------------------------------------------------------------
-# Usage stats model
-# ---------------------------------------------------------------------------
-
-
-class ModelUsageStats(BaseModel):
-    """Timing and resource statistics for one inference request.
-
-    Not all fields are relevant for all model types; token counts are zero
-    for image-in/image-out models.
-    """
-
-    duration:     float = Field(..., description="total process duration in seconds")
-    inference:    float = Field(..., description="model inference duration in seconds")
-    input_tokens: int   = Field(0,   description="number of input tokens")
-    output_tokens: int  = Field(0,   description="number of output tokens")
-    memory_usage: int   = Field(..., description="peak process memory in KB")
+try:
+    _dynamodb = boto3.client("dynamodb", endpoint_url=os.getenv("DYNAMODB_ENDPOINT"))
+except NoRegionError:
+    logger.warning("aws unavailable")
+    _dynamodb = None
 
 
 # ---------------------------------------------------------------------------
@@ -47,6 +33,7 @@ class ModelUsageStats(BaseModel):
 def get_memory_usage() -> int:
     """Return peak process memory usage in KB."""
     import resource
+
     return 1 + int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0)
 
 
@@ -56,11 +43,11 @@ def get_memory_usage() -> int:
 
 
 def record_usage(
-    user_id:      str,
-    model_type:   ModelType,
-    modelname:    str,
-    duration:     float,
-    inference:    float,
+    user_id: str,
+    model_type: ModelType,
+    modelname: str,
+    duration: float,
+    inference: float,
     input_tokens: int = 0,
     output_tokens: int = 0,
 ) -> ModelUsageStats:
@@ -84,7 +71,9 @@ def record_usage(
 # ---------------------------------------------------------------------------
 
 
-def _metric_body(user_id: str, model_type: ModelType, model_name: str, metrics: dict) -> dict:
+def _metric_body(
+    user_id: str, model_type: ModelType, model_name: str, metrics: dict
+) -> dict:
     return dict(
         user_id=user_id,
         operation="%s/%s" % (model_type.value, model_name),
@@ -125,12 +114,12 @@ def _update_metrics_dynamodb(
         _dynamodb.put_item(
             TableName=table,
             Item={
-                "PK":        {"S": "METRIC#RAW#USER#%s" % user_id},
-                "SK":        {"S": "DATE#%s#OP#%s" % (now, operation)},
+                "PK": {"S": "METRIC#RAW#USER#%s" % user_id},
+                "SK": {"S": "DATE#%s#OP#%s" % (now, operation)},
                 "operation": {"S": operation},
-                "user_id":   {"S": user_id},
-                "date":      {"S": now},
-                "data":      {"S": json.dumps(body)},
+                "user_id": {"S": user_id},
+                "date": {"S": now},
+                "data": {"S": json.dumps(body)},
             },
         )
     except Exception as e:

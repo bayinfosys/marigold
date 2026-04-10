@@ -24,7 +24,7 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
 
-def load_depth(modelname: str, **kwargs) -> ModelLoaderResult:
+def load_depth(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
     """Monocular depth estimation."""
     from transformers import AutoImageProcessor as T
     from transformers import AutoModelForDepthEstimation as M

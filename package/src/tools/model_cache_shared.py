@@ -28,8 +28,19 @@ def model_to_cache_name(model_name: str) -> str:
 
 
 def dir_size_gb(path: Path) -> float:
-    """Recursively sum file sizes under path, return GB."""
-    total = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+    """Recursively sum file sizes under path, return GB.
+    NB: count inodes to avoid link double counting
+    """
+    seen = set()
+    total = 0
+    for f in path.rglob("*"):
+        if not f.is_file():
+            continue
+        inode = f.stat().st_ino
+        if inode in seen:
+            continue
+        seen.add(inode)
+        total += f.stat().st_size
     return total / (1024 ** 3)
 
 
@@ -119,7 +130,7 @@ class BuildResult:
     errors:  list = field(default_factory=list)
 
 
-def run_build(models_list: list, cache_path: Path, hf_token: str) -> BuildResult:
+def run_build(models_list: list, cache_path: Path, hf_token: str, prune: bool = True) -> BuildResult:
     """Cache all declared models and prune any that are no longer declared.
 
     Always prunes -- the declared list is the source of truth.
@@ -152,16 +163,17 @@ def run_build(models_list: list, cache_path: Path, hf_token: str) -> BuildResult
             log.error("failed to cache %s", name)
             result.errors.append(name)
 
-    for name, path in existing.items():
-        if name not in declared:
-            log.info("pruning %s", name)
-            try:
-                shutil.rmtree(path)
-                log.info("pruned %s", name)
-                result.pruned.append(name)
-            except OSError as e:
-                log.error("failed to prune %s: %s", name, e)
-                result.errors.append("prune:%s" % name)
+    if prune:
+        for name, path in existing.items():
+            if name not in declared:
+                log.info("pruning %s", name)
+                try:
+                    shutil.rmtree(path)
+                    log.info("pruned %s", name)
+                    result.pruned.append(name)
+                except OSError as e:
+                    log.error("failed to prune %s: %s", name, e)
+                    result.errors.append("prune:%s" % name)
 
     return result
 

@@ -13,7 +13,7 @@ from time import perf_counter as clock
 from typing import Any, Callable, Dict, List, Optional, Type
 
 from shared.enums import ModelMode, ModelType, OutputMimeType
-from shared.outputs import write_binary_output
+from shared.outputs import write_binary_output, update_results_table
 
 import logging
 
@@ -175,13 +175,33 @@ class BaseModelHandler(ABC):
     def process(self, user_id: str, message_id: str, request: dict) -> Any:
         """Validate the raw request dict and dispatch to _run().
 
-        Called by SQSWorker for every message. Not overridden by subclasses.
-        Validation errors from model_validate propagate as-is; the SQSWorker
-        catches all exceptions and writes an error status to DynamoDB.
+        Not overridden by subclasses. Writes the result or error to the
+        results table via update_results_table before returning or raising.
+        Validation errors from model_validate propagate before the results
+        write.
         """
         spec = _SPECS[self._model_type.value]
         validated = spec.request_model.model_validate(request)
-        return self._run(user_id, message_id, validated)
+
+        try:
+            result = self._run(user_id, message_id, validated)
+        except Exception as e:
+            update_results_table(
+                user_id=user_id,
+                message_id=message_id,
+                response={"error": str(e)},
+                status="error",
+            )
+            raise
+
+        update_results_table(
+            user_id=user_id,
+            message_id=message_id,
+            response=result.model_dump(),
+            status="complete",
+        )
+
+        return result
 
     @abstractmethod
     def _run(self, user_id: str, message_id: str, request: Any) -> Any:

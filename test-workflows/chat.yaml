@@ -1,0 +1,11 @@
+name: chat
+
+steps:
+  - op: reply
+    input:
+      model_type: instruct
+      model_name: qwen/qwen2-0.5b-instruct
+      message: {"var": "input.message"}
+
+outputs:
+  reply: {"var": "steps.reply.output.choices"}

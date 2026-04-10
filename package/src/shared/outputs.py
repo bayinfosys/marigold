@@ -12,7 +12,7 @@ import os
 from base64 import b64decode
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, NoRegionError
 from PIL import Image
 
 from shared.enums import ModelType
@@ -21,8 +21,13 @@ from shared.models import OutputReference
 
 logger = logging.getLogger(__name__)
 
-_s3 = boto3.client("s3")
-_dynamodb = boto3.client("dynamodb", endpoint_url=os.getenv("DYNAMODB_ENDPOINT"))
+try:
+    _s3 = boto3.client("s3")
+    _dynamodb = boto3.client("dynamodb", endpoint_url=os.getenv("DYNAMODB_ENDPOINT"))
+except NoRegionError:
+    logger.warning("aws unavailable")
+    _s3 = None
+    _dynamodb = None
 
 
 # ---------------------------------------------------------------------------
@@ -103,11 +108,16 @@ def write_binary_output(
 def update_results_table(
     user_id: str,
     message_id: str,
-    results_table: str,
     response: dict,
     status: str = "complete",
 ):
     """Write a result or status update to the results cache table."""
+    results_table = os.getenv("DYNAMODB_TABLE")
+
+    if not results_table:
+        logger.warning("[%s/%s] DYNAMODB_TABLE not set, skipping results write", user_id, message_id)
+        return
+
     try:
         _dynamodb.update_item(
             TableName=results_table,
@@ -121,11 +131,10 @@ def update_results_table(
         )
         logger.info("[%s/%s] status='%s' written to dynamodb", user_id, message_id, status)
     except ClientError as e:
-        logger.error(
+        logger.critical(
             "[%s/%s] failed to write to dynamodb table '%s' [%s]",
             user_id,
             message_id,
             results_table,
             str(e),
         )
-        raise

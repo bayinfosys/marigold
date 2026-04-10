@@ -1,14 +1,10 @@
-"""Common object definitions whic hare not request and response models.
-"""
+"""Common object definitions whic hare not request and response models."""
 
-from datetime import datetime
 from enum import Enum
-from typing import Dict, Generic, List, Literal, Optional, TypeVar, Union
+from typing import Dict, List, TypeVar, Union
 
 from pydantic import BaseModel, Field
-
-from shared.enums import ModelModalities, ModelType, ModelProvider
-from shared.usage import ModelUsageStats  # noqa: F401 -- re-exported for call-site convenience
+from shared.enums import ModelModalities, ModelProvider, ModelType
 
 T = TypeVar("T")
 

@@ -34,7 +34,7 @@ variable "hf_token" {
 
 variable "lambda_runtime" {
   type    = string
-  default = "python3.12"
+  default = "python3.13"
 }
 
 variable "models" {

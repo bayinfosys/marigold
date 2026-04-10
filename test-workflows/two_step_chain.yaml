@@ -1,0 +1,18 @@
+name: two_step_chain
+
+steps:
+  - op: first
+    input:
+      model_type: dummy
+      model_name: dummy
+      text: {"var": "input.text"}
+
+  - op: second
+    depends_on: [first]
+    input:
+      model_type: dummy
+      model_name: dummy
+      text: {"var": "steps.first.output.text"}
+
+outputs:
+  result: {"var": "steps.second.output.text"}

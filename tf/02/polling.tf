@@ -59,16 +59,17 @@ resource "aws_s3_object" "models_config_internal" {
 
   content = jsonencode({
     for name, conf in var.models : md5(conf.environment_variables["MODELNAME"]) => {
-      queue_url       = aws_sqs_queue.model_queues[name].url
-      task_definition = aws_ecs_task_definition.model_tasks[name].arn
-      family          = aws_ecs_task_definition.model_tasks[name].family
+      queue_url            = aws_sqs_queue.model_queues[name].url
+      model_name           = conf.environment_variables["MODELNAME"]
+      task_definition      = aws_ecs_task_definition.model_tasks[name].arn
+      family               = aws_ecs_task_definition.model_tasks[name].family
+      model_type           = conf.environment_variables["MODEL_TYPE"]
     }
   })
 }
 
 module "polling_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
-  version = "~> 3.0"
 
   function_name = join("-", [var.org_name, var.project_name, var.env, "polling", "ecs"])
   description   = "instruct polling (ecs)"
@@ -77,7 +78,10 @@ module "polling_lambda" {
   cloudwatch_logs_retention_in_days = 5
 
   runtime     = var.lambda_runtime
-  source_path = join("/", [path.module, "..", "..", "package", "src"])
+  source_path = [{
+    path = join("/", [path.module, "..", "..", "package", "src"]),
+    pip_requirements = join("/", [path.module, "..", "..", "requirements.polling.txt"])
+  }]
   handler     = "tools.polling.ecs.handler"
 
   environment_variables = {

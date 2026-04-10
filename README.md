@@ -1,7 +1,13 @@
 # Marigold
 
-A model zoo and inference API. Hosts HuggingFace models on AWS and exposes
-them via a unified REST API with async job submission and polling.
+A typed inference protocol over neural network models. Typed operations --
+a capability class, model, and input set -- produce immutable results drawn
+from the model's output distribution. Operations compose into workflows:
+declarative fact dependency graphs that the protocol fulfils without
+application-level coordination.
+
+Hosts HuggingFace models on AWS. Single operations and multi-step workflows
+are first-class over the same handler registry and execution substrate.
 
 The model set covers text and image embedding, instruction-following (chat),
 text-to-speech, image generation, depth estimation, image segmentation, and

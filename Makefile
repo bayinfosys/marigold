@@ -17,6 +17,7 @@ ifeq ($(TAG),)
 endif
 
 ENV ?= dev
+MODELS_YAML ?= assets/models.yaml
 
 # ---------------------------------------------------------------------------
 # Container image
@@ -24,15 +25,10 @@ ENV ?= dev
 
 .PHONY: build/environment
 build/environment:
+	# the environment container provides everything for running marigold
 	docker build \
 	  -t $(PROJECT_NAME)/environment:$(TAG) \
 	  -f package/src/models/environment/Dockerfile.ecs .
-
-build/model-cache: build/environment
-	docker build \
-	  --build-arg BASE_IMAGE=$(PROJECT_NAME)/environment:$(TAG) \
-	  -t $(PROJECT_NAME)/model-cache:$(TAG) \
-	  -f package/src/tools/model-cache/Dockerfile .
 
 push/environment:
 	docker tag $(PROJECT_NAME)/environment:$(TAG) $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG) && \
@@ -53,6 +49,8 @@ build/lame:
 
 # ---------------------------------------------------------------------------
 # Tools
+#
+# This only contains the magika model, which we don't really use at the moment
 # ---------------------------------------------------------------------------
 
 build/tools/%:
@@ -71,39 +69,74 @@ push: push/environment push/tools
 
 
 # ---------------------------------------------------------------------------
-# Local model cache
+# Local model development
 #
-# Cache all models declared in assets/models.yaml:
-#   make cache/local
+# Cache a single model:
+#   make build/cache MODEL=Qwen/Qwen2.5-0.5B-Instruct
 #
-# To cache a subset, create assets/models-dev.yaml and run:
-#   make MODELS_YAML=assets/models-dev.yaml cache/local
-#
-# Inspect cache contents and drift from models.yaml:
-#   make cache/inspect
+# Run a model with a request payload:
+#   make model/test
+#   make model/test ARGS=qwen/qwen2-0.5b-instruct
+#   make model/run ARGS="qwen/qwen2-0.5b-instruct instruct --request -"
 # ---------------------------------------------------------------------------
 
-MODELS_YAML ?= assets/models.yaml
+LOCAL_CACHE_DIR = $(shell pwd)/cache/models
+LOCAL_OUTPUT_DIR = $(shell pwd)/cache/outputs
 
-CACHE_LOCAL_RUN = \
-	docker run \
-	  --rm \
-	  -e MODELS_YAML_PATH=/project/assets/models.yaml \
+.PHONY: build/cache
+cli/cache:
+	# run the cli cache command to download models
+	docker run --rm \
+	  -e MODELS_YAML_PATH=/app/assets/models.yaml \
 	  -e CACHE_DIR=/models \
+	  -e HF_HUB_OFFLINE=0 \
 	  -e HF_HUB_CACHE=/models \
 	  -e HF_TOKEN=$(HF_TOKEN) \
-	  -v $(shell pwd)/$(MODELS_YAML):/project/assets/models.yaml:ro \
-	  -v $(shell pwd)/cache/models:/models \
-	  $(PROJECT_NAME)/model-cache:$(TAG) \
-	  python3 cache_builder_local.py
+	  -v $(shell pwd)/$(MODELS_YAML):/app/assets/models.yaml:ro \
+	  -v $(shell pwd)/test-workflows:/workflows:ro \
+	  -v $(LOCAL_CACHE_DIR):/models \
+	  $(PROJECT_NAME)/environment:$(TAG) \
+	  python3 -m tools.model_cli cache $(ARGS)
 
-.PHONY: cache/local
-cache/local: build/model-cache
-	$(CACHE_LOCAL_RUN) build
+cli/%:
+	# run the cli commands (help, inspect, etc)
+	docker run --rm -i \
+	  -e MODELS_YAML_PATH=/app/assets/models.yaml \
+	  -e CACHE_DIR=/models \
+	  -e HF_HUB_CACHE=/models \
+	  -e HF_HUB_OFFLINE=1 \
+	  -e OUTPUT_DIR=/outputs \
+	  -v $(shell pwd)/$(MODELS_YAML):/app/assets/models.yaml:ro \
+	  -v $(shell pwd)/test-workflows:/workflows:ro \
+	  -v $(LOCAL_CACHE_DIR):/models:ro \
+	  -v $(LOCAL_OUTPUT_DIR):/outputs \
+	  $(PROJECT_NAME)/environment:$(TAG) \
+	  python3 -m tools.model_cli $* $(ARGS)
 
-.PHONY: cache/inspect
-cache/inspect: build/model-cache
-	$(CACHE_LOCAL_RUN) inspect
+
+# ---------------------------------------------------------------------------
+# Local integration testing
+#
+# Starts LocalStack (S3, DynamoDB, SQS) and the model container.
+#   make integration/up
+#   make integration/exec ARGS="test sentence-transformers/all-minilm-l6-v2"
+#   make integration/exec ARGS="workflow run tools/test-workflows/embed_text.yaml --input text=hello"
+#   make integration/down
+# ---------------------------------------------------------------------------
+
+.PHONY: integration/up
+integration/up: build/model-cache
+	TAG=$(TAG) docker compose -f docker-compose.integration.yaml up -d
+
+.PHONY: integration/down
+integration/down:
+	TAG=$(TAG) docker compose -f docker-compose.integration.yaml down -v
+
+.PHONY: integration/exec
+integration/exec:
+	TAG=$(TAG) docker compose -f docker-compose.integration.yaml exec marigold \
+	  python3 -m tools.model_cli $(ARGS)
+
 
 # ---------------------------------------------------------------------------
 # Docker utilities
@@ -115,14 +148,6 @@ docker-login:
 	docker login --username AWS --password-stdin \
 	  $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com
 
-run:
-	GIT_TAG=$(shell git describe --tags) \
-	docker compose up --abort-on-container-exit --remove-orphans
-
-stop:
-	docker compose stop
-	docker compose rm
-
 # ---------------------------------------------------------------------------
 # API definition
 # ---------------------------------------------------------------------------
@@ -130,11 +155,11 @@ stop:
 .PHONY: build/api-definition
 build/api-definition:
 	docker run -it --rm \
-	  -v $(shell pwd)/package/src/api:/app/routes:ro \
+	  -v $(shell pwd)/package/src/:/app:ro \
 	  -v $(shell pwd)/tf/03/rest:/out \
 	  bayis/fastapi_aws:v0.0.11-1-ga17b8a1 \
 	    --title mdl \
-	    --router routes.routes:router \
+	    --router api.routes:router \
 	    --out-public /out/api_public_definition.json \
 	    --out-private /out/api_private_definition.json \
 	    --version $(TAG)
@@ -169,14 +194,16 @@ build/deployment-artefacts: build/api-definition
 
 .PHONY: models/validate
 models/validate: .venv assets/models.yaml
+	# check the models.yaml is a valid file
 	cd package/src && ../../.venv/bin/python3 tools/generate_models_tfvars.py \
 	  assets/models.yaml validate
 
 .PHONY: models/generate
 models/generate: .venv assets/models.yaml
-	.venv/bin/python3 package/src/tools/generate_models_tfvars.py \
+	# generate the terraform files from the model spec in `models.yaml`
+	PYTHONPATH=package/src .venv/bin/python3 package/src/tools/generate_models_tfvars.py \
 	  assets/models.yaml tfvars > assets/models.tfvars
-	.venv/bin/python3 package/src/tools/generate_models_tfvars.py \
+	PYTHONPATH=package/src .venv/bin/python3 package/src/tools/generate_models_tfvars.py \
 	  assets/models.yaml json > assets/models.json
 
 .PHONY: models/catalogue
@@ -270,8 +297,8 @@ deploy/cache-builder:
 # Utilities
 # ---------------------------------------------------------------------------
 
-get-key:
-	terraform -chdir=tf/03 output -raw api_key_value
+get-api-key:
+	terraform -chdir=tf/03 output -raw master_api_key_value
 
 get-asset-bucket:
 	terraform -chdir=tf/02 output -raw asset_bucket_name

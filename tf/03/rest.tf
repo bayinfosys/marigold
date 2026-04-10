@@ -55,18 +55,9 @@ resource "aws_iam_role_policy" "apigateway_lambda_policy" {
         Action = "lambda:InvokeFunction",
         Effect = "Allow",
         Resource = [
-          data.aws_lambda_function.instruct_polling.arn,
-          data.aws_lambda_function.embed_polling.arn,
-          data.aws_lambda_function.tts_polling.arn,
-          data.aws_lambda_function.usage_stats.arn,
-        ]
-      },
-      {
-        Action = "s3:GetObject",
-        Effect = "Allow",
-        Resource = [
-          "${data.aws_s3_bucket.results.arn}/*",
-          "${data.aws_s3_bucket.assets.arn}/*",
+          data.aws_lambda_function.polling_start_lambda_arn.arn,
+          # data.aws_lambda_function.usage_stats.arn,
+          data.aws_lambda_function.workflow_api_lambda.arn,
         ]
       },
       {
@@ -132,8 +123,8 @@ resource "aws_api_gateway_rest_api" "default" {
     polling_start_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
 
     # usage
-    usage_stats_lambda_arn = data.aws_lambda_function.usage_stats.invoke_arn
-    usage_stats_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
+    #usage_stats_lambda_arn = "xxx" # data.aws_lambda_function.usage_stats.invoke_arn
+    #usage_stats_lambda_iam_role_arn = "xxx"  # aws_iam_role.apigateway_lambda.arn
 
     # binary model outputs
     s3_output_bucket_name       = data.aws_s3_bucket.model_outputs.id
@@ -146,6 +137,10 @@ resource "aws_api_gateway_rest_api" "default" {
     # apikey
     key_management_lambda_arn         = module.apikey_lambda.lambda_function_invoke_arn
     key_management_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
+
+    # workflows
+    workflow_api_lambda_arn          = data.aws_lambda_function.workflow_api_lambda.invoke_arn
+    workflow_api_lambda_iam_role_arn  = aws_iam_role.apigateway_lambda.arn
 
     region = var.region
   })

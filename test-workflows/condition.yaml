@@ -1,0 +1,14 @@
+name: condition
+
+steps:
+  - op: check
+    input:
+      model_type: dummy
+      model_name: dummy
+      flag: {"var": "input.flag"}
+    branch:
+      - condition: {"==": [{"var": "flag"}, true]}
+        action: complete
+      - condition: true
+        action: halt
+        result: {"reason": "flag was false"}

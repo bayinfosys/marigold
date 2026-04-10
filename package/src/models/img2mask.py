@@ -27,7 +27,7 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
 
-def load_img2mask(modelname: str, **kwargs) -> ModelLoaderResult:
+def load_img2mask(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
     """Image segmentation / mask generation."""
     from transformers import AutoModelForMaskGeneration as M
     from transformers import AutoProcessor as T

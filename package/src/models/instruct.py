@@ -30,12 +30,12 @@ class EmptyMessagesError(Exception):
     pass
 
 
-def load_instruct(modelname: str, **kwargs) -> ModelLoaderResult:
+
+def load_instruct(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
     """Instruction-following / chat models."""
     from transformers import AutoModelForCausalLM as M
     from transformers import AutoTokenizer as T
-
-    return standard_loader(T, M, modelname, **kwargs)
+    return standard_loader(T, M, modelname, cache_dir=cache_dir, **kwargs)
 
 
 @model_spec(

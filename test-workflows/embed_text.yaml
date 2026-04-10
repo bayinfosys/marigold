@@ -1,0 +1,11 @@
+name: embed_text
+
+steps:
+  - op: embed
+    input:
+      model_type: text-embedding
+      model_name: sentence-transformers/all-minilm-l6-v2
+      input: {"var": "input.text"}
+
+outputs:
+  embedding: {"var": "steps.embed.output.embedding"}

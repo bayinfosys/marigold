@@ -108,7 +108,10 @@ class ImageEmbeddingModel(BaseModelHandler):
 
             with torch.no_grad():
                 outputs = self.model(**inputs)
-                embeddings = outputs.last_hidden_state[:, 0].cpu()
+                if hasattr(outputs, "image_embeds"):
+                    embeddings = outputs.image_embeds.cpu()
+                else:
+                    embeddings = outputs.last_hidden_state[:, 0].cpu()
 
             raw = embeddings[0].tolist()
 
