@@ -1,7 +1,8 @@
 """Common object definitions whic hare not request and response models."""
-
 from enum import Enum
-from typing import Dict, List, TypeVar, Union
+from typing import Dict, List, TypeVar, Union, Any
+
+import httpx
 
 from pydantic import BaseModel, Field
 from shared.enums import ModelModalities, ModelProvider, ModelType
@@ -46,6 +47,7 @@ class ModelDispatch(BaseModel):
     queue_url: str
     task_definition: str
     family: str
+    model_type: str
 
 
 ModelDispatchRoutes = Dict[str, ModelDispatch]
@@ -134,3 +136,39 @@ class InstructMessage(BaseModel, use_enum_values=True):
 
 
 InstructMessages = List[InstructMessage]
+
+
+# ---------------------------------------------------------------------------
+# HTTP
+# ---------------------------------------------------------------------------
+
+
+class HttpRequest(BaseModel):
+    url: str
+    method: str = "GET"
+    headers: Dict[str, str] = Field(..., default_factory=dict)
+    body: Dict[str, Any] = Field(..., default_factory=dict)
+    timeout: int = 30
+
+
+class HttpResponse(BaseModel):
+    status: int
+    body: Dict[str, Any]
+    headers: Dict[str, str]
+
+    @classmethod
+    def from_response(cls, response: httpx.Response) -> "HttpResponse":
+        """parse a httpx response model into our own HttpResponse object
+        NB: only "application/json" is allowed at the moment
+        """
+        content_type = response.headers.get("content-type", "")
+        if "application/json" not in content_type:
+            raise ValueError(
+                f"Unsupported content type: {content_type}. "
+                "Only application/json responses are supported."
+            )
+        return cls(
+            status=response.status_code,
+            body=response.json(),
+            headers=dict(response.headers),
+        )

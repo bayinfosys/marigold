@@ -35,12 +35,23 @@ variable "hf_token" {
 variable "instance_type" {
   description = <<-EOT
     EC2 instance type for the cache builder.
-    The instance must have enough RAM to load the largest model for caching.
-    Sub-4B parameter models: r5.xlarge (32 GB) is sufficient.
-    7B parameter models: r5.2xlarge (64 GB) is required.
+    Only needs enough RAM for the downloader process itself -- models are
+    streamed to EFS and never loaded into memory. t3.large is sufficient
+    for all current models. Use r5.xlarge only if a model's download
+    process requires more than 8 GB RAM.
   EOT
   type    = string
-  default = "r5.xlarge"
+  default = "t3.large"
+}
+
+variable "max_runtime_seconds" {
+  description = <<-EOT
+    Maximum time in seconds the cache builder is allowed to run before the
+    instance self-terminates. Prevents indefinite hangs from stalled downloads.
+    Default is 4 hours. Increase for very large model sets.
+  EOT
+  type    = number
+  default = 14400
 }
 
 variable "prune_cache" {
@@ -51,4 +62,16 @@ variable "prune_cache" {
   EOT
   type    = bool
   default = false
+}
+
+variable "models_yaml_key" {
+  description = "S3 key for the models YAML file to use for this cache run."
+  type        = string
+  default     = "models.yaml"
+}
+
+variable "ssh_allowed_cidr" {
+  description = "CIDR block allowed to SSH to the cache builder instance."
+  type        = string
+  default     = ""
 }

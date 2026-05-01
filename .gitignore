@@ -2,3 +2,5 @@
 tf/*/builds
 
 cache/
+assets/*.json
+assets/*.tfvars

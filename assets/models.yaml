@@ -1,0 +1,398 @@
+# Marigold model definitions.
+# This is the single source of truth for all models in the system.
+#
+# Fields
+# ------
+# name             Model identifier, passed verbatim to the provider.
+#                  For huggingface: org/model (e.g. facebook/mms-tts-eng).
+# provider         Model hosting provider. Valid: huggingface.
+# type             Model category. Drives MODEL_TYPE env var and cache target.
+#                  Valid: text-embedding, image-embedding, instruct, tts, depth,
+#                         img2txt, txt2img, img2mask, txt2audio, img2mesh
+# input            Input modality (text, image, chat, audio)
+# output           Output modality (vector/N, chat, speech, depth, mask, image)
+# memory_size      ECS task memory in MB. Default: 9216
+# timeout          SQS visibility timeout in seconds. Default: 300
+# idle_timeout     Seconds the worker keeps polling after the queue empties.
+#                  Default: 0. Use 600 for GPU tasks, 3600 for cheap CPU tasks.
+# auth_required    Whether provider credentials are needed to download this
+#                  model. For huggingface: requires TF_VAR_hf_token.
+#                  Default: false.
+# langcode         BCP-47 language code for TTS models (e.g. en/GB, cy/GB).
+#                  Injected as MODEL_LANGCODE.
+# log_level        Override the default INFO log level. Injected as LOG_LEVEL.
+# extra_env        Arbitrary extra environment variables passed verbatim to
+#                  the task. Values must be strings.
+# parameters       Model-specific metadata written to models.json. Not used
+#                  by Terraform infrastructure.
+#   vector_size    Embedding output dimension (text-embedding, image-embedding).
+#
+# Workflow
+# --------
+# After editing this file:
+#   make validate-models
+#   make generate-models       (writes models.tfvars)
+#   make generate-catalogue    (writes models.json; needs network + HF_TOKEN)
+#   git add assets/models.yaml assets/models.json assets/models.tfvars
+#   LAYER=02 make plan && LAYER=02 make apply
+#   LAYER=03 make plan && LAYER=03 make apply
+#   make deploy/cache-builder
+
+models:
+
+  # ---------------------------------------------------------------------------
+  # Text embedding
+  # ---------------------------------------------------------------------------
+
+  - name: sentence-transformers/paraphrase-multilingual-mpnet-base-v2
+    provider: huggingface
+    type: text-embedding
+    input: text
+    output: vector/768
+    idle_timeout: 3600
+    parameters:
+      vector_size: 768
+
+  - name: sentence-transformers/sentence-t5-large
+    provider: huggingface
+    type: text-embedding
+    input: text
+    output: vector/768
+    idle_timeout: 3600
+    parameters:
+      vector_size: 768
+
+  - name: sentence-transformers/all-minilm-l6-v2
+    provider: huggingface
+    type: text-embedding
+    input: text
+    output: vector/384
+    idle_timeout: 3600
+    parameters:
+      vector_size: 384
+
+  - name: BAAI/bge-m3
+    provider: huggingface
+    type: text-embedding
+    input: text
+    output: vector/1024
+    idle_timeout: 3600
+    parameters:
+      vector_size: 1024
+
+  - name: BAAI/bge-small-en-v1.5
+    provider: huggingface
+    type: text-embedding
+    input: text
+    output: vector/512
+    idle_timeout: 3600
+    parameters:
+      vector_size: 512
+
+  - name: microsoft/harrier-oss-v1-270m
+    provider: huggingface
+    type: text-embedding
+    input: text
+    output: vector/640
+    idle_timeout: 3600
+    parameters:
+      vector_size: 640
+
+  - name: microsoft/harrier-oss-v1-0.6b
+    provider: huggingface
+    type: text-embedding
+    input: text
+    output: vector/1024
+    idle_timeout: 3600
+    parameters:
+      vector_size: 1024
+
+  # ---------------------------------------------------------------------------
+  # Image embedding
+  # ---------------------------------------------------------------------------
+
+#  - name: openai/clip-vit-large-patch14
+#    provider: huggingface
+#    type: image-embedding
+#    input: image
+#    output: vector/768
+#    idle_timeout: 3600
+#    parameters:
+#      vector_size: 768
+
+  - name: google/siglip-base-patch16-224
+    provider: huggingface
+    type: image-embedding
+    input: image
+    output: vector/768
+    idle_timeout: 3600
+    parameters:
+      vector_size: 768
+
+  - name: google/siglip2-so400m-patch14-224
+    provider: huggingface
+    type: image-embedding
+    input: image
+    output: vector/1152
+    idle_timeout: 3600
+    parameters:
+      vector_size: 1152
+
+  #
+  #
+  #
+#  - name: openai/privacy-filter
+#    provider: huggingface
+#    type: 
+#    input: text
+#    output: 
+
+  # ---------------------------------------------------------------------------
+  # Instruct / chat
+  # ---------------------------------------------------------------------------
+
+  - name: qwen/qwen2-0.5b-instruct
+    provider: huggingface
+    type: instruct
+    input: chat
+    output: chat
+    timeout: 600
+    idle_timeout: 600
+
+  - name: qwen/qwen2-1.5b-instruct
+    provider: huggingface
+    type: instruct
+    input: chat
+    output: chat
+    timeout: 600
+    idle_timeout: 600
+
+  - name: meta-llama/llama-3.2-1b-instruct
+    provider: huggingface
+    type: instruct
+    input: chat
+    output: chat
+    timeout: 600
+    idle_timeout: 600
+    auth_required: true
+
+  - name: google/gemma-3-27b-it
+    provider: huggingface
+    type: instruct
+    input: chat
+    output: chat
+    timeout: 600
+    idle_timeout: 600
+    auth_required: true
+
+  # ---------------------------------------------------------------------------
+  # Text to speech
+  # ---------------------------------------------------------------------------
+
+  - name: facebook/mms-tts-eng
+    provider: huggingface
+    type: tts
+    input: text
+    output: speech
+    langcode: en/GB
+    idle_timeout: 600
+
+  - name: facebook/mms-tts-cym
+    provider: huggingface
+    type: tts
+    input: text
+    output: speech
+    langcode: cy/GB
+    idle_timeout: 600
+
+  - name: facebook/mms-tts-deu
+    provider: huggingface
+    type: tts
+    input: text
+    output: speech
+    langcode: de/DE
+    idle_timeout: 600
+
+  - name: facebook/mms-tts-fra
+    provider: huggingface
+    type: tts
+    input: text
+    output: speech
+    langcode: fr/FR
+    idle_timeout: 600
+
+  - name: facebook/mms-tts-spa
+    provider: huggingface
+    type: tts
+    input: text
+    output: speech
+    langcode: es/ES
+    idle_timeout: 600
+
+  - name: facebook/mms-tts-fin
+    provider: huggingface
+    type: tts
+    input: text
+    output: speech
+    langcode: fi/FI
+    idle_timeout: 600
+
+  - name: facebook/mms-tts-nld
+    provider: huggingface
+    type: tts
+    input: text
+    output: speech
+    langcode: nl/NL
+    idle_timeout: 600
+
+  # ---------------------------------------------------------------------------
+  # Depth estimation
+  # ---------------------------------------------------------------------------
+
+  - name: facebook/dpt-dinov2-small-kitti
+    provider: huggingface
+    type: depth
+    input: image
+    output: depth
+    idle_timeout: 600
+
+  # ---------------------------------------------------------------------------
+  # Image segmentation
+  # ---------------------------------------------------------------------------
+
+  - name: facebook/sam-vit-huge
+    provider: huggingface
+    type: img2mask
+    input: image
+    output: mask
+    idle_timeout: 600
+    memory_size: 16384
+
+
+
+  - name: facebook/musicgen-small
+    provider: huggingface
+    type: txt2audio
+    input: text
+    output: audio
+    memory_size: 9216
+    timeout: 300
+    idle_timeout: 60
+
+  - name: cvssp/audioldm2
+    provider: huggingface
+    type: txt2audio
+    input: text
+    output: audio
+    memory_size: 16384
+    timeout: 600
+    idle_timeout: 60
+    extra_env:
+      NUM_INFERENCE_STEPS: "50"
+
+  # ---------------------------------------------------------------------------
+  # tools
+  # ---------------------------------------------------------------------------
+
+  - name: http
+    provider: tools
+    type: http
+    input: json
+    output: json
+    memory_size: 4096
+    timeout: 30
+    idle_timeout: 0
+
+  # ---------------------------------------------------------------------------
+  # Image generation
+  # ---------------------------------------------------------------------------
+
+  - name: stabilityai/stable-diffusion-3.5-medium
+    provider: huggingface
+    type: txt2img
+    input: text
+    output: image
+    memory_size: 16384
+    timeout: 300
+    idle_timeout: 600
+
+  - name: black-forest-labs/FLUX.1-schnell
+    provider: huggingface
+    type: txt2img
+    input: text
+    output: image
+    memory_size: 32768
+    timeout: 300
+    idle_timeout: 600
+
+  # ---------------------------------------------------------------------------
+  # Image and text evaluation (used by quality-gated generation pipeline)
+  # ---------------------------------------------------------------------------
+
+  - name: openai/clip-vit-large-patch14
+    provider: huggingface
+    type: image-text-eval
+    input: image+text
+    output: scores
+    idle_timeout: 600
+
+  # ---------------------------------------------------------------------------
+  # Text evaluation -- entity extraction and PII detection
+  # ---------------------------------------------------------------------------
+
+  - name: openai/privacy-filter
+    provider: huggingface
+    type: text-eval
+    input: text
+    output: json
+    memory_size: 8192
+    timeout: 60
+    idle_timeout: 600
+
+  - name: dslim/bert-base-NER
+    provider: huggingface
+    type: text-eval
+    input: text
+    output: json
+    memory_size: 4096
+    timeout: 30
+    idle_timeout: 600
+
+  - name: dslim/bert-large-NER
+    provider: huggingface
+    type: text-eval
+    input: text
+    output: json
+    memory_size: 8192
+    timeout: 30
+    idle_timeout: 600
+
+  # ---------------------------------------------------------------------------
+  # Image evaluation
+  # ---------------------------------------------------------------------------
+
+  - name: falconsai/nsfw_image_detection
+    provider: huggingface
+    type: image-eval
+    input: image
+    output: json
+    idle_timeout: 600
+
+  - name: cafeai/cafe_aesthetic
+    provider: huggingface
+    type: image-eval
+    input: image
+    output: json
+    idle_timeout: 600
+
+  # ---------------------------------------------------------------------------
+  # Image-text alignment evaluation
+  # ---------------------------------------------------------------------------
+
+  - name: clip-ViT-B-32
+    provider: huggingface
+    type: image-text-eval
+    input: image+text
+    output: json
+    idle_timeout: 600
+

@@ -88,44 +88,40 @@ resource "aws_iam_role_policy" "model_task" {
 
 module "ecs" {
   source       = "terraform-aws-modules/ecs/aws"
+  version      = "~> 7.5"
   cluster_name = join("-", [var.project_name, var.env, "fargate-cluster"])
 
   create_task_exec_iam_role = true
   create_task_exec_policy   = true
 
+  # FARGATE and FARGATE_SPOT are AWS-managed providers -- they are
+  # associated via cluster_capacity_providers, not capacity_providers.
+  # capacity_providers is for EC2 ASG-backed providers only.
   cluster_capacity_providers = ["FARGATE", "FARGATE_SPOT"]
+
+  # EC2-backed capacity providers -- empty until GPU is enabled
+  capacity_providers = var.enable_gpu_services ? {
+    gpu = {
+      auto_scaling_group_provider = {
+        auto_scaling_group_arn         = aws_autoscaling_group.gpu.arn
+        managed_termination_protection = "ENABLED"
+        managed_scaling = {
+          status                    = "ENABLED"
+          target_capacity           = 100
+          minimum_scaling_step_size = 1
+          maximum_scaling_step_size = 4
+        }
+      }
+    }
+  } : {}
 
   default_capacity_provider_strategy = {
     FARGATE = {
-      default_capacity_provider_strategy = {
-        weight = 50
-        base   = 20
-      }
+      weight = 50
+      base   = 20
     }
     FARGATE_SPOT = {
-      default_capacity_provider_strategy = {
-        weight = 50
-      }
-    }
-  }
-
-  autoscaling_capacity_providers = {
-    gpu = {
-      auto_scaling_group_arn         = aws_autoscaling_group.gpu.arn
-      managed_termination_protection = "DISABLED"
-
-      managed_scaling = {
-        status          = "ENABLED"
-        target_capacity = 100
-      }
-
-      # weight=0 means no tasks are scheduled here by default.
-      # To route tasks to GPU, add a capacity_provider_strategy block
-      # to the relevant task definition and increase weight.
-      default_capacity_provider_strategy = {
-        weight = 0
-        base   = 0
-      }
+      weight = 50
     }
   }
 

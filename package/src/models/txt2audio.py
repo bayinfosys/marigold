@@ -47,9 +47,6 @@ from api.models import Txt2AudioRequest, Txt2AudioResponse
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
-LAME_PATH = os.getenv("LAME_PATH", "/var/task/lame")
-AudioSegment.converter = LAME_PATH
-
 # MusicGen generates 50 audio tokens per second of output.
 _MUSICGEN_TOKENS_PER_SECOND = 50
 

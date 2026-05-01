@@ -35,4 +35,4 @@ LAYER=03 make apply
 
 # populate EFS model cache
 # TF_VAR_hf_token must be set in the environment for gated models
-#make deploy/cache-builder
+make deploy/cache-builder

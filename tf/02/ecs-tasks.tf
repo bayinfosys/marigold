@@ -15,10 +15,9 @@ resource "aws_ecs_task_definition" "model_tasks" {
   for_each = var.models
 
   # Family name must match [a-zA-Z0-9_-] and be <= 255 characters.
-  family = join("-", [var.project_name, var.env, each.key])
-
-  cpu                      = "4096"
-  memory                   = tostring(each.value.memory_size)
+  family                   = join("-", [var.project_name, var.env, each.key])
+  cpu                      = each.value.cpu_size
+  memory                   = each.value.memory_size
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   execution_role_arn       = module.ecs.task_exec_iam_role_arn
@@ -32,8 +31,12 @@ resource "aws_ecs_task_definition" "model_tasks" {
       # + the name to be model based
       name   = each.key
       image  = data.aws_ecr_image.environment_image.image_uri
-      cpu    = 4096
+      cpu    = each.value.cpu_size
       memory = each.value.memory_size
+      # requires_compatibilities = each.value.requires_gpu ? ["EC2"] : ["FARGATE"]
+      # resourceRequirements = each.value.requires_gpu ? [
+      #   { type = "GPU", value = "1" }
+      # ] : []
 
       command = [
         "python", "-c",
@@ -47,42 +50,45 @@ resource "aws_ecs_task_definition" "model_tasks" {
         ],
         # infrastructure variables injected by Terraform
         [
-          { name = "AWS_SQS_MODEL_QUEUE",           value = aws_sqs_queue.model_queues[each.key].id },
-          { name = "RESULTS_TABLE",                 value = aws_dynamodb_table.results_cache.id },
-          { name = "DYNAMODB_USAGE_TABLE",          value = module.usage_table.dynamodb_table_id },
-          { name = "OUTPUT_BUCKET",                 value = aws_s3_bucket.model_outputs.id },
-          { name = "CACHE_DIR",                     value = "/mnt/shared/models" },
-          { name = "HF_HUB_CACHE",                  value = "/mnt/shared/models" },
-          { name = "HF_HOME",                       value = "/tmp" },
-          { name = "HF_HUB_OFFLINE",                value = "1" },
-          { name = "HF_HUB_DISABLE_PROGRESS_BARS",  value = "1" },
-          { name = "HF_HUB_DISABLE_TELEMETRY",      value = "1" },
-          { name = "REMOTE_CODE",                   value = "0" },
-          { name = "USE_FAST",                      value = "0" },
-          { name = "SQS_VISIBILITY_TIMEOUT",        value = tostring(each.value.timeout) },
-          { name = "IDLE_TIMEOUT",                  value = tostring(each.value.idle_timeout) },
+          { name = "AWS_SQS_MODEL_QUEUE",  value = aws_sqs_queue.model_queues[each.key].id },
+          { name = "DYNAMODB_RESULTS_TABLE", value = aws_dynamodb_table.results_cache.id },
+          { name = "DYNAMODB_USAGE_TABLE", value = module.usage_table.dynamodb_table_id },
+          { name = "WORKFLOW_STEPS_TABLE", value = aws_dynamodb_table.workflow_steps.id },
+          { name = "OUTPUT_BUCKET",        value = aws_s3_bucket.model_outputs.id },
+          { name = "SQS_VISIBILITY_TIMEOUT", value = tostring(each.value.timeout) },
+          { name = "IDLE_TIMEOUT",         value = tostring(each.value.idle_timeout) },
         ],
         # HF_TOKEN is only injected for gated models
         # NB: if  provider is not huggingface, we need a different thing
+        each.value.provider == "huggingface" ? [
+          { name = "CACHE_DIR",                    value = "/mnt/shared/models" },
+          { name = "HF_HUB_CACHE",                 value = "/mnt/shared/models" },
+          { name = "HF_HOME",                      value = "/tmp" },
+          { name = "HF_HUB_OFFLINE",               value = "1" },
+          { name = "HF_HUB_DISABLE_PROGRESS_BARS", value = "1" },
+          { name = "HF_HUB_DISABLE_TELEMETRY",     value = "1" },
+          { name = "REMOTE_CODE",                  value = "0" },
+          { name = "USE_FAST",                     value = "0" },
+        ] : [],
         each.value.auth_required ? [
           { name = "HF_TOKEN", value = var.hf_token }
         ] : []
       )
 
-      mountPoints = [
+      mountPoints = each.value.provider == "huggingface" ? [
         {
           sourceVolume  = "efs-cache"
           containerPath = "/mnt/shared"
           readOnly      = true
         }
-      ]
+      ] : []
 
       logConfiguration = {
         logDriver = "awslogs"
         options = {
           awslogs-group         = aws_cloudwatch_log_group.ecs_model_logs[each.key].name
           awslogs-region        = var.region
-          awslogs-stream-prefix = each.key
+          awslogs-stream-prefix = each.value.environment_variables["MODELNAME"]
         }
       }
 
@@ -96,17 +102,21 @@ resource "aws_ecs_task_definition" "model_tasks" {
     }
   ])
 
-  volume {
-    name = "efs-cache"
+  dynamic "volume" {
+    for_each = each.value.provider == "huggingface" ? [1] : []
 
-    efs_volume_configuration {
-      file_system_id     = data.aws_efs_file_system.efs.id
-      root_directory     = "/"
-      transit_encryption = "ENABLED"
+    content {
+      name = "efs-cache"
 
-      authorization_config {
-        access_point_id = data.aws_efs_access_point.efs_assets_ro.id
-        iam             = "ENABLED"
+      efs_volume_configuration {
+        file_system_id     = data.aws_efs_file_system.efs.id
+        root_directory     = "/"
+        transit_encryption = "ENABLED"
+
+        authorization_config {
+          access_point_id = data.aws_efs_access_point.efs_assets_ro.id
+          iam             = "ENABLED"
+        }
       }
     }
   }

@@ -6,56 +6,28 @@ inputs (literals, workflow input references, or prior step output references),
 optional dependencies, and optional branch conditions.
 
 
-## What Marigold does
+## Workflows as task specifications
 
-Marigold executes chains of model inference steps. Every step in a Marigold
-workflow is a call to a model in the registry. The system routes inputs to
-the correct handler, runs inference, persists outputs, and advances the graph.
+A workflow is two things simultaneously: a processing pipeline and a partial
+task specification.
 
-Marigold accepts inputs. It does not retrieve them. All data supplied to a
-workflow -- documents, images, audio, structured records, text -- is assembled
-by the caller before submission. Data retrieval, external API calls, database
-lookups, and web scraping are outside Marigold's scope. They are the caller's
-responsibility.
+The pipeline half is the YAML -- the steps, the model choices, the dependency
+graph. The specification half is implicit: the structure of the workflow
+encodes assumptions about what the task requires, which models are appropriate
+for each stage, and what the output should look like.
 
-This boundary is the submission endpoint. Everything to the left of that
-boundary is the caller's pipeline. Everything to the right is Marigold.
+Making that second half explicit is what evals do. For each workflow, a
+companion eval library defines what good output looks like for a representative
+sample of inputs. Outputs from production runs can be inspected, corrected,
+and returned as labelled examples. Each correction refines the specification.
+The pipeline and the eval library together constitute a complete, improvable
+task definition: here is how we process the data, and here is how we know
+whether we processed it correctly.
 
-A concrete example: a caller wants an audio briefing and document summary
-derived from a Companies House filing. The caller fetches the filing from
-the Companies House API, extracts the relevant fields, and submits them to
-Marigold as workflow inputs. Marigold runs the inference chain -- entity
-extraction, classification, summarisation, text-to-speech, document
-synthesis -- and returns the results. The caller then delivers those results
-wherever they need to go. Marigold has no knowledge of Companies House, no
-HTTP client, and no delivery mechanism. It received structured text and
-returned structured outputs.
-
-The same principle applies to output delivery. Marigold writes inference
-results to S3 and returns references to them. Sending those results to a
-user, uploading them to a platform, or triggering a downstream system is
-the caller's responsibility.
-
-
-## Marigold as a step within a larger pipeline
-
-A runfox workflow can run entirely outside Marigold, coordinating a pipeline
-that includes non-inference steps -- API calls, database reads, file
-transformations, notifications. When that pipeline reaches a step that
-requires model inference, it calls Marigold and waits for the result.
-
-In this pattern, Marigold is the inference execution layer within a larger
-operator-defined pipeline. The external runfox workflow owns the full
-pipeline shape; Marigold owns the inference steps within it. The two uses
-of runfox are separate and compatible: runfox inside Marigold coordinates
-inference steps against each other, and runfox outside Marigold coordinates
-a broader workflow that includes Marigold as one of its services.
-
-This separation keeps Marigold's scope clean. There is no HTTP step type in
-the Marigold executor, no external API client in the handler registry, and
-no special case in the queue map. If a pipeline requires both inference and
-non-inference steps, the right architecture is an external orchestrator
-calling Marigold for the inference portions.
+The examples below are starting points for that process. Each one documents
+a pipeline shape for a recognisable use case. The task specification -- the
+labelled dataset that gives the pipeline its definition of correct behaviour --
+is the caller's next step.
 
 
 ## Executor contract

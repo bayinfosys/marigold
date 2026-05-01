@@ -1,17 +1,15 @@
 # ---------------------------------------------------------------------------
-# GPU capacity provider for ECS.
+# EC2 capacity provider for ECS.
 #
-# Uses EC2 instances with NVIDIA GPUs (g4dn family by default) running the
-# ECS-optimised Amazon Linux 2023 GPU AMI.
+# Used for GPU model workers (g4dn family) and any future EC2-backed tasks.
+# The ASG starts at zero. Managed scaling via the ECS capacity provider
+# scales up when EC2 tasks are queued.
 #
-# The ASG starts at zero. To activate:
-#   1. Set desired_capacity > 0, or enable managed scaling target.
-#   2. Add a capacity_provider_strategy to the relevant task definitions
-#      in ecs-tasks.tf referencing the "gpu" capacity provider.
-#   3. Update requires_compatibilities to ["EC2"] for those tasks.
-#
-# The capacity provider is registered with the cluster via the
-# autoscaling_capacity_providers input in ecs.tf.
+# To activate GPU workers:
+#   1. In ecs-services.tf, remove launch_type = "FARGATE" from
+#      model_services_gpu and uncomment the capacity_provider_strategy block.
+#   2. Update requires_compatibilities to ["EC2"] in ecs-tasks.tf for GPU models.
+#   3. Ensure the capacity provider is registered with the cluster in ecs.tf.
 # ---------------------------------------------------------------------------
 
 variable "gpu_instance_type" {
@@ -20,21 +18,13 @@ variable "gpu_instance_type" {
   default     = "g4dn.xlarge"
 }
 
-# ECS-optimised GPU AMI -- Amazon Linux 2023, kept current via SSM parameter.
 data "aws_ssm_parameter" "ecs_gpu_ami" {
   name = "/aws/service/ecs/optimized-ami/amazon-linux-2023/gpu/recommended/image_id"
 }
 
-# ---------------------------------------------------------------------------
-# IAM instance profile
-# EC2 instances in an ECS cluster need the container service role to register
-# with the cluster and pull images from ECR.
-# ---------------------------------------------------------------------------
-
 data "aws_iam_policy_document" "gpu_instance_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
-
     principals {
       type        = "Service"
       identifiers = ["ec2.amazonaws.com"]
@@ -64,12 +54,6 @@ resource "aws_iam_instance_profile" "gpu" {
   tags = var.project_tags
 }
 
-# ---------------------------------------------------------------------------
-# Security group
-# GPU instances need egress for ECR pulls, EFS, and SSM.
-# Ingress is not required -- tasks are dispatched via SQS, not direct connections.
-# ---------------------------------------------------------------------------
-
 resource "aws_security_group" "gpu" {
   name        = join("-", [var.project_name, var.env, "gpu-sg"])
   description = "GPU ECS instances -- egress only"
@@ -86,11 +70,6 @@ resource "aws_security_group" "gpu" {
   tags = var.project_tags
 }
 
-# ---------------------------------------------------------------------------
-# Launch template
-# Registers the instance with the ECS cluster on startup via user_data.
-# ---------------------------------------------------------------------------
-
 resource "aws_launch_template" "gpu" {
   name_prefix   = join("-", [var.project_name, var.env, "gpu-"])
   image_id      = data.aws_ssm_parameter.ecs_gpu_ami.value
@@ -105,7 +84,6 @@ resource "aws_launch_template" "gpu" {
     security_groups             = [aws_security_group.gpu.id]
   }
 
-  # Register with the ECS cluster and configure the Docker daemon for GPU support.
   user_data = base64encode(<<-EOT
     #!/bin/bash
     echo ECS_CLUSTER=${module.ecs.cluster_name} >> /etc/ecs/ecs.config
@@ -125,12 +103,6 @@ resource "aws_launch_template" "gpu" {
   }
 }
 
-# ---------------------------------------------------------------------------
-# Auto-scaling group
-# Starts at zero. Managed scaling via the ECS capacity provider will scale
-# up when GPU tasks are queued and weight > 0 in the capacity provider strategy.
-# ---------------------------------------------------------------------------
-
 resource "aws_autoscaling_group" "gpu" {
   name                = join("-", [var.project_name, var.env, "gpu-asg"])
   min_size            = 0
@@ -143,7 +115,6 @@ resource "aws_autoscaling_group" "gpu" {
     version = "$Latest"
   }
 
-  # Required for ECS managed scaling to function correctly.
   protect_from_scale_in = true
 
   tag {

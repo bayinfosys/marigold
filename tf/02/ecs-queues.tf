@@ -9,7 +9,7 @@
 resource "aws_sqs_queue" "model_queues" {
   for_each = var.models
 
-  name = join("-", ["mdl", each.key, "queue"])
+  name = join("-", [var.project_name, var.env, each.key, "queue"])
 
   message_retention_seconds  = 3600
   visibility_timeout_seconds = each.value.timeout
@@ -20,7 +20,7 @@ resource "aws_sqs_queue" "model_queues" {
 resource "aws_cloudwatch_log_group" "ecs_model_logs" {
   for_each = var.models
 
-  name              = join("/", ["/ecs", "model", each.key])
+  name              = join("-", [var.project_name, var.env, "models", each.key])
   retention_in_days = 5
 
   tags = var.project_tags

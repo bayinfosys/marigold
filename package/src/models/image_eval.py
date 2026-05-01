@@ -21,7 +21,7 @@ from shared.outputs import decode_image
 from shared.registry import BaseModelHandler, model_spec
 from shared.usage import record_usage
 from models.standard_loader import ModelLoaderResult, standard_loader
-from api.models import EvalImageRequest, EvalResponse
+from api.models import EvalImageRequest, EvalResponse, EvalScore
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -63,9 +63,7 @@ class ImageEvalModel(BaseModelHandler):
 
         logger.info(
             "[%s/%s] evaluating image %s",
-            user_id,
-            message_id,
-            str(image.size),
+            user_id, message_id, str(image.size),
         )
 
         inputs = self.processor(images=image, return_tensors="pt")
@@ -76,21 +74,20 @@ class ImageEvalModel(BaseModelHandler):
         iduration = clock() - T1
 
         probs = torch.softmax(outputs.logits, dim=-1)[0]
-        scores = {
-            self.model.config.id2label[i]: round(probs[i].item(), 4)
+        scores = [
+            EvalScore(
+                label=self.model.config.id2label[i],
+                score=round(probs[i].item(), 4),
+            )
             for i in range(len(probs))
-        }
+        ]
 
         duration = clock() - T
 
         logger.info(
-            "[%s/%s] '%s' scores=%s in %0.2fs (inference %0.2fs)",
-            user_id,
-            message_id,
-            self.modelname,
-            str(scores),
-            duration,
-            iduration,
+            "[%s/%s] '%s' scores=%s in %.2fs (inference %.2fs)",
+            user_id, message_id, self.modelname,
+            str(scores), duration, iduration,
         )
 
         usage = record_usage(

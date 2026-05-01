@@ -123,7 +123,7 @@ def standard_loader(
         modelname,
         clock() - T0,
         footprint,
-        getattr(getattr(model, "config", None), "torch_dtype", "unknown"),
+        getattr(getattr(model, "config", None), "dtype", "unknown"),
     )
 
     return ModelLoaderResult(processor=processor, model=model)

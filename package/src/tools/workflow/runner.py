@@ -13,6 +13,7 @@ message_body_fn strips control fields, renders prompt templates,
 from hashlib import md5
 
 from runfox.results import DispatchJob
+from shared.sqs_models import MarigoldSQSMessage
 
 
 def make_queue_url_fn(queue_map: dict):
@@ -40,8 +41,6 @@ def make_queue_url_fn(queue_map: dict):
 
     return queue_url_fn
 
-
-from shared.sqs_models import MarigoldSQSMessage
 
 def make_message_body_fn(user_id: str):
     """

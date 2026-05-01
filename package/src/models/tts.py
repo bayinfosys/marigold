@@ -37,9 +37,6 @@ from api.models import TTSRequest, TTSResponse
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
-LAME_PATH = os.getenv("LAME_PATH", "/var/task/lame")
-AudioSegment.converter = LAME_PATH
-
 
 def load_tts(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
     """Text-to-speech models.

@@ -35,18 +35,6 @@ push/environment:
 	docker push $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG) && \
 	docker rmi $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG)
 
-.PHONY: build/lame
-build/lame:
-	# build the lame executable for aws lambda
-	# output goes to ./tf/02/lambdas/lame
-	docker run \
-	  --rm \
-	  -it \
-	  -v ./scripts:/scripts:ro \
-	  -v ./tf/02/lambdas/lame:/var/task/lame/bin \
-	  amazonlinux:2 \
-	  bash -c '/scripts/build-lame.sh'
-
 # ---------------------------------------------------------------------------
 # Tools
 #
@@ -71,21 +59,34 @@ push: push/environment push/tools
 # ---------------------------------------------------------------------------
 # Local model development
 #
-# Cache a single model:
-#   make build/cache MODEL=Qwen/Qwen2.5-0.5B-Instruct
+# Download model weights:
+#   make cli/download-weights
+#   make cli/download-weights ARGS=stable-diffusion-v1-5
 #
-# Run a model with a request payload:
-#   make model/test
-#   make model/test ARGS=qwen/qwen2-0.5b-instruct
-#   make model/run ARGS="qwen/qwen2-0.5b-instruct instruct --request -"
+# Inspect cache state:
+#   make cli/inspect-cache
+#   make cli/inspect-cache FLAGS=--json
+#
+# Test all models:
+#   make cli/test-models
+#   make cli/test-models ARGS=stable-diffusion-v1-5
+#
+# Run a single inference:
+#   make cli/run-model ARGS="stable-diffusion-v1-5 txt2img --request -"
+#
+# Build public catalogue:
+#   make cli/build-catalogue ARGS="assets/public_models_reference.json --cache-state /tmp/cache_state.json"
+#
+# Run a workflow locally:
+#   make cli/workflow/run ARGS="path/to/workflow.yaml --input text=hello"
+#   make cli/workflow/test ARGS=/workflows/
 # ---------------------------------------------------------------------------
 
 LOCAL_CACHE_DIR = $(shell pwd)/cache/models
 LOCAL_OUTPUT_DIR = $(shell pwd)/cache/outputs
 
-.PHONY: build/cache
-cli/cache:
-	# run the cli cache command to download models
+.PHONY: cli/download-weights
+cli/download-weights:
 	docker run --rm \
 	  -e MODELS_YAML_PATH=/app/assets/models.yaml \
 	  -e CACHE_DIR=/models \
@@ -93,13 +94,11 @@ cli/cache:
 	  -e HF_HUB_CACHE=/models \
 	  -e HF_TOKEN=$(HF_TOKEN) \
 	  -v $(shell pwd)/$(MODELS_YAML):/app/assets/models.yaml:ro \
-	  -v $(shell pwd)/test-workflows:/workflows:ro \
 	  -v $(LOCAL_CACHE_DIR):/models \
 	  $(PROJECT_NAME)/environment:$(TAG) \
-	  python3 -m tools.model_cli cache $(ARGS)
+	  python3 -m tools.model_cli download-weights $(ARGS)
 
 cli/%:
-	# run the cli commands (help, inspect, etc)
 	docker run --rm -i \
 	  -e MODELS_YAML_PATH=/app/assets/models.yaml \
 	  -e CACHE_DIR=/models \
@@ -111,7 +110,34 @@ cli/%:
 	  -v $(LOCAL_CACHE_DIR):/models:ro \
 	  -v $(LOCAL_OUTPUT_DIR):/outputs \
 	  $(PROJECT_NAME)/environment:$(TAG) \
-	  python3 -m tools.model_cli $* $(ARGS)
+	  python3 -m tools.model_cli $(FLAGS) $* $(ARGS)
+
+
+.PHONY: cli/workflow/run cli/workflow/test
+cli/workflow/run:
+	docker run --rm -i \
+	  -e MODELS_YAML_PATH=/app/assets/models.yaml \
+	  -e CACHE_DIR=/models \
+	  -e HF_HUB_CACHE=/models \
+	  -e HF_HUB_OFFLINE=1 \
+	  -v $(shell pwd)/$(MODELS_YAML):/app/assets/models.yaml:ro \
+	  -v $(shell pwd)/test-workflows:/workflows:ro \
+	  -v $(LOCAL_CACHE_DIR):/models:ro \
+	  $(PROJECT_NAME)/environment:$(TAG) \
+	  python3 -m tools.model_cli $(FLAGS) workflow run $(ARGS)
+
+cli/workflow/test:
+	docker run --rm \
+	  -e MODELS_YAML_PATH=/app/assets/models.yaml \
+	  -e CACHE_DIR=/models \
+	  -e HF_HUB_CACHE=/models \
+	  -e HF_HUB_OFFLINE=1 \
+	  -v $(shell pwd)/$(MODELS_YAML):/app/assets/models.yaml:ro \
+	  -v $(shell pwd)/test-workflows:/workflows:ro \
+	  -v $(LOCAL_CACHE_DIR):/models:ro \
+	  $(PROJECT_NAME)/environment:$(TAG) \
+	  python3 -m tools.model_cli $(FLAGS) workflow test $(ARGS)
+
 
 
 # ---------------------------------------------------------------------------
@@ -125,12 +151,14 @@ cli/%:
 # ---------------------------------------------------------------------------
 
 .PHONY: integration/up
-integration/up: build/model-cache
+integration/up:
 	TAG=$(TAG) docker compose -f docker-compose.integration.yaml up -d
 
 .PHONY: integration/down
 integration/down:
 	TAG=$(TAG) docker compose -f docker-compose.integration.yaml down -v
+	TAG=$(TAG) docker compose -f docker-compose.integration.yaml stop
+	TAG=$(TAG) docker compose -f docker-compose.integration.yaml rm
 
 .PHONY: integration/exec
 integration/exec:
@@ -212,6 +240,18 @@ models/catalogue: .venv assets/models.yaml
 	.venv/bin/python3 package/src/tools/generate_models_tfvars.py \
 	  assets/models.yaml public > assets/public_models_reference.json
 
+
+.PHONY: generate-public-models
+models/generate-public-models:
+	# Download current cache state from S3
+	aws s3 cp s3://bayis-vecmdl-dev-assets20241025234947605200000001/cache_state.json assets/cache_state.json --region eu-west-2
+	# Merge public catalogue with cache state and upload
+	PYTHONPATH=package/src .venv/bin/python3 package/src/tools/generate_models_tfvars.py assets/models.yaml public > assets/public_models_reference.json
+	PYTHONPATH=package/src .venv/bin/python3 package/src/tools/model_cli.py build-catalogue \
+	  assets/public_models_reference.json \
+	  --cache-state assets/cache_state.json
+
+
 # ---------------------------------------------------------------------------
 # Terraform
 #
@@ -279,19 +319,23 @@ status: check-layer
 #   make deploy/cache-builder TF_EXTRA_VARS='-var="prune_cache=true"'
 # ---------------------------------------------------------------------------
 
+MY_IP := $(shell curl -sf https://checkip.amazonaws.com)/32
+
+
 TF_EXTRA_VARS ?=
 
 .PHONY: deploy/cache-builder
 deploy/cache-builder:
-	terraform -chdir=tf/tools/cache-builder init -upgrade -reconfigure
-	terraform -chdir=tf/tools/cache-builder plan \
-	  -var-file=../../common.tfvars \
-	  -var-file=../../$(ENV).tfvars \
+	terraform -chdir=tf/cache-builder init -upgrade -reconfigure
+	terraform -chdir=tf/cache-builder plan \
+	  -var-file=../common.tfvars \
+	  -var-file=../$(ENV).tfvars \
 	  -var="git_tag=$(TAG)" \
+	  -var="ssh_allowed_cidr=$(MY_IP)" \
 	  $(TF_EXTRA_VARS) \
 	  -out new.plan
-	terraform -chdir=tf/tools/cache-builder apply -parallelism=0 new.plan \
-	  && rm tf/tools/cache-builder/new.plan
+	terraform -chdir=tf/cache-builder apply -parallelism=0 new.plan \
+	  && rm tf/cache-builder/new.plan
 
 # ---------------------------------------------------------------------------
 # Utilities
@@ -307,4 +351,4 @@ get-api-spec:
 	terraform -chdir=tf/03 output -raw api_spec
 
 get-cache-builder-instance:
-	terraform -chdir=tf/tools/cache-builder output -raw cache_builder_instance_id
+	terraform -chdir=tf/cache-builder output -raw cache_builder_instance_id

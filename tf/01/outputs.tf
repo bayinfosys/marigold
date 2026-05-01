@@ -49,3 +49,22 @@ output "efs_file_system_id" {
   description = "EFS file system ID (used by the cache builder for mounting)"
   value       = module.efs.id
 }
+
+output "ecr_registry" {
+  description = "ECR registry URL for this account and region"
+  value       = split("/", module.ecr.repository_url)[0]
+}
+
+output "environment_ecr_url" {
+  description = "Full ECR repository URL for the environment image"
+  value       = module.ecr.repository_url
+}
+
+output "environment_ecr_name" {
+  value = module.ecr.repository_name
+}
+
+output "environment_ecr_arn" {
+  description = "ARN of the environment ECR repository"
+  value       = module.ecr.repository_arn
+}

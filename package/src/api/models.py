@@ -12,9 +12,26 @@ from typing import Dict, Generic, List, Literal, Optional, TypeVar
 from pydantic import BaseModel, Field
 from shared.models import (Embedding, EmbeddingQuantization, InstructMessage,
                            InstructMessages, OutputReference)
-from shared.usage_models import ModelUsageStats
 
 T = TypeVar("T")
+
+
+#
+#
+#
+
+class ModelUsageStats(BaseModel):
+    """Timing and resource statistics for one inference request.
+
+    Not all fields are relevant for all model types; token counts are zero
+    for image-in/image-out models.
+    """
+
+    duration:     float = Field(..., description="total process duration in seconds")
+    inference:    float = Field(..., description="model inference duration in seconds")
+    input_tokens: int = Field(0,   description="number of input tokens")
+    output_tokens: int = Field(0,   description="number of output tokens")
+    memory_usage: int = Field(..., description="peak process memory in KB")
 
 
 # ---------------------------------------------------------------------------
@@ -284,11 +301,37 @@ class ImageTextEvalRequest(ModelRequest):
     text: str = Field(..., description="text to compare against the image")
 
 
+class EvalScore(BaseModel):
+    """One scored item from a text, image, or image-text evaluation.
+
+    For sequence classification models (sentiment, toxicity, topic):
+        label  -- the class label, e.g. "POSITIVE", "toxic"
+        score  -- probability, 0.0 to 1.0
+
+    For token classification models (NER, PII detection):
+        entity_group -- entity type, e.g. "PER", "private_email"
+        score        -- confidence, 0.0 to 1.0
+        word         -- the matched text span
+        start        -- character offset of span start
+        end          -- character offset of span end
+
+    For image and image-text evaluation (CLIP-based):
+        label  -- the evaluated property, e.g. "aesthetic", "alignment"
+        score  -- normalised score, 0.0 to 1.0
+    """
+    label:        Optional[str] = None
+    score:        float
+    entity_group: Optional[str] = None
+    word:         Optional[str] = None
+    start:        Optional[int] = None
+    end:          Optional[int] = None
+
+
 class EvalResponse(BaseModel):
     created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
-    model: str
-    scores: Dict[str, float]
-    usage: ModelUsageStats
+    model:   str
+    scores:  List[EvalScore]
+    usage:   ModelUsageStats
 
 
 # ---------------------------------------------------------------------------

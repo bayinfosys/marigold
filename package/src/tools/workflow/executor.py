@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 
 import boto3
 import runfox as rfx
+from dynawrap.backends.dynamodb import DynamoDBBackend
 from runfox.backend.aws import DynamoDBStore, SQSRunner
 from runfox.results import Complete, Dispatch, Halt
 
@@ -35,10 +36,11 @@ from .runner import make_message_body_fn, make_queue_url_fn
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))
 
-ddb = boto3.client("dynamodb")
+_ddb = boto3.client("dynamodb")
+_dynawrap = DynamoDBBackend(_ddb)
 s3 = boto3.client("s3")
 
-STATE_TABLE = os.environ["WORKFLOW_STATE_TABLE"]
+STATE_TABLE = os.getenv("WORKFLOW_STATE_TABLE")
 
 
 def _load_queue_map() -> dict:
@@ -58,14 +60,23 @@ QUEUE_MAP = _load_queue_map()
 
 
 def _make_backend(user_id: str) -> rfx.Backend:
-    return rfx.Backend(
-        store=DynamoDBStore(table=STATE_TABLE),
-        runner=SQSRunner(
-            tasks_table=os.environ["WORKFLOW_TASKS_TABLE"],
-            queue_url=make_queue_url_fn(QUEUE_MAP),
-            message_body_fn=make_message_body_fn(user_id),
-        ),
-    )
+    """Construct a runfox Backend for workflow state management.
+
+    This is distinct from the dynawrap DynamoDBBackend used for
+    WorkflowExecution and WorkflowStep model operations.
+    """
+    if STATE_TABLE is not None:
+        return rfx.Backend(
+            store=DynamoDBStore(table=STATE_TABLE),
+            runner=SQSRunner(
+                tasks_table=os.environ["WORKFLOW_TASKS_TABLE"],
+                queue_url=make_queue_url_fn(QUEUE_MAP),
+                message_body_fn=make_message_body_fn(user_id),
+            ),
+        )
+    else:
+        # TODO: add in process workflow
+        logger.warnng("AWS backend not enabled")
 
 
 # ---------------------------------------------------------------------------
@@ -79,13 +90,16 @@ def _now() -> str:
 
 def _load_execution(user_id: str, workflow_execution_id: str) -> WorkflowExecution:
     workflow_id, execution_id = parse_workflow_execution_id(workflow_execution_id)
-    return WorkflowExecution.read(
-        ddb,
+    item = _dynawrap.get(
         STATE_TABLE,
+        WorkflowExecution,
         user_id=user_id,
         workflow_id=workflow_id,
         execution_id=execution_id,
     )
+    if item is None:
+        raise KeyError(f"execution not found: {workflow_execution_id}")
+    return item
 
 
 def _write_completion(
@@ -102,7 +116,7 @@ def _write_completion(
             "updated_at": _now(),
         }
     )
-    ddb.put_item(TableName=STATE_TABLE, Item=updated.to_dynamo_item())
+    _dynawrap.save(STATE_TABLE, updated)
     logger.info("workflow_execution_id=%s status=%s", workflow_execution_id, status)
 
 

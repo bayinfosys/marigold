@@ -1,8 +1,9 @@
 """Image-text alignment evaluation.
 
 Encodes an image and a text string into a shared CLIP embedding space and
-returns their cosine similarity. Values close to 1.0 indicate strong
-alignment between the image content and the text description.
+returns their cosine similarity as a single EvalScore with label 'alignment'.
+Values close to 1.0 indicate strong alignment between the image content and
+the text description.
 
 Reuses the sentence-transformers loading path from image_embed, since
 CLIP-compatible models are already handled there.
@@ -24,7 +25,7 @@ from shared.outputs import decode_image
 from shared.registry import BaseModelHandler, model_spec
 from shared.usage import record_usage
 from models.image_embed import load_image_embedding
-from api.models import EvalResponse, ImageTextEvalRequest
+from api.models import EvalResponse, EvalScore, ImageTextEvalRequest
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -69,13 +70,9 @@ class ImageTextEvalModel(BaseModelHandler):
         duration = clock() - T
 
         logger.info(
-            "[%s/%s] '%s' alignment=%0.4f in %0.2fs (inference %0.2fs)",
-            user_id,
-            message_id,
-            self.modelname,
-            alignment,
-            duration,
-            iduration,
+            "[%s/%s] '%s' alignment=%.4f in %.2fs (inference %.2fs)",
+            user_id, message_id, self.modelname,
+            alignment, duration, iduration,
         )
 
         usage = record_usage(
@@ -88,6 +85,6 @@ class ImageTextEvalModel(BaseModelHandler):
 
         return EvalResponse(
             model=self.modelname,
-            scores={"alignment": alignment},
+            scores=[EvalScore(label="alignment", score=alignment)],
             usage=usage,
         )

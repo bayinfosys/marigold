@@ -24,6 +24,7 @@ import os
 from datetime import datetime, timezone
 
 import boto3
+from dynawrap.backends.dynamodb import DynamoDBBackend
 from shared.sqs_models import MarigoldSQSMessage
 
 from .models import WorkflowStep, step_id
@@ -31,7 +32,8 @@ from .models import WorkflowStep, step_id
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))
 
-ddb = boto3.client("dynamodb")
+_ddb = boto3.client("dynamodb")
+_dynawrap = DynamoDBBackend(_ddb)
 
 STEPS_TABLE = os.environ["WORKFLOW_STEPS_TABLE"]
 
@@ -77,7 +79,7 @@ def _handle_message(body: dict) -> None:
         completed_at=now,
         output=json.dumps(model_output),
     )
-    ddb.put_item(TableName=STEPS_TABLE, Item=completed_step.to_dynamo_item())
+    _dynawrap.save(STEPS_TABLE, completed_step)
 
     logger.info(
         "dummy method=%s workflow_execution_id=%s op=%s run_id=%d complete",

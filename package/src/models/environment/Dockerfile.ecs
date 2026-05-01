@@ -14,12 +14,19 @@ ENV USE_FAST=0
 # we need git for the absolute latest version of https://github.com/huggingface/diffusers.git
 #RUN apt-get update && apt-get install -y git
 
+# install `lame` for the tts and other audio outputs
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+
 COPY ./package/src/models/environment/non-env-requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
 
 # build the torch/hf/env
 COPY ./package/src/models/environment/build-environment.sh /usr/bin
 RUN build-environment.sh
+
+# get package deps
+COPY ./requirements.txt /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt
 
 # copy code into container
 WORKDIR /app

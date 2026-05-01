@@ -1,5 +1,5 @@
 """
-workflow/router.py -- DynamoDB Streams router Lambda.
+workflow/dynamodb_stream_handler.py -- DynamoDB Streams router Lambda.
 
 Subscribed to DynamoDB Streams on the workflow steps results table.
 Identifies WORKFLOW# message_id records, parses the composite key,
@@ -17,6 +17,7 @@ import logging
 import os
 
 import boto3
+from dynawrap.backends.dynamodb import DynamoDBBackend
 
 from .models import WorkflowStep
 
@@ -24,6 +25,8 @@ logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))
 
 lambda_client = boto3.client("lambda")
+_ddb = boto3.client("dynamodb")
+_dynawrap = DynamoDBBackend(_ddb)
 
 WORKFLOW_EXECUTOR_FUNCTION = os.environ["WORKFLOW_EXECUTOR_FUNCTION"]
 
@@ -68,7 +71,7 @@ def handler(event, context):
             continue
 
         try:
-            step = WorkflowStep.from_stream_record(record)
+            step = _dynawrap.from_stream_record(record, WorkflowStep)
         except ValueError as e:
             logger.info("skipping record: %s", e)
             continue

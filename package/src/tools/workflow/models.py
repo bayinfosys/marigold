@@ -20,6 +20,8 @@ from dynawrap import DBItem
 from pydantic import BaseModel
 from runfox.backend.models import WorkflowRecord
 
+from shared.db_models import WorkflowStep
+
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
@@ -119,82 +121,3 @@ class WorkflowExecution(DBItem, BaseModel):
 
     def set_workflow_record(self, record: WorkflowRecord) -> "WorkflowExecution":
         return self.model_copy(update={"runfox_state": json.dumps(record.to_dict())})
-
-
-# ---------------------------------------------------------------------------
-# WorkflowStep
-# ---------------------------------------------------------------------------
-
-
-class WorkflowStep(DBItem, BaseModel):
-    """
-    Observability record for one dispatch of one workflow step.
-
-    One record per dispatch attempt (one per run_id). Created by
-    SQSRunner.dispatch(). Updated in place when the step result arrives.
-
-    step_id is step_id(op). The original op string is stored as an
-    attribute for display.
-
-    Table:  WORKFLOW_STEPS_TABLE
-    PK:     USER#{user_id}#WORKFLOW#{workflow_id}
-    SK:     EXEC#{execution_id}#STEP#{step_id}#RUN#{run_id}
-    """
-
-    pk_pattern: ClassVar[str] = "USER#{user_id}#WORKFLOW#{workflow_id}"
-    sk_pattern: ClassVar[str] = "EXEC#{execution_id}#STEP#{step_id}#RUN#{run_id}"
-
-    user_id: str
-    workflow_id: str
-    execution_id: str
-    op: str  # original user-supplied step label
-    step_id: str  # step_id(op)
-    run_id: int
-    model_type: str
-    model_name: str
-    status: str  # dispatched | complete | failed
-    submitted_at: str  # ISO 8601 UTC
-    completed_at: Optional[str] = None
-    output: Optional[str] = None  # JSON of step output dict; null until complete
-
-    @classmethod
-    def from_dispatch(
-        cls,
-        user_id: str,
-        workflow_id: str,
-        execution_id: str,
-        op: str,
-        run_id: int,
-        model_type: str,
-        model_name: str,
-        submitted_at: str,
-    ) -> "WorkflowStep":
-        return cls(
-            user_id=user_id,
-            workflow_id=workflow_id,
-            execution_id=execution_id,
-            op=op,
-            step_id=step_id(op),
-            run_id=run_id,
-            model_type=model_type,
-            model_name=model_name,
-            status="dispatched",
-            submitted_at=submitted_at,
-        )
-
-    def complete(self, output: dict, completed_at: str) -> "WorkflowStep":
-        return self.model_copy(
-            update={
-                "status": "complete",
-                "output": json.dumps(output),
-                "completed_at": completed_at,
-            }
-        )
-
-    def fail(self, completed_at: str) -> "WorkflowStep":
-        return self.model_copy(
-            update={
-                "status": "failed",
-                "completed_at": completed_at,
-            }
-        )

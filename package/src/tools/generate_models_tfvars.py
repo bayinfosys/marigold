@@ -109,6 +109,7 @@ class ModelDefinition(BaseModel):
     input: str
     output: str
     memory_size: int = Field(9216, ge=512)
+    requires_gpu: bool = False
     timeout: int = Field(300, ge=30)
     idle_timeout: int = Field(0, ge=0)
     auth_required: bool = False
@@ -138,6 +139,27 @@ class ModelsConfig(BaseModel):
                 raise ValueError("duplicate model name: '%s'" % m.name)
             seen.add(m.name)
         return self
+
+
+#
+# ecs memory/cpu relationship
+#
+def cpu_for_memory(memory_mb: int) -> int:
+    """Return the minimum Fargate CPU units valid for the given memory."""
+    if memory_mb <= 2048:
+        return 256
+    elif memory_mb <= 4096:
+        return 512
+    elif memory_mb <= 8192:
+        return 1024
+    elif memory_mb <= 16384:
+        return 2048
+    elif memory_mb <= 30720:
+        return 4096
+    elif memory_mb <= 61440:
+        return 8192
+    else:
+        return 16384
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +277,7 @@ def make_env_vars(model: ModelDefinition) -> Dict[str, str]:
         "MODEL_TYPE": model.type.value,
         "MODEL_INPUT": model.input,
         "MODEL_OUTPUT": model.output,
+        "MODEL_PROVIDER": model.provider.value,
     }
 
     if model.langcode:
@@ -293,12 +316,13 @@ def render_tfvars(config: ModelsConfig) -> str:
         env = make_env_vars(model)
 
         lines.append("  %s = {" % hcl_str(key))
+        lines.append("    cpu_size      = %i" % cpu_for_memory(model.memory_size))
         lines.append("    memory_size   = %i" % model.memory_size)
+        lines.append("    requires_gpu  = %s" % ("true" if model.requires_gpu else "false"))
         lines.append("    timeout       = %i" % model.timeout)
         lines.append("    idle_timeout  = %i" % model.idle_timeout)
-        lines.append(
-            "    auth_required = %s" % ("true" if model.auth_required else "false")
-        )
+        lines.append("    auth_required = %s" % ("true" if model.auth_required else "false"))
+        lines.append("    provider      = %s" % hcl_str(model.provider.value))
         lines.append("    environment_variables = {")
         for k, v in env.items():
             lines.append("      %s = %s" % (hcl_str(k), hcl_str(v)))

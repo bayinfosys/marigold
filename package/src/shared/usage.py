@@ -1,45 +1,40 @@
 """Usage tracking and metrics.
 
-ModelUsageStats is defined in usage_models rather than in api/models.py so that
-handler modules and shared infrastructure can import it without depending
-on the API layer.
+record_usage() is the single call site for all handler modules. It
+builds a ModelUsageStats, writes to the configured metrics backend,
+and returns the stats for inclusion in the handler response.
+
+Both metrics backends (DynamoDB and SQS) use UsageItem as the canonical
+data shape. The SQS path serialises the full UsageItem dict so that a
+downstream consumer can reconstruct and persist it without data loss.
 """
 
-import json
 import logging
 import os
-from datetime import datetime
+import decimal
+import json
 
-from botocore.exceptions import NoRegionError
 import boto3
-from shared.enums import ModelType
+from botocore.exceptions import NoRegionError
+from dynawrap.backends.dynamodb import DynamoDBBackend
 
-from .usage_models import ModelUsageStats
+from shared.enums import ModelType
+from shared.usage_models import ModelUsageStats, UsageItem
 
 logger = logging.getLogger(__name__)
 
 try:
-    _dynamodb = boto3.client("dynamodb", endpoint_url=os.getenv("DYNAMODB_ENDPOINT"))
+    _ddb = boto3.client("dynamodb")
+    _dynawrap = DynamoDBBackend(_ddb)
 except NoRegionError:
     logger.warning("aws unavailable")
-    _dynamodb = None
-
-
-# ---------------------------------------------------------------------------
-# Memory
-# ---------------------------------------------------------------------------
+    _ddb = None
+    _dynawrap = None
 
 
 def get_memory_usage() -> int:
-    """Return peak process memory usage in KB."""
     import resource
-
     return 1 + int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0)
-
-
-# ---------------------------------------------------------------------------
-# record_usage
-# ---------------------------------------------------------------------------
 
 
 def record_usage(
@@ -51,102 +46,77 @@ def record_usage(
     input_tokens: int = 0,
     output_tokens: int = 0,
 ) -> ModelUsageStats:
-    """Build a ModelUsageStats instance and submit it to the metrics backend.
-
-    Returns the stats object so callers can include it in their response.
+    """Build a ModelUsageStats instance, submit to the metrics backend,
+    and return the stats for inclusion in the handler response.
     """
-    usage = ModelUsageStats(
+    stats = ModelUsageStats(
         duration=duration,
         inference=inference,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         memory_usage=get_memory_usage(),
     )
-    update_metrics(user_id, model_type, modelname, usage.model_dump())
-    return usage
-
-
-# ---------------------------------------------------------------------------
-# Metrics backends
-# ---------------------------------------------------------------------------
-
-
-def _metric_body(
-    user_id: str, model_type: ModelType, model_name: str, metrics: dict
-) -> dict:
-    return dict(
+    item = UsageItem.from_model_stats(
+        stats=stats,
         user_id=user_id,
-        operation="%s/%s" % (model_type.value, model_name),
-        **metrics,
+        model_type=model_type.value,
+        model_name=modelname,
     )
+    update_metrics(item)
+    return stats
 
 
-def _update_metrics_sqs(
-    user_id: str, model_type: ModelType, model_name: str, metrics: dict
-):
-    sqs_client = boto3.client("sqs", endpoint_url=os.getenv("AWS_SQS_ENDPOINT_URL"))
+import decimal
+
+def _update_metrics_dynamodb(item: UsageItem):
+    table = os.environ["DYNAMODB_USAGE_TABLE"]
+    try:
+        # Convert float fields to Decimal before saving -- DynamoDB rejects floats.
+        # this is a weird hack because dynamodb can't handle floats -- we should fix this in dynawrap
+        if item.model_stats:
+            item = item.model_copy(update={
+                "model_stats": item.model_stats.model_copy(update={
+                    "duration":  decimal.Decimal(str(item.model_stats.duration)),
+                    "inference": decimal.Decimal(str(item.model_stats.inference)),
+                })
+            })
+        _dynawrap.save(table, item)
+    except Exception as e:
+        logger.exception(
+            "[%s/%s] failed to write metrics to '%s' [%s]",
+            item.user_id, item.operation, table, str(e),
+        )
+
+def _update_metrics_sqs(item: UsageItem):
+    sqs_client = boto3.client("sqs")
     queue_url = os.getenv("METRICS_QUEUE_URL")
 
     if not queue_url:
         logger.warning("METRICS_QUEUE_URL not set, metrics not logged")
         return
 
-    body = _metric_body(user_id, model_type, model_name, metrics)
     try:
         response = sqs_client.send_message(
             QueueUrl=queue_url,
-            MessageBody=json.dumps(body),
+            MessageBody=item.model_dump_json(),
         )
-        logger.info("metrics sent to '%s' [%s]", queue_url, response["MessageId"])
-    except Exception as e:
-        logger.error("failed to send metrics to '%s' [%s]", queue_url, str(e))
-
-
-def _update_metrics_dynamodb(
-    user_id: str, model_type: ModelType, model_name: str, metrics: dict
-):
-    table = os.environ["DYNAMODB_USAGE_TABLE"]
-    body = _metric_body(user_id, model_type, model_name, metrics)
-    now = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    operation = body["operation"]
-
-    try:
-        _dynamodb.put_item(
-            TableName=table,
-            Item={
-                "PK": {"S": "METRIC#RAW#USER#%s" % user_id},
-                "SK": {"S": "DATE#%s#OP#%s" % (now, operation)},
-                "operation": {"S": operation},
-                "user_id": {"S": user_id},
-                "date": {"S": now},
-                "data": {"S": json.dumps(body)},
-            },
+        logger.info(
+            "metrics sent to '%s' [%s]", queue_url, response["MessageId"]
         )
     except Exception as e:
-        logger.exception(
-            "[%s/%s.%s] failed to write metrics to '%s' [%s]",
-            user_id,
-            model_type,
-            model_name,
-            table,
-            str(e),
+        logger.error(
+            "failed to send metrics to '%s' [%s]", queue_url, str(e)
         )
 
 
-def update_metrics(user_id: str, model_type: ModelType, model_name: str, metrics: dict):
-    """Dispatch metrics to whichever backend is configured.
-
-    Checks DYNAMODB_USAGE_TABLE first, then METRICS_QUEUE_URL. If neither
-    is set, logs a warning and continues.
-    """
+def update_metrics(item: UsageItem):
     if "DYNAMODB_USAGE_TABLE" in os.environ:
-        _update_metrics_dynamodb(user_id, model_type, model_name, metrics)
+        _update_metrics_dynamodb(item)
     elif "METRICS_QUEUE_URL" in os.environ:
-        _update_metrics_sqs(user_id, model_type, model_name, metrics)
+        _update_metrics_sqs(item)
     else:
         logger.warning(
-            "[%s/%s.%s] no metrics backend configured",
-            user_id,
-            model_type.value,
-            model_name,
+            "[%s/%s] no metrics backend configured",
+            item.user_id,
+            item.operation,
         )

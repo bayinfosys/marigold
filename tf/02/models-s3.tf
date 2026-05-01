@@ -60,19 +60,6 @@ resource "aws_s3_object" "public_models_reference" {
   tags = var.project_tags
 }
 
-# TODO: this cache model script has been more complex now, i don't think this is correct.
-# we should use the environment container to populate the EFS disk, which i think is what we do
-# and therefore this object in s3 is deprecated
-resource "aws_s3_object" "cache_model_script" {
-  bucket       = aws_s3_bucket.data.id
-  key          = "scripts/cache_model.py"
-  content      = file("${path.module}/../../package/src/tools/model_cache_aws.py")
-  content_type = "text/x-python"
-  etag         = filemd5("${path.module}/../../package/src/tools/model_cache_aws.py")
-
-  tags = var.project_tags
-}
-
 output "models_yaml_s3_key" {
   description = "S3 key for models.yaml"
   value       = aws_s3_object.models_yaml.key
@@ -83,17 +70,7 @@ output "models_json_s3_key" {
   value       = aws_s3_object.models_json.key
 }
 
-output "models_json_s3_etag" {
-  description = "ETag of models.json -- changes when models change, triggering cache builder update"
-  value       = aws_s3_object.models_json.etag
-}
-
 output "public_models_reference_s3_key" {
   description = "S3 key for public_models_reference.json (served by API /models.json route)"
   value       = aws_s3_object.public_models_reference.key
-}
-
-output "cache_model_script_s3_key" {
-  description = "S3 key for cache_model.py (per-model HuggingFace downloader)"
-  value       = aws_s3_object.cache_model_script.key
 }

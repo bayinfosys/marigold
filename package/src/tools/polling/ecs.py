@@ -1,15 +1,17 @@
-"""polling implementation against the ecs cluster
+"""Polling Lambda: submission and status for direct API requests.
 
-there exist task definitions for each model
-this lambda:
-+ checks the cache
-+ on-miss: invoke run task of the model on ecs
-+ on-hit: return the value
+Submission path:
+  - Checks the results cache for a prior result on the same request body.
+  - On miss: writes queued status, sends MarigoldSQSMessage to the model
+    queue, launches an ECS task if none is running for that model.
+  - On hit: returns the cached status without starting a new task.
 
-TODO: note the running models in an dynamodb lookup table [later]
+The message_id is the MD5 of the request body. This provides request
+deduplication: identical requests from any source return the cached result
+without spawning a new task. The API Gateway request_id is logged alongside
+the MD5 so that duplicate requests can be traced in CloudWatch.
 
-refs:
-https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-cpu-memory-error.html
+The message_id is prefixed API# per the job ID convention in CONTRACTS.md.
 """
 
 import json
@@ -18,8 +20,10 @@ import os
 from hashlib import md5
 
 import boto3
+
 from api.models import ModelDispatch, ModelDispatchRoutes
 from shared.lambda_proxy import get_path_from_event, get_userid_from_event, mk_resp
+from shared.sqs_models import MarigoldSQSMessage
 
 from .cache import create_status, delete_cache, get_response, get_status, update_status
 
@@ -30,8 +34,10 @@ s3 = boto3.client("s3")
 sqs = boto3.client("sqs")
 dynamodb = boto3.client("dynamodb")
 
-# env vars
-DYNAMODB_TABLE = os.environ["DYNAMODB_TABLE"]
+
+# ---------------------------------------------------------------------------
+# Model config
+# ---------------------------------------------------------------------------
 
 
 _config: ModelDispatchRoutes = {}
@@ -48,7 +54,7 @@ def load_model_config() -> ModelDispatchRoutes:
     try:
         obj = s3.get_object(Bucket=bucket, Key=key)
         data = json.loads(obj["Body"].read())
-        _config = {model_name: ModelDispatch(**v) for model_name, v in data.items()}
+        _config = {name: ModelDispatch(**v) for name, v in data.items()}
         logger.info("loaded %d models", len(_config))
     except Exception as e:
         logger.exception("failed to load model config from s3: %s", str(e))
@@ -57,10 +63,41 @@ def load_model_config() -> ModelDispatchRoutes:
     return _config
 
 
-## get it at launch
 load_model_config()
-
 assert _config, "unable to load MODELS_CONFIG"
+
+
+# ---------------------------------------------------------------------------
+# Launch type
+# ---------------------------------------------------------------------------
+
+
+def get_launch_kwargs(dispatch: ModelDispatch, user_tier: str = "free") -> dict:
+    """Return the ECS run_task launch kwargs for this dispatch and user tier.
+
+    Returns either launchType (Fargate) or capacityProviderStrategy (EC2/GPU).
+    These are mutually exclusive in the ECS API and must not both be present.
+
+    GPU capacity is gated on user tier. Free tier always receives Fargate.
+    When GPU capacity providers are activated in tf/02, add tier checks here.
+    """
+    # TODO: when GPU capacity provider is active, check dispatch.model_type
+    # and user_tier to route GPU-eligible models for paid tiers:
+    #
+    #   if user_tier in ("gold", "enterprise") and dispatch.requires_gpu:
+    #       return {
+    #           "capacityProviderStrategy": [
+    #               {"capacityProvider": "gpu-capacity-provider", "weight": 1}
+    #           ]
+    #       }
+    #
+    # For now all tasks run on Fargate regardless of tier.
+    return {"launchType": "FARGATE"}
+
+
+# ---------------------------------------------------------------------------
+# Task launcher
+# ---------------------------------------------------------------------------
 
 
 class TaskLauncher:
@@ -71,12 +108,12 @@ class TaskLauncher:
         self.security_groups = security_groups
 
     def is_running(self, model: ModelDispatch) -> bool:
-        """check if a task for this model is already running
-        TODO: move this to a dynamodb 'running_models' table rather than an ecs lookup
-        TODO: check sqs queue depth with `ApproximateNumberOfMessages` and start extra task if needed
+        """Check if a task for this model family is already running.
+
+        TODO: replace ECS list_tasks with a DynamoDB running_models table.
+        TODO: check ApproximateNumberOfMessages on the SQS queue and launch
+              additional tasks when depth exceeds a threshold.
         """
-        # NB: we do not sortkeys in the hash here because the hash originally happened in
-        # step functions and we could not sort. So, we allow cache-miss on key order change.
         resp = self.ecs.list_tasks(
             cluster=self.cluster,
             desiredStatus="RUNNING",
@@ -85,13 +122,11 @@ class TaskLauncher:
         )
         return bool(resp.get("taskArns"))
 
-    def launch(self, model: ModelDispatch):
-        """launch the ecs task for this model"""
+    def launch(self, model: ModelDispatch, user_tier: str = "free"):
         logger.info("launching ecs task for '%s'", model.family)
-
+        launch_kwargs = get_launch_kwargs(model, user_tier)
         self.ecs.run_task(
             cluster=self.cluster,
-            launchType="FARGATE",
             taskDefinition=model.task_definition,
             count=1,
             networkConfiguration={
@@ -100,6 +135,7 @@ class TaskLauncher:
                     "securityGroups": self.security_groups,
                 }
             },
+            **launch_kwargs,
         )
 
 
@@ -111,10 +147,14 @@ launcher = TaskLauncher(
 )
 
 
+# ---------------------------------------------------------------------------
+# Handler
+# ---------------------------------------------------------------------------
+
+
 def handler(event, context):
     logger.info("event: '%s'", str(event))
 
-    path = get_path_from_event(event)
     method = event["httpMethod"]
     userid = get_userid_from_event(event)
 
@@ -137,47 +177,56 @@ def handler(event, context):
 
 
 def handle_submission(userid, event):
-    message_id = md5(event["body"].encode("utf-8")).hexdigest()
-    message_content = json.loads(event["body"])
+    body = event["body"]
+    request_id = event.get("requestContext", {}).get("requestId", "unknown")
+    body_md5 = md5(body.encode("utf-8")).hexdigest()
+    message_id = "API#" + body_md5
+
+    logger.info(
+        "[%s/%s] submission request_id=%s", userid, message_id, request_id
+    )
+
+    message_content = json.loads(body)
 
     model_name = message_content.get("model")
     if not model_name:
         return mk_resp(400, {"status": "error", "message": "model field required"})
 
-    # check cache first
     existing_status = get_status(userid, message_id)
-    # TODO: have multiple status, some are `overwritable` (stale, internal error, etc)
     if existing_status:
-        logger.info("[%s/%s] cache item found", userid, message_id)
+        logger.info(
+            "[%s/%s] cache hit status='%s' request_id=%s",
+            userid,
+            message_id,
+            existing_status,
+            request_id,
+        )
         return mk_resp(200, {"message_id": message_id, "status": existing_status})
 
-    # load the model store metadata
     models = load_model_config()
     model_name_md5 = md5(model_name.encode()).hexdigest()
 
-    # find the model we are supposed to use for this message
     try:
         dispatch = models[model_name_md5]
     except KeyError:
         logger.warning("[%s] unknown model requested: '%s'", userid, model_name)
         return mk_resp(400, {"status": "error", "message": "unknown model"})
 
-    # TODO: validate the request against the model type, so we can return 400 error without starting a task...
-
     create_status(userid, message_id, status="queued")
     logger.info("[%s/%s] queued for model '%s'", userid, message_id, model_name)
 
-    # submit the request to the model via sqs
+    msg = MarigoldSQSMessage(
+        user_id=userid,
+        message_id=message_id,
+        model_type=dispatch.model_type,
+        model_name=model_name,
+        model_inputs=message_content,
+    )
+
     try:
         sqs.send_message(
             QueueUrl=dispatch.queue_url,
-            MessageBody=json.dumps(
-                {
-                    "userid": userid,
-                    "message_id": message_id,
-                    "request": message_content,
-                }
-            ),
+            MessageBody=msg.model_dump_json(),
         )
     except sqs.exceptions.QueueDoesNotExist as e:
         logger.critical(
@@ -190,23 +239,22 @@ def handle_submission(userid, event):
         update_status(userid, message_id, status="error")
         return mk_resp(500, {"status": "error", "message": "internal routing error"})
     except Exception as e:
-        logger.exception("[%s/%s] unknown error sending to SQS: '%s'", userid, message_id, str(e))
+        logger.exception(
+            "[%s/%s] unknown error sending to SQS: '%s'", userid, message_id, str(e)
+        )
         update_status(userid, message_id, status="error")
         return mk_resp(500, {"status": "error", "message": "internal error"})
 
-    # launch an ecs task for processing if necessary
     if not launcher.is_running(dispatch):
-        logger.info("[%s/%s] launching task for %s", userid, message_id, model_name)
+        logger.info(
+            "[%s/%s] launching task for '%s'", userid, message_id, model_name
+        )
         launcher.launch(dispatch)
 
-    # return the message_id for cache polling
     return mk_resp(200, {"message_id": message_id})
 
 
 def handle_status(userid, event):
-    """fetch the status of this message from dyanmodb
-    NB: this is a good candidate for direct apigw integration
-    """
     message_id = event["pathParameters"]["message_id"]
     status = get_status(userid, message_id)
 
@@ -222,12 +270,6 @@ def handle_status(userid, event):
 
 
 def delete_status(userid, event):
-    """remove the status of work from dynamodb
-    this is a cache clearance method
-    NB: good candidate for direct apigw integration
-    """
     message_id = event["pathParameters"]["message_id"]
     delete_cache(userid, message_id)
-    return mk_resp(
-        200, {"status": "ok", "message": "deleted", "message_id": message_id}
-    )
+    return mk_resp(200, {"status": "ok", "message": "deleted", "message_id": message_id})

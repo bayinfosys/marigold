@@ -7,10 +7,9 @@ locals {
   efs_file_system_id  = data.terraform_remote_state.containers.outputs["efs_file_system_id"]
   efs_access_point_id = data.terraform_remote_state.containers.outputs["efs_assets_rw_id"]
   assets_bucket       = data.terraform_remote_state.pipelines.outputs["asset_bucket_name"]
-  models_json_key     = data.terraform_remote_state.pipelines.outputs["models_json_s3_key"]
-  models_json_etag    = data.terraform_remote_state.pipelines.outputs["models_json_s3_etag"]
-  cache_models_key    = data.terraform_remote_state.pipelines.outputs["cache_models_script_s3_key"]
-  cache_model_key     = data.terraform_remote_state.pipelines.outputs["cache_model_script_s3_key"]
+
+  ecr_registry          = data.terraform_remote_state.containers.outputs["ecr_registry"]
+  model_cache_image_uri = "${data.terraform_remote_state.containers.outputs["environment_ecr_url"]}:${var.git_tag}"
 }
 
 #
@@ -31,6 +30,11 @@ data "aws_ami" "al2023" {
   }
 }
 
+data "aws_s3_object" "models_yaml" {
+  bucket = local.assets_bucket
+  key    = var.models_yaml_key
+}
+
 #
 # Security group: outbound only.
 # SSM Session Manager handles console access -- no inbound ports required.
@@ -48,7 +52,24 @@ resource "aws_security_group" "cache_builder" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  dynamic "ingress" {
+    for_each = var.ssh_allowed_cidr != "" ? [1] : []
+    content {
+      description = "SSH from allowed CIDR"
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = [var.ssh_allowed_cidr]
+    }
+  }
+
   tags = var.project_tags
+}
+
+resource "aws_cloudwatch_log_group" "cache_builder" {
+  name              = "/${var.org_name}/${var.project_name}/${var.env}/cache-builder"
+  retention_in_days = 30
+  tags              = var.project_tags
 }
 
 #
@@ -70,6 +91,8 @@ resource "aws_instance" "cache_builder" {
   iam_instance_profile        = aws_iam_instance_profile.cache_builder.name
   vpc_security_group_ids      = [aws_security_group.cache_builder.id]
 
+  key_name = aws_key_pair.cache_builder.key_name
+
   # Root volume: 50 GB is sufficient for the scripts and OS.
   # Model weights go to EFS, not the root volume.
   root_block_device {
@@ -79,22 +102,23 @@ resource "aws_instance" "cache_builder" {
   }
 
   user_data = base64encode(templatefile(
-    "${path.module}/templates/user_data.sh.tpl",
+    "${path.module}/user_data.sh.tpl",
     {
+      log_group               = aws_cloudwatch_log_group.cache_builder.name
       region                  = var.region
       efs_file_system_id      = local.efs_file_system_id
       efs_access_point_id     = local.efs_access_point_id
       assets_bucket           = local.assets_bucket
-      models_json_key         = local.models_json_key
-      cache_models_script_key = local.cache_models_key
-      cache_model_script_key  = local.cache_model_key
+      models_yaml_key         = var.models_yaml_key
       ssm_hf_token_name       = aws_ssm_parameter.hf_token.name
       prune_cache             = var.prune_cache ? "1" : "0"
-      models_json_etag        = local.models_json_etag
+      models_yaml_etag        = data.aws_s3_object.models_yaml.etag
 
-      # TODO: i think these need exports in the 01/02 layers and locals here.
-      ecr_registry = ?
-      model_cache_image_uri = ? 
+      max_runtime_seconds = var.max_runtime_seconds
+
+      # these need exports in the 01/02 layers and locals here.
+      ecr_registry =  local.ecr_registry
+      model_cache_image_uri = local.model_cache_image_uri
     }
   ))
 
@@ -111,4 +135,8 @@ resource "aws_instance" "cache_builder" {
 output "cache_builder_instance_id" {
   description = "Instance ID of the cache builder. Use with: aws ssm start-session --target <id>"
   value       = aws_instance.cache_builder.id
+}
+
+output "cache_builder_public_dns" {
+  value = aws_instance.cache_builder.public_dns
 }

@@ -20,6 +20,7 @@ class ModelProvider(str, Enum):
     HUGGINGFACE = "huggingface"
     AWS_BEDROCK = "aws-bedrock"
     OLLAMA = "ollama"
+    TOOLS = "tools"
 
 
 class ModelType(Enum):
@@ -30,19 +31,20 @@ class ModelType(Enum):
     without a coordinated migration of all stored data.
     """
 
-    TEXT_EMBEDDING  = "text-embedding"
+    TEXT_EMBEDDING = "text-embedding"
     IMAGE_EMBEDDING = "image-embedding"
-    INSTRUCT        = "instruct"
-    TTS             = "tts"
-    TXT2AUDIO       = "txt2audio"
-    DEPTH           = "depth"
-    IMG2TXT         = "img2txt"
-    TXT2IMG         = "txt2img"
-    IMG2MASK        = "img2mask"
-    TEXT_EVAL       = "text-eval"
+    INSTRUCT = "instruct"
+    TTS = "tts"
+    TXT2AUDIO = "txt2audio"
+    DEPTH = "depth"
+    IMG2TXT = "img2txt"
+    TXT2IMG = "txt2img"
+    IMG2MASK = "img2mask"
+    TEXT_EVAL = "text-eval"
     TEXT_SIMILARITY = "text-similarity"
-    IMAGE_EVAL      = "image-eval"
+    IMAGE_EVAL = "image-eval"
     IMAGE_TEXT_EVAL = "image-text-eval"
+    HTTP = "http"
 
 
 class ModelMode(Enum):
@@ -55,8 +57,8 @@ class ModelMode(Enum):
     """
 
     EMBED = "embed"
-    EVAL  = "eval"
-    GEN   = "gen"
+    EVAL = "eval"
+    GEN = "gen"
 
 
 class OutputMimeType(Enum):
@@ -66,12 +68,12 @@ class OutputMimeType(Enum):
     S3 (binary types) or DynamoDB (text and JSON types).
     """
 
-    JSON       = "application/json"
-    TEXT       = "text/plain"
-    IMAGE_PNG  = "image/png"
+    JSON = "application/json"
+    TEXT = "text/plain"
+    IMAGE_PNG = "image/png"
     IMAGE_JPEG = "image/jpeg"
-    AUDIO_MP3  = "audio/mpeg"
-    AUDIO_WAV  = "audio/wav"
+    AUDIO_MP3 = "audio/mpeg"
+    AUDIO_WAV = "audio/wav"
 
     @property
     def storage(self) -> str:
@@ -81,9 +83,9 @@ class OutputMimeType(Enum):
 
 
 class ModelModalities(Enum):
-    TEXT      = "text"
-    IMAGE     = "image"
-    AUDIO     = "audio"
-    VIDEO     = "video"
+    TEXT = "text"
+    IMAGE = "image"
+    AUDIO = "audio"
+    VIDEO = "video"
     EMBEDDING = "embedding"
-    MESH      = "mesh"
+    MESH = "mesh"

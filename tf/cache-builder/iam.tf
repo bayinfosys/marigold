@@ -43,6 +43,20 @@ data "aws_iam_policy_document" "cache_builder" {
     resources = ["${local.assets_bucket_arn}/*"]
   }
 
+  statement {
+    sid       = "S3WriteCacheState"
+    effect    = "Allow"
+    actions   = ["s3:PutObject"]
+    resources = ["${local.assets_bucket_arn}/cache_state.json"]
+  }
+
+  statement {
+    sid       = "S3WriteLogs"
+    effect    = "Allow"
+    actions   = ["s3:PutObject"]
+    resources = ["${local.assets_bucket_arn}/cache-builder-logs/*"]
+  }
+
   # SSM: read the HuggingFace token parameter
   statement {
     sid       = "SSMGetToken"
@@ -73,8 +87,33 @@ data "aws_iam_policy_document" "cache_builder" {
       "logs:CreateLogGroup",
       "logs:CreateLogStream",
       "logs:PutLogEvents",
+      "logs:DescribeLogStreams",
+    ]
+    resources = [
+      "${aws_cloudwatch_log_group.cache_builder.arn}:*",
+    ]
+  }
+
+  statement {
+    sid    = "ECRAuth"
+    effect = "Allow"
+    actions = [
+      "ecr:GetAuthorizationToken",
     ]
     resources = ["*"]
+  }
+
+  statement {
+    sid    = "ECRPull"
+    effect = "Allow"
+    actions = [
+      "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchCheckLayerAvailability",
+    ]
+    resources = [
+      data.terraform_remote_state.containers.outputs["environment_ecr_arn"],
+    ]
   }
 }
 

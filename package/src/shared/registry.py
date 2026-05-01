@@ -13,7 +13,7 @@ from time import perf_counter as clock
 from typing import Any, Callable, Dict, List, Optional, Type
 
 from shared.enums import ModelMode, ModelType, OutputMimeType
-from shared.outputs import write_binary_output, update_results_table
+from shared.outputs import write_binary_output
 
 import logging
 
@@ -172,13 +172,13 @@ class BaseModelHandler(ABC):
             bucket=bucket,
         )
 
-    def process(self, user_id: str, message_id: str, request: dict) -> Any:
+    def process(self, user_id: str, message_id: str, request: Any) -> Any:
         """Validate the raw request dict and dispatch to _run().
 
-        Not overridden by subclasses. Writes the result or error to the
-        results table via update_results_table before returning or raising.
-        Validation errors from model_validate propagate before the results
-        write.
+        Does not write to the results table. The caller is responsible for
+        persisting the result to whichever backing store is appropriate for
+        the execution context (direct API polling table, workflow steps table,
+        or neither for CLI use).
         """
         spec = _SPECS[self._model_type.value]
         validated = spec.request_model.model_validate(request)
@@ -186,20 +186,7 @@ class BaseModelHandler(ABC):
         try:
             result = self._run(user_id, message_id, validated)
         except Exception as e:
-            update_results_table(
-                user_id=user_id,
-                message_id=message_id,
-                response={"error": str(e)},
-                status="error",
-            )
             raise
-
-        update_results_table(
-            user_id=user_id,
-            message_id=message_id,
-            response=result.model_dump(),
-            status="complete",
-        )
 
         return result
 

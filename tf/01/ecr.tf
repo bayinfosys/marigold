@@ -25,7 +25,3 @@ module "ecr" {
 
   tags = var.project_tags
 }
-
-output "environment_ecr_name" {
-  value = module.ecr.repository_name
-}

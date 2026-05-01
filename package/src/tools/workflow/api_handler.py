@@ -36,6 +36,7 @@ from datetime import datetime, timezone
 import boto3
 import runfox as rfx
 import yaml
+from dynawrap.backends.dynamodb import DynamoDBBackend
 from runfox.backend.aws import DynamoDBStore, SQSRunner
 from runfox.results import Complete, Dispatch, Halt
 from shared.lambda_proxy import get_userid_from_event, mk_resp
@@ -50,6 +51,9 @@ logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))
 template_table = os.environ["WORKFLOW_TEMPLATE_TABLE"]
 state_table = os.environ["WORKFLOW_STATE_TABLE"]
 steps_table = os.environ["WORKFLOW_STEPS_TABLE"]
+
+_ddb = boto3.client("dynamodb")
+_dynawrap = DynamoDBBackend(_ddb)
 
 s3 = boto3.client("s3")
 
@@ -71,6 +75,11 @@ QUEUE_MAP = _load_queue_map()
 
 
 def _make_backend(user_id: str) -> rfx.Backend:
+    """Construct a runfox Backend for workflow state management.
+
+    This is distinct from the module-level dynawrap DynamoDBBackend used
+    for WorkflowTemplate, WorkflowExecution, and WorkflowStep operations.
+    """
     return rfx.Backend(
         store=DynamoDBStore(table=os.environ["WORKFLOW_STATE_TABLE"]),
         runner=SQSRunner(
@@ -133,8 +142,7 @@ def handle_create_template(user_id: str, event: dict) -> dict:
         created_at=now,
     )
 
-    ddb = boto3.client("dynamodb")
-    ddb.put_item(TableName=template_table, Item=record.to_dynamo_item())
+    _dynawrap.save(template_table, record)
 
     return mk_resp(
         200,
@@ -148,8 +156,7 @@ def handle_create_template(user_id: str, event: dict) -> dict:
 
 
 def handle_list_templates(user_id: str, event: dict) -> dict:
-    ddb = boto3.client("dynamodb")
-    items = list(WorkflowTemplate.query(ddb, template_table, user_id=user_id))
+    items = list(_dynawrap.query(template_table, WorkflowTemplate, user_id=user_id))
 
     return mk_resp(
         200,
@@ -169,12 +176,10 @@ def handle_list_templates(user_id: str, event: dict) -> dict:
 def handle_get_template(user_id: str, event: dict) -> dict:
     workflow_id = _path_params(event)["workflow_id"]
 
-    ddb = boto3.client("dynamodb")
-    try:
-        item = WorkflowTemplate.read(
-            ddb, template_table, user_id=user_id, workflow_id=workflow_id
-        )
-    except KeyError:
+    item = _dynawrap.get(
+        template_table, WorkflowTemplate, user_id=user_id, workflow_id=workflow_id
+    )
+    if item is None:
         return mk_resp(404, {"message": "template not found"})
 
     return mk_resp(
@@ -198,13 +203,10 @@ def handle_run_workflow(user_id: str, event: dict) -> dict:
     body = _body(event)
     inputs = body.get("inputs", {})
 
-    ddb = boto3.client("dynamodb")
-
-    try:
-        template = WorkflowTemplate.read(
-            ddb, template_table, user_id=user_id, workflow_id=workflow_id
-        )
-    except KeyError:
+    template = _dynawrap.get(
+        template_table, WorkflowTemplate, user_id=user_id, workflow_id=workflow_id
+    )
+    if template is None:
         return mk_resp(404, {"message": "template not found"})
 
     backend = _make_backend(user_id)
@@ -224,12 +226,27 @@ def handle_run_workflow(user_id: str, event: dict) -> dict:
         created_at=now,
         updated_at=now,
     )
-    ddb.put_item(TableName=state_table, Item=execution.to_dynamo_item())
+    _dynawrap.save(state_table, execution)
 
     result = wf.advance()
 
     if isinstance(result, Dispatch):
-        backend.dispatch(wf.id, result.jobs)
+        try:
+            backend.dispatch(wf.id, result.jobs)
+        except (KeyError, ValueError) as e:
+            # Spec is malformed -- a required step input field is missing.
+            # Mark the execution record as cancelled to avoid leaving it
+            # stranded as in_progress, then return a 400.
+            cancelled = execution.model_copy(
+                update={"status": "cancelled", "updated_at": _now()}
+            )
+            _dynawrap.save(state_table, cancelled)
+            logger.warning(
+                "workflow_execution_id=%s dispatch failed, spec invalid: %s",
+                workflow_execution_id,
+                str(e),
+            )
+            return mk_resp(400, {"message": f"invalid workflow spec: {e}"})
         logger.info(
             "workflow_execution_id=%s dispatched %d initial jobs",
             workflow_execution_id,
@@ -243,7 +260,7 @@ def handle_run_workflow(user_id: str, event: dict) -> dict:
                 "updated_at": _now(),
             }
         )
-        ddb.put_item(TableName=state_table, Item=updated.to_dynamo_item())
+        _dynawrap.save(state_table, updated)
     elif isinstance(result, Halt):
         updated = execution.model_copy(
             update={
@@ -252,7 +269,7 @@ def handle_run_workflow(user_id: str, event: dict) -> dict:
                 "updated_at": _now(),
             }
         )
-        ddb.put_item(TableName=state_table, Item=updated.to_dynamo_item())
+        _dynawrap.save(state_table, updated)
 
     return mk_resp(
         200,
@@ -268,17 +285,14 @@ def handle_get_execution(user_id: str, event: dict) -> dict:
     workflow_id = params["workflow_id"]
     execution_id = params["execution_id"]
 
-    ddb = boto3.client("dynamodb")
-
-    try:
-        execution = WorkflowExecution.read(
-            ddb,
-            state_table,
-            user_id=user_id,
-            workflow_id=workflow_id,
-            execution_id=execution_id,
-        )
-    except KeyError:
+    execution = _dynawrap.get(
+        state_table,
+        WorkflowExecution,
+        user_id=user_id,
+        workflow_id=workflow_id,
+        execution_id=execution_id,
+    )
+    if execution is None:
         return mk_resp(404, {"message": "execution not found"})
 
     record = execution.get_workflow_record()
@@ -314,17 +328,14 @@ def handle_cancel_execution(user_id: str, event: dict) -> dict:
     workflow_id = params["workflow_id"]
     execution_id = params["execution_id"]
 
-    ddb = boto3.client("dynamodb")
-
-    try:
-        execution = WorkflowExecution.read(
-            ddb,
-            state_table,
-            user_id=user_id,
-            workflow_id=workflow_id,
-            execution_id=execution_id,
-        )
-    except KeyError:
+    execution = _dynawrap.get(
+        state_table,
+        WorkflowExecution,
+        user_id=user_id,
+        workflow_id=workflow_id,
+        execution_id=execution_id,
+    )
+    if execution is None:
         return mk_resp(404, {"message": "execution not found"})
 
     if execution.status in ("complete", "halted", "cancelled"):
@@ -336,7 +347,7 @@ def handle_cancel_execution(user_id: str, event: dict) -> dict:
             "updated_at": _now(),
         }
     )
-    ddb.put_item(TableName=state_table, Item=updated.to_dynamo_item())
+    _dynawrap.save(state_table, updated)
 
     return mk_resp(200, {"message": "cancelled"})
 
@@ -351,11 +362,10 @@ def handle_list_steps(user_id: str, event: dict) -> dict:
     workflow_id = params["workflow_id"]
     execution_id = params["execution_id"]
 
-    ddb = boto3.client("dynamodb")
     items = list(
-        WorkflowStep.query(
-            ddb,
+        _dynawrap.query(
             steps_table,
+            WorkflowStep,
             user_id=user_id,
             workflow_id=workflow_id,
             execution_id=execution_id,
@@ -394,11 +404,10 @@ def handle_get_step(user_id: str, event: dict) -> dict:
     execution_id = params["execution_id"]
     sid = params["step_id"]
 
-    ddb = boto3.client("dynamodb")
     items = list(
-        WorkflowStep.query(
-            ddb,
+        _dynawrap.query(
             steps_table,
+            WorkflowStep,
             user_id=user_id,
             workflow_id=workflow_id,
             execution_id=execution_id,
