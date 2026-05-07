@@ -1,0 +1,4 @@
+#dynawrap>=0.3.9
+pydantic>=2.0
+pyyaml
+runfox[aws]>=0.0.6

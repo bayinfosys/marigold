@@ -27,8 +27,8 @@ class ModelUsageStats(BaseModel):
     for image-in/image-out models.
     """
 
-    duration:     float = Field(..., description="total process duration in seconds")
-    inference:    float = Field(..., description="model inference duration in seconds")
+    duration:     int = Field(..., description="total process duration in milliseconds")
+    inference:    int = Field(..., description="model inference duration in milliseconds")
     input_tokens: int = Field(0,   description="number of input tokens")
     output_tokens: int = Field(0,   description="number of output tokens")
     memory_usage: int = Field(..., description="peak process memory in KB")

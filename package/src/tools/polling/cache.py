@@ -97,6 +97,21 @@ def delete_cache(userid: str, message_id: str):
     # Construct the key directly from the class pattern; avoids a read
     # solely for the purpose of deletion. create_item_key is a class method
     # on DBItem and does not require a backend instance.
-    key = ResultsItem.create_item_key(user_id=userid, job_id=make_api_job_id(message_id))
-    response = _ddb.delete_item(TableName=DYNAMODB_TABLE, Key=key)
-    logger.info("[%s/%s] deleted: '%s'", userid, message_id, str(response))
+    item = _dynawrap.get(
+        DYNAMODB_TABLE, ResultsItem,
+        user_id=userid,
+        job_id=make_api_job_id(message_id),
+    )
+
+    if item is None:
+        logger.warning("[%s/%s] delete_cache: record not found", userid, message_id)
+        return
+
+    # FIXME: this is incorrect - we should build the key properly in dynawrap
+    key = {
+        "PK": {"S": f"USER#{userid}"},
+        "SK": {"S": message_id},
+    }
+
+    _ddb.delete_item(TableName=DYNAMODB_TABLE, Key=key)
+    logger.info("[%s/%s] deleted", userid, message_id)

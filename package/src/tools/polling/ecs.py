@@ -21,7 +21,7 @@ from hashlib import md5
 
 import boto3
 
-from api.models import ModelDispatch, ModelDispatchRoutes
+from shared.models import ModelDispatch, ModelDispatchRoutes
 from shared.lambda_proxy import get_path_from_event, get_userid_from_event, mk_resp
 from shared.sqs_models import MarigoldSQSMessage
 
@@ -65,6 +65,32 @@ def load_model_config() -> ModelDispatchRoutes:
 
 load_model_config()
 assert _config, "unable to load MODELS_CONFIG"
+
+
+_available_model_names: set[str] = set()
+
+
+def load_available_models() -> set[str]:
+    global _available_model_names
+
+    if _available_model_names:
+        return _available_model_names
+
+    bucket = os.environ["AWS_S3_ASSETS_BUCKET_NAME"]
+    key = os.environ.get("MODELS_S3_OBJECT", "models.json")
+    try:
+        obj = s3.get_object(Bucket=bucket, Key=key)
+        data = json.loads(obj["Body"].read())
+        # models.json is a list of model objects with a "name" field
+        _available_model_names = {m["name"] for m in data}
+        logger.info("loaded %d available models", len(_available_model_names))
+    except Exception as e:
+        logger.warning("failed to load available models from s3: %s -- skipping availability check", str(e))
+
+    return _available_model_names
+
+
+load_available_models()
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +179,7 @@ launcher = TaskLauncher(
 
 
 def handler(event, context):
+    logger.info("polling lambda version=%s", os.getenv("BUILD_VERSION", "unknown"))
     logger.info("event: '%s'", str(event))
 
     method = event["httpMethod"]
@@ -192,6 +219,7 @@ def handle_submission(userid, event):
     if not model_name:
         return mk_resp(400, {"status": "error", "message": "model field required"})
 
+    # check if this message is already on the queue
     existing_status = get_status(userid, message_id)
     if existing_status:
         logger.info(
@@ -203,15 +231,28 @@ def handle_submission(userid, event):
         )
         return mk_resp(200, {"message_id": message_id, "status": existing_status})
 
+    # get the list of available models, queues, etc
     models = load_model_config()
     model_name_md5 = md5(model_name.encode()).hexdigest()
 
+    # attempt to get the dispatch function
     try:
         dispatch = models[model_name_md5]
     except KeyError:
         logger.warning("[%s] unknown model requested: '%s'", userid, model_name)
         return mk_resp(400, {"status": "error", "message": "unknown model"})
 
+    # check if the model is actually in the cache
+    available = load_available_models()
+    if available and model_name not in available:
+        logger.warning("[%s] model not in cache: '%s'", userid, model_name)
+        return mk_resp(400, {
+            "status": "error",
+            "message": "model_not_available",
+            "model": model_name,
+        })
+
+    # all seems fine, go ahead and create a status row to update on progress
     create_status(userid, message_id, status="queued")
     logger.info("[%s/%s] queued for model '%s'", userid, message_id, model_name)
 
@@ -251,25 +292,27 @@ def handle_submission(userid, event):
         )
         launcher.launch(dispatch)
 
-    return mk_resp(200, {"message_id": message_id})
+    return mk_resp(200, {"message_id": body_md5})
 
 
 def handle_status(userid, event):
-    message_id = event["pathParameters"]["message_id"]
+    raw_id = event["pathParameters"]["message_id"]
+    message_id = f"API#{raw_id}"
     status = get_status(userid, message_id)
 
     if status in ("complete", "error"):
         result = get_response(userid, message_id)
         return mk_resp(
-            200, {"status": status, "message_id": message_id, "result": result}
+            200, {"status": status, "message_id": raw_id, "result": result}
         )
     elif status:
-        return mk_resp(202, {"status": status, "message_id": message_id})
+        return mk_resp(202, {"status": status, "message_id": raw_id})
     else:
-        return mk_resp(404, {"status": "not found", "message_id": message_id})
+        return mk_resp(404, {"status": "not found", "message_id": raw_id})
 
 
 def delete_status(userid, event):
-    message_id = event["pathParameters"]["message_id"]
+    raw_id = event["pathParameters"]["message_id"]
+    message_id = f"API#{raw_id}"
     delete_cache(userid, message_id)
-    return mk_resp(200, {"status": "ok", "message": "deleted", "message_id": message_id})
+    return mk_resp(200, {"status": "ok", "message": "deleted", "message_id": raw_id})

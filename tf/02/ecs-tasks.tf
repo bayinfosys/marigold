@@ -61,8 +61,8 @@ resource "aws_ecs_task_definition" "model_tasks" {
         # HF_TOKEN is only injected for gated models
         # NB: if  provider is not huggingface, we need a different thing
         each.value.provider == "huggingface" ? [
-          { name = "CACHE_DIR",                    value = "/mnt/shared/models" },
-          { name = "HF_HUB_CACHE",                 value = "/mnt/shared/models" },
+          { name = "CACHE_DIR",                    value = var.efs_model_cache_path },
+          { name = "HF_HUB_CACHE",                 value = var.efs_model_cache_path },
           { name = "HF_HOME",                      value = "/tmp" },
           { name = "HF_HUB_OFFLINE",               value = "1" },
           { name = "HF_HUB_DISABLE_PROGRESS_BARS", value = "1" },
@@ -78,7 +78,7 @@ resource "aws_ecs_task_definition" "model_tasks" {
       mountPoints = each.value.provider == "huggingface" ? [
         {
           sourceVolume  = "efs-cache"
-          containerPath = "/mnt/shared"
+          containerPath = var.efs_mount_point
           readOnly      = true
         }
       ] : []
@@ -120,4 +120,14 @@ resource "aws_ecs_task_definition" "model_tasks" {
       }
     }
   }
+}
+
+output "efs_mount_point" {
+  description = "location to mount the efs disk for correct path access"
+  value       = var.efs_mount_point
+}
+
+output "efs_model_cache_path" {
+  description = "Container-relative path where HuggingFace model weights are cached on EFS."
+  value       = var.efs_model_cache_path
 }

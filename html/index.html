@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Marigold hosts open-weight HuggingFace models on private AWS infrastructure. Typed async inference API, declarative YAML workflow engine, and an eval surface for measuring output quality against your own data.">
+  <meta name="author" content="Bay Information Systems">
+  <link rel="canonical" href="https://marigold.run/">
+  <link rel="icon" type="image/png" href="/favicon.png">
+
+  <!-- Open Graph -->
+  <meta property="og:type"        content="website">
+  <meta property="og:url"         content="https://marigold.run/">
+  <meta property="og:title"       content="Marigold -- Private Model Hosting and Inference Pipelines">
+  <meta property="og:description" content="Self-hosted open-weight models on your own AWS infrastructure. Typed inference API, declarative workflow engine, and evals built from your production data.">
+  <meta property="og:site_name"   content="Marigold">
+
+  <title>Marigold -- Private HuggingFace Model Hosting and Inference Pipelines</title>
+
+  <!-- JSON-LD -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Marigold",
+    "url": "https://marigold.run/",
+    "description": "Private hosting for open-weight HuggingFace models. Typed async inference API, declarative YAML workflow engine, and an eval surface for measuring output quality.",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "AWS",
+    "offers": {
+      "@type": "Offer",
+      "description": "Available as a managed deployment or a consultancy engagement."
+    },
+    "provider": {
+      "@type": "Organization",
+      "name": "Bay Information Systems",
+      "url": "https://www.bayis.co.uk"
+    }
+  }
+  </script>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/junction@5/index.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Knewave&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" title="Default">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml">
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a href="/" class="wordmark">Marigold</a>
+    <a href="#contact" class="cta-sm">Get in touch</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="wrap">
+    <p class="hero-eyebrow">Private model hosting. Typed workflows. Evals.</p>
+    <h1 class="slogan">Self-hosted open-weight inference, done properly.</h1>
+    <p class="hero-tagline">Define your task. Build your pipeline. Measure and improve.</p>
+    <p class="hero-sub">
+      Marigold hosts open-weight HuggingFace models on private AWS infrastructure
+      and exposes them through a typed async inference API. Build declarative
+      YAML workflows over the model registry, then measure and refine output
+      quality against task specifications built from your own data.
+      Your data never leaves your infrastructure.
+    </p>
+    <div class="hero-actions">
+      <a href="#usecases" class="btn-primary">See what it runs</a>
+      <a href="#contact" class="btn-secondary">Talk to us</a>
+    </div>
+  </div>
+</section>
+
+<section class="statement">
+  <div class="wrap">
+<p>
+  Most AI pipeline infrastructure is built <strong>bespoke, on every
+  engagement, and thrown away.</strong> Marigold is the layer you bring
+  once: privately hosted open-weight models, a declarative workflow engine,
+  and an eval surface that grows with production use.
+</p>
+  </div>
+</section>
+
+<section class="pillars">
+  <div class="wrap">
+<p class="section-label">Hosting. Workflows. Evals.</p>
+    <div class="pillar-grid">
+      <div class="pillar">
+        <p class="pillar-num">01</p>
+        <h3>Private Inference API</h3>
+        <p>A unified async API over self-hosted HuggingFace models covering
+        text, image, audio, and cross-modal operations. One container image,
+        one EFS weight cache, per-model isolation. The marginal cost of
+        adding a model falls with each one added.</p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">02</p>
+        <h3>Workflow execution</h3>
+        <p>Declarative YAML pipelines over the model registry. Steps declare
+        typed inputs and outputs; the executor resolves the dependency graph,
+        runs independent steps in parallel, and advances on result.
+        Every step has an audit trail.</p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">03</p>
+        <h3>Evals</h3>
+        <p>Run any model or pipeline against a labelled dataset. Score outputs
+        using the same handler registry. Build custom eval libraries from
+        production runs and corrected outputs. The task specification
+        sharpens with use.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="usecases" id="usecases">
+  <div class="wrap">
+    <p class="section-label">What runs on it</p>
+    <div class="usecase-grid">
+      <div class="usecase-card">
+        <h4>Content ingestion and moderation</h4>
+        <p>Extract text, generate embeddings, classify by category, and gate
+        restricted content before it reaches an index. Text and image embeddings
+        produced in the same pipeline enable cross-modal search.</p>
+        <div class="usecase-tags">
+          <span class="tag">img2txt</span>
+          <span class="tag">text-embed</span>
+          <span class="tag">instruct</span>
+          <span class="tag">image-embed</span>
+        </div>
+      </div>
+      <div class="usecase-card">
+        <h4>Quality-gated image generation</h4>
+        <p>Generate, score for safety, aesthetic quality, and prompt alignment.
+        Reset and regenerate automatically until thresholds are met or
+        attempt limits are reached.</p>
+        <div class="usecase-tags">
+          <span class="tag">txt2img</span>
+          <span class="tag">image-eval</span>
+          <span class="tag">image-text-eval</span>
+        </div>
+      </div>
+      <div class="usecase-card">
+        <h4>Visual conformance checking</h4>
+        <p>Compare an observation image against a reference using structural
+        embeddings. On deviation, segment both images, diff the masks, and
+        produce a natural-language description of the discrepancy.</p>
+        <div class="usecase-tags">
+          <span class="tag">image-embed</span>
+          <span class="tag">img2mask</span>
+          <span class="tag">img2txt</span>
+          <span class="tag">instruct</span>
+        </div>
+      </div>
+      <div class="usecase-card">
+        <h4>Document briefing and audio delivery</h4>
+        <p>Extract entities, classify, summarise, and convert to speech in
+        multiple languages from a single workflow submission. Output is a
+        written summary plus audio files, one per target language.</p>
+        <div class="usecase-tags">
+          <span class="tag">img2txt</span>
+          <span class="tag">instruct</span>
+          <span class="tag">tts</span>
+        </div>
+      </div>
+      <div class="usecase-card">
+        <h4>Batch tabular classification</h4>
+        <p>Classify large volumes of unlabelled rows against a small labelled
+        example set. Low-confidence predictions are passed to an instruct model
+        for natural-language explanation. No retraining required.</p>
+        <div class="usecase-tags">
+          <span class="tag">tabular-classify</span>
+          <span class="tag">instruct</span>
+        </div>
+      </div>
+      <div class="usecase-card">
+        <h4>Site monitoring with change detection</h4>
+        <p>Embed and compare images from multiple monitored locations in parallel.
+        On detected change, describe what changed and assemble a report.
+        Deliver as text and audio on a schedule.</p>
+        <div class="usecase-tags">
+          <span class="tag">image-embed</span>
+          <span class="tag">img2txt</span>
+          <span class="tag">instruct</span>
+          <span class="tag">tts</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="how">
+  <div class="wrap">
+    <p class="section-label">What workflows can do</p>
+    <div class="how-cols">
+      <div>
+        <h3>Model types</h3>
+        <ul>
+          <li>text-embedding, image-embedding</li>
+          <li>instruct (chat / instruction-following)</li>
+          <li>txt2img, img2txt, img2mask, depth</li>
+          <li>tts, txt2audio</li>
+          <li>text-eval, image-eval, image-text-eval</li>
+          <li>text-similarity</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Workflow features</h3>
+        <ul>
+          <li>Shared state across steps</li>
+          <li>Sequential and parallel step execution</li>
+          <li>Conditional branching on model output values</li>
+          <li>Halt and reject with a structured result</li>
+          <li>Prompt interpolation from prior step outputs</li>
+          <li>Per-step audit trail -- status, timing, output, run count</li>
+        </ul>
+      </div>
+    </div>
+<p class="how-note">
+  Workflow execution is built on
+  <a href="https://pypi.org/project/runfox/">runfox</a>
+  and
+  <a href="https://pypi.org/project/json-logic-path/">json-logic-path</a>,
+  open source libraries available on PyPI.
+</p>
+
+  </div>
+</section>
+
+<section class="tagline-break" id="contact">
+  <div class="wrap">
+    <h2 class="slogan">Production AI pipelines should not be built from scratch each time.</h2>
+    <p>Available as a managed deployment or a consultancy engagement.</p>
+    <a href="mailto:ed@bayis.co.uk" class="btn-primary">Get in touch</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>Marigold &#8212; Bay Information Systems</p>
+    <p><a href="mailto:ed@bayis.co.uk">ed@bayis.co.uk</a></p>
+  </div>
+</footer>
+
+
+</body>
+</html>

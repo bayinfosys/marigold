@@ -43,8 +43,8 @@ variable "models" {
     cpu_size              = optional(number, 1024)
     memory_size           = optional(number, 8192)
     requires_gpu          = optional(bool, false)
-    timeout               = optional(number, 300)
-    idle_timeout          = optional(number, 0)
+    timeout               = optional(number, 600)
+    idle_timeout          = optional(number, 600)
     auth_required         = optional(bool, false)
     provider              = optional(string, "huggingface")
     environment_variables = optional(map(string), {})
@@ -61,4 +61,14 @@ variable "enable_gpu_services" {
   EOT
   type    = bool
   default = false
+}
+
+variable "efs_mount_point" {
+  description = "Path inside the cache builder container where EFS is mounted for model weights."
+  default     = "/mnt/shared"
+}
+
+variable "efs_model_cache_path" {
+  description = "Path inside the cache builder container where EFS is mounted for model weights."
+  default     = "/mnt/shared/models"
 }

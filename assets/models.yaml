@@ -167,7 +167,65 @@ models:
     timeout: 600
     idle_timeout: 600
 
+  - name: qwen/qwen2.5-7b-instruct
+    provider: huggingface
+    type: instruct
+    input: chat
+    output: chat
+    timeout: 600
+    idle_timeout: 600
+
+  - name: qwen/qwen3-4b
+    provider: huggingface
+    type: instruct
+    input: chat
+    output: chat
+    timeout: 600
+    idle_timeout: 600
+
+  - name: madeagents/hammer2.1-3b
+    provider: huggingface
+    type: instruct
+    input: chat
+    output: chat
+    timeout: 600
+    idle_timeout: 600
+
+  - name: zai-org/glm-4-9b-0414
+    provider: huggingface
+    type: instruct
+    input: chat
+    output: chat
+    timeout: 600
+    idle_timeout: 600
+
+  - name: mistralai/mistral-7b-instruct-v0.3
+    provider: huggingface
+    type: instruct
+    input: chat
+    output: chat
+    timeout: 600
+    idle_timeout: 600
+
   - name: meta-llama/llama-3.2-1b-instruct
+    provider: huggingface
+    type: instruct
+    input: chat
+    output: chat
+    timeout: 600
+    idle_timeout: 600
+    auth_required: true
+
+  - name: meta-llama/llama-3.1-8b-instruct
+    provider: huggingface
+    type: instruct
+    input: chat
+    output: chat
+    timeout: 600
+    idle_timeout: 600
+    auth_required: true
+
+  - name: google/gemma-3-4b-it
     provider: huggingface
     type: instruct
     input: chat

@@ -48,10 +48,21 @@ data "aws_iam_policy_document" "model_task" {
   }
 
   statement {
-    sid       = "ResultsCachePermissions"
-    effect    = "Allow"
-    actions   = ["dynamodb:UpdateItem"]
+    sid    = "ResultsCachePermissions"
+    effect = "Allow"
+    actions = [
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:GetItem",
+    ]
     resources = [aws_dynamodb_table.results_cache.arn]
+  }
+
+  statement {
+    sid    = "WorkflowStepsPermissions"
+    effect = "Allow"
+    actions = ["dynamodb:PutItem"]
+    resources = [aws_dynamodb_table.workflow_steps.arn]
   }
 
   statement {

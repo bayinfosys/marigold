@@ -27,6 +27,7 @@ MODELS_YAML ?= assets/models.yaml
 build/environment:
 	# the environment container provides everything for running marigold
 	docker build \
+	  --build-arg GIT_TAG=$(TAG) \
 	  -t $(PROJECT_NAME)/environment:$(TAG) \
 	  -f package/src/models/environment/Dockerfile.ecs .
 
@@ -43,6 +44,7 @@ push/environment:
 
 build/tools/%:
 	docker build \
+	  --build-arg GIT_TAG=$(TAG) \
 	  -t $(PROJECT_NAME)/tools/$*:$(TAG) \
 	  -f package/src/tools/$*/Dockerfile .
 
@@ -196,61 +198,61 @@ build/api-definition:
 build/deployment-artefacts: build/api-definition
 
 # ---------------------------------------------------------------------------
-# Model definitions
-#
-# validate-models     validate models.yaml schema -- no output files
-# generate-models     write models.tfvars and models.json (no network needed)
-# generate-catalogue  write public_models_reference.json (fetches provider APIs)
-#
-# Typical workflow after editing models.yaml:
-#   make validate-models
-#   make generate-models
-#   make generate-catalogue   # set HF_TOKEN if any auth_required: true entries
-#   git add assets/models.yaml \
-#           assets/models.tfvars \
-#           assets/models.json \
-#           assets/public_models_reference.json
-#   LAYER=02 make plan && LAYER=02 make apply
-#   make deploy/cache-builder
-#
-# Layer 03 no longer needs a separate apply step for the model catalogue.
+# Python environment
 # ---------------------------------------------------------------------------
+
+PYTHON       := .venv/bin/python3
+PYTHONPATH   := package/src
+ASSETS_S3    := $(shell terraform -chdir=tf/02 output -raw asset_bucket_name 2>/dev/null)
+REGION       := eu-west-2
+GENERATE     := PYTHONPATH=$(PYTHONPATH) $(PYTHON) package/src/tools/generate_models_tfvars.py
 
 .venv:
 	virtualenv -p python3 .venv
-	.venv/bin/pip install --quiet pyyaml pydantic requests
+	.venv/bin/pip install --quiet pyyaml pydantic requests numpy boto3
+
+# ---------------------------------------------------------------------------
+# Model and tools asset pipeline
+#
+# Typical workflow after editing models.yaml or tools.yaml:
+#
+#   make models/validate
+#   make assets/generate
+#   git add assets/
+#   LAYER=02 make plan && LAYER=02 make apply
+#   make deploy/cache-builder
+# ---------------------------------------------------------------------------
 
 .PHONY: models/validate
 models/validate: .venv assets/models.yaml
-	# check the models.yaml is a valid file
-	cd package/src && ../../.venv/bin/python3 tools/generate_models_tfvars.py \
-	  assets/models.yaml validate
+	$(GENERATE) assets/models.yaml validate
 
-.PHONY: models/generate
-models/generate: .venv assets/models.yaml
-	# generate the terraform files from the model spec in `models.yaml`
-	PYTHONPATH=package/src .venv/bin/python3 package/src/tools/generate_models_tfvars.py \
-	  assets/models.yaml tfvars > assets/models.tfvars
-	PYTHONPATH=package/src .venv/bin/python3 package/src/tools/generate_models_tfvars.py \
-	  assets/models.yaml json > assets/models.json
+.PHONY: assets/pull
+assets/pull:
+	aws s3 cp s3://$(ASSETS_S3)/cache_state.json assets/cache_state.json --region $(REGION)
 
-.PHONY: models/catalogue
-models/catalogue: .venv assets/models.yaml
-	HF_TOKEN=$(HF_TOKEN) \
-	.venv/bin/python3 package/src/tools/generate_models_tfvars.py \
-	  assets/models.yaml public > assets/public_models_reference.json
+.PHONY: assets/generate
+assets/generate: .venv assets/pull assets/models.yaml assets/tools.yaml
+	$(GENERATE) assets/models.yaml tfvars > assets/models.tfvars
+	$(GENERATE) assets/models.yaml json   > assets/models.json
+	PYTHONPATH=$(PYTHONPATH) $(PYTHON) package/src/tools/generate_tools_index.py \
+	  assets/tools.yaml \
+	  assets/cache_state.json
 
-
-.PHONY: generate-public-models
-models/generate-public-models:
-	# Download current cache state from S3
-	aws s3 cp s3://bayis-vecmdl-dev-assets20241025234947605200000001/cache_state.json assets/cache_state.json --region eu-west-2
-	# Merge public catalogue with cache state and upload
-	PYTHONPATH=package/src .venv/bin/python3 package/src/tools/generate_models_tfvars.py assets/models.yaml public > assets/public_models_reference.json
-	PYTHONPATH=package/src .venv/bin/python3 package/src/tools/model_cli.py build-catalogue \
+.PHONY: assets/catalogue
+assets/catalogue: .venv assets/models.yaml
+	HF_TOKEN=$(HF_TOKEN) $(GENERATE) assets/models.yaml public > assets/public_models_reference.json
+	PYTHONPATH=$(PYTHONPATH) $(PYTHON) package/src/tools/model_cli.py build-catalogue \
 	  assets/public_models_reference.json \
 	  --cache-state assets/cache_state.json
 
+.PHONY: assets/upload
+assets/upload:
+	aws s3 cp assets/models.json          s3://$(ASSETS_S3)/models.json          --region $(REGION)
+	aws s3 cp assets/models.tfvars        s3://$(ASSETS_S3)/models.tfvars        --region $(REGION)
+	aws s3 cp assets/tools_available.json s3://$(ASSETS_S3)/tools_available.json --region $(REGION)
+	aws s3 cp assets/tools_meta.json      s3://$(ASSETS_S3)/tools_meta.json      --region $(REGION)
+	aws s3 cp assets/tools_vectors.npy    s3://$(ASSETS_S3)/tools_vectors.npy    --region $(REGION)
 
 # ---------------------------------------------------------------------------
 # Terraform

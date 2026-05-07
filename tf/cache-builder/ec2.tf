@@ -10,6 +10,9 @@ locals {
 
   ecr_registry          = data.terraform_remote_state.containers.outputs["ecr_registry"]
   model_cache_image_uri = "${data.terraform_remote_state.containers.outputs["environment_ecr_url"]}:${var.git_tag}"
+
+  efs_mount_point = data.terraform_remote_state.pipelines.outputs["efs_mount_point"]
+  efs_model_cache_path = data.terraform_remote_state.pipelines.outputs["efs_model_cache_path"]
 }
 
 #
@@ -119,6 +122,9 @@ resource "aws_instance" "cache_builder" {
       # these need exports in the 01/02 layers and locals here.
       ecr_registry =  local.ecr_registry
       model_cache_image_uri = local.model_cache_image_uri
+
+      efs_mount_point = local.efs_mount_point
+      efs_model_cache_path = local.efs_model_cache_path
     }
   ))
 

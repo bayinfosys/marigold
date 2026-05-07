@@ -1,6 +1,6 @@
 locals {
   api_domain = "api.${var.env}.${var.project_domain}"
-  web_domain = "web.${var.env}.${var.project_domain}"
+  #web_domain = "web.${var.env}.${var.project_domain}"
 }
 
 data "aws_route53_zone" "primary" {

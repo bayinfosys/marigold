@@ -144,6 +144,14 @@ module "polling_lambda" {
       actions = ["sqs:SendMessage"]
       resources = [for x in aws_sqs_queue.model_queues: x.arn]
     }
+
+    apigateway_read = {
+      effect  = "Allow"
+      actions = ["apigateway:GET"]
+      resources = [
+        "arn:aws:apigateway:${var.region}::/apikeys/*"
+      ]
+    }
   }
 
   attach_policy_statements = true

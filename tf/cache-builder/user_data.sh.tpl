@@ -12,8 +12,7 @@ echo "cache builder starting: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # ---------------------------------------------------------------------------
 # Install dependencies
 # ---------------------------------------------------------------------------
-dnf install -y amazon-efs-utils docker amazon-cloudwatch-agent
-systemctl start docker
+dnf install -y amazon-cloudwatch-agent
 
 # ---------------------------------------------------------------------------
 # Configure and start CloudWatch agent to stream the build log
@@ -123,12 +122,13 @@ aws s3 cp s3://${assets_bucket}/${models_yaml_key} assets/models.yaml
 echo "starting cache download"
 
 DOWNLOAD_CID=$(docker run -d \
+  -e AWS_DEFAULT_REGION=${region} \
   -e MODELS_YAML_PATH=/app/assets/models.yaml \
-  -e CACHE_DIR=/mnt/efs \
-  -e HF_HUB_CACHE=/mnt/efs \
+  -e CACHE_DIR=${efs_model_cache_path} \
+  -e HF_HUB_CACHE=${efs_model_cache_path} \
   -e HF_HUB_OFFLINE=0 \
   -e HF_TOKEN="$HF_TOKEN" \
-  -v /mnt/efs:/mnt/efs \
+  -v /mnt/efs:${efs_mount_point} \
   -v $(pwd)/assets:/app/assets:ro \
   ${model_cache_image_uri} \
   python3 -m tools.model_cli download-weights)
@@ -145,11 +145,12 @@ echo "cache download finished with exit code $DOWNLOAD_EXIT"
 echo "running cache inspection"
 
 INSPECT_CID=$(docker run -d \
+  -e AWS_DEFAULT_REGION=${region} \
   -e MODELS_YAML_PATH=/app/assets/models.yaml \
-  -e CACHE_DIR=/mnt/efs \
-  -e HF_HUB_CACHE=/mnt/efs \
+  -e CACHE_DIR=${efs_model_cache_path} \
+  -e HF_HUB_CACHE=${efs_model_cache_path} \
   -e HF_HUB_OFFLINE=1 \
-  -v /mnt/efs:/mnt/efs \
+  -v /mnt/efs:${efs_mount_point} \
   -v $(pwd)/assets:/app/assets:ro \
   ${model_cache_image_uri} \
   python3 -m tools.model_cli --json inspect-cache)

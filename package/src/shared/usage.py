@@ -11,7 +11,6 @@ downstream consumer can reconstruct and persist it without data loss.
 
 import logging
 import os
-import decimal
 import json
 
 import boto3
@@ -50,8 +49,8 @@ def record_usage(
     and return the stats for inclusion in the handler response.
     """
     stats = ModelUsageStats(
-        duration=duration,
-        inference=inference,
+        duration=int(duration*1000),
+        inference=int(inference*1000),
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         memory_usage=get_memory_usage(),
@@ -66,26 +65,16 @@ def record_usage(
     return stats
 
 
-import decimal
-
 def _update_metrics_dynamodb(item: UsageItem):
     table = os.environ["DYNAMODB_USAGE_TABLE"]
     try:
-        # Convert float fields to Decimal before saving -- DynamoDB rejects floats.
-        # this is a weird hack because dynamodb can't handle floats -- we should fix this in dynawrap
-        if item.model_stats:
-            item = item.model_copy(update={
-                "model_stats": item.model_stats.model_copy(update={
-                    "duration":  decimal.Decimal(str(item.model_stats.duration)),
-                    "inference": decimal.Decimal(str(item.model_stats.inference)),
-                })
-            })
         _dynawrap.save(table, item)
     except Exception as e:
         logger.exception(
             "[%s/%s] failed to write metrics to '%s' [%s]",
             item.user_id, item.operation, table, str(e),
         )
+
 
 def _update_metrics_sqs(item: UsageItem):
     sqs_client = boto3.client("sqs")

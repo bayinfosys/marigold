@@ -39,6 +39,7 @@ from pydantic import ValidationError
 from shared.db_models import ResultsItem, WorkflowStep
 from shared.registry import _SPECS, BaseModelHandler
 from shared.sqs_models import MarigoldSQSMessage, make_job_id
+from models.standard_loader import ModelNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +231,14 @@ class SQSWorker:
         self.client = boto3.client("sqs")
         self._dynamodb = boto3.client("dynamodb")
 
+        logger.info(
+            "worker starting: version='%s' queue='%s' model='%s' idle_timeout=%is",
+            os.getenv("BUILD_VERSION", "unknown"),
+            self.queue_url,
+            self.model.modelname,
+            self.idle_timeout,
+        )
+
     def get_message(self) -> dict | None:
         response = self.client.receive_message(
             QueueUrl=self.queue_url,
@@ -313,6 +322,21 @@ class SQSWorker:
 
             _write_results(sqs_msg, "complete", result.model_dump())
             logger.info("[%s/%s] complete", user_id, message_id)
+
+        except ModelNotFoundError as e:
+            logger.error(
+                "[%s/%s] model not in cache: %s",
+                user_id, message_id, str(e),
+            )
+            if sqs_msg.workflow_execution_id is not None:
+                _write_workflow_step_failed(
+                    sqs_msg=sqs_msg,
+                    error="model not found: %s" % str(e),
+                )
+            _write_results(sqs_msg, "error", {
+                "error": "model not found",
+                "model": str(e),
+            })
 
         except Exception as e:
             logger.exception(
