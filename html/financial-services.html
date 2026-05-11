@@ -1,0 +1,321 @@
+---
+layout: default
+title: "AI Inference for FCA-Regulated Firms, UK Data Residency -- Marigold"
+description: "AI inference for FCA-regulated firms. UK data residency, no US sub-processors, no training on customer data. Built for firms that need to explain their AI supply chain."
+canonical: "https://marigold.run/financial-services.html"
+og_title: "AI Inference for Financial Services -- Marigold"
+og_description: "Private AI inference for FCA-regulated firms. UK data residency, no US sub-processors, audit logs, no training on customer data."
+nav_links:
+  - text: Pricing
+    href: /pricing.html
+  - text: Data sovereignty
+    href: /data-sovereign.html
+  - text: Get in touch
+    href: "#contact"
+    cta: true
+schema: |
+  <script type="application/ld+json">
+  [
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Marigold",             "item": "https://marigold.run" },
+        { "@type": "ListItem", "position": 2, "name": "Financial services",   "item": "https://marigold.run/financial-services" }
+      ]
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Does Marigold process data outside the UK?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Inference runs on private AWS infrastructure in London (UK) by default. Data does not leave that region as part of inference. No US-based model provider receives your data." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Marigold train on customer data or inference inputs?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Inference inputs are not retained for training, fine-tuning, or any other purpose. Outputs are stored briefly for retrieval and then deleted." }
+        },
+        {
+          "@type": "Question",
+          "name": "Can Marigold support FCA operational resilience requirements?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Marigold provides audit logs and infrastructure within UK jurisdiction. Whether this satisfies your firm's specific FCA obligations under PS22/3 or related rules depends on your use case, the data involved, and your compliance team's assessment. We are happy to discuss the architecture in detail." }
+        },
+        {
+          "@type": "Question",
+          "name": "Is a data processing agreement available?",
+          "acceptedAnswer": { "@type": "Answer", "text": "We are able to discuss data processing terms with firms that have specific requirements. We do not currently have a standard DPA document ready to issue. Contact us and we will work through your requirements directly." }
+        }
+      ]
+    }
+  ]
+  </script>
+---
+
+<main>
+
+<section class="hero">
+  <div class="wrap">
+    <p class="hero-eyebrow">Financial services</p>
+    <h1 class="slogan">AI inference you can explain to your compliance team.</h1>
+    <p class="hero-tagline">UK data residency. No US sub-processors. Full audit trail. No training on customer data.</p>
+    <p class="hero-sub">
+      FCA-regulated firms need to explain and evidence their AI supply chain.
+      Marigold runs open-weight models on private AWS infrastructure in London.
+      Your data does not leave the UK. No external model provider receives
+      your inputs. Every inference job is logged within UK infrastructure.
+    </p>
+    <div class="hero-actions">
+      <a href="#contact" class="btn-primary">Get in touch</a>
+      <a href="/data-sovereign.html" class="btn-secondary">Architecture detail</a>
+    </div>
+  </div>
+</section>
+
+<section class="statement">
+  <div class="wrap">
+    <p>
+      FCA expectations on operational resilience and AI governance mean firms
+      need to know where their AI runs, who controls it, and what happens to
+      the data that passes through it.
+      <strong>Marigold gives you a clear, documentable answer to all three.</strong>
+    </p>
+  </div>
+</section>
+
+<section class="pillars" id="properties">
+  <div class="wrap">
+    <h2 class="section-label">Compliance-relevant properties</h2>
+    <div class="pillar-grid">
+      <div class="pillar">
+        <p class="pillar-num">01</p>
+        <h3>UK data residency</h3>
+        <p>Inference runs on private AWS infrastructure in London. Data does
+           not leave the UK as part of inference, storage, or queuing.
+           No cross-border transfer occurs.</p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">02</p>
+        <h3>No US sub-processors</h3>
+        <p>No inference request reaches OpenAI, Anthropic, Google, or any
+           other external provider. The model runs locally from weights held
+           on UK infrastructure. Your AI supply chain has one link.</p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">03</p>
+        <h3>No training on inputs</h3>
+        <p>Customer data passed to the inference API is not retained for
+           training, fine-tuning, or any secondary purpose. Outputs are
+           stored briefly for retrieval and then deleted.</p>
+      </div>
+    </div>
+    <div class="pillar-grid" style="margin-top:1px;">
+      <div class="pillar">
+        <p class="pillar-num">04</p>
+        <h3>Audit trail</h3>
+        <p>Every inference job records status, timing, and identity within
+           UK infrastructure. Access logs are retained in CloudWatch within
+           the UK region. Queryable by job and by time window.</p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">05</p>
+        <h3>Inspectable models</h3>
+        <p>All models are open-weight with publicly documented architectures
+           and training data. No proprietary black-box model receives your
+           data. Model provenance is fully traceable.</p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">06</p>
+        <h3>UK-registered company</h3>
+        <p>Bay Information Systems is a UK-registered company. Contractual
+           relationships are with a UK entity subject to UK law and
+           UK regulatory jurisdiction.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="fca">
+  <div class="wrap">
+    <h2 class="section-label">FCA and operational resilience</h2>
+    <p style="font-size:1.15rem;color:var(--ink);margin-bottom:0.5rem;font-family:'Junction','Trebuchet MS','Gill Sans',sans-serif;">
+      Know your AI supply chain
+    </p>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:66ch;line-height:1.65;margin-bottom:1.5rem;">
+      PS22/3 and the FCA's evolving expectations on AI governance require firms
+      to understand and document the third parties in their operational infrastructure.
+      An AI inference provider is a material third party if it processes customer
+      data or supports a business service.
+    </p>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:66ch;line-height:1.65;margin-bottom:1.5rem;">
+      Marigold's architecture is designed to be simple to document: one provider,
+      one region, no sub-processors for inference, full audit logs. We cannot assess
+      whether our service meets your specific FCA obligations -- that depends on your
+      use case, your important business services mapping, and your compliance team's
+      judgement. What we can provide is the technical detail to support that assessment.
+    </p>
+
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th>Property</th>
+          <th class="col-marigold">Marigold</th>
+          <th>US-based AI API</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Data processed in UK</td>
+          <td class="col-marigold val-yes">Yes</td>
+          <td class="val-no">No</td>
+        </tr>
+        <tr>
+          <td>UK-registered processor</td>
+          <td class="col-marigold val-yes">Yes</td>
+          <td class="val-no">No</td>
+        </tr>
+        <tr>
+          <td>No US sub-processor for inference</td>
+          <td class="col-marigold val-yes">Yes</td>
+          <td class="val-no">No</td>
+        </tr>
+        <tr>
+          <td>No training on customer data</td>
+          <td class="col-marigold val-yes">Yes</td>
+          <td class="val-no">Varies / opt-out required</td>
+        </tr>
+        <tr>
+          <td>Audit log within UK region</td>
+          <td class="col-marigold val-yes">Yes</td>
+          <td class="val-no">No</td>
+        </tr>
+        <tr>
+          <td>Inspectable open-weight models</td>
+          <td class="col-marigold val-yes">Yes</td>
+          <td class="val-no">No</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="usecases">
+  <div class="wrap">
+    <h2 class="section-label">Use cases</h2>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:66ch;line-height:1.65;margin-bottom:2rem;">
+      These are illustrative. Whether any specific use case is appropriate
+      for your firm depends on the data involved and your compliance framework.
+    </p>
+    <div class="usecase-grid">
+      <div class="usecase-card">
+        <h4>Customer correspondence classification</h4>
+        <p>Classify incoming correspondence by type, urgency, and regulatory
+           category. Route complaints, queries, and disclosures to the correct
+           team. All processing within UK infrastructure.</p>
+        <div class="usecase-tags">
+          <span class="tag">instruct</span>
+          <span class="tag">text-embedding</span>
+        </div>
+      </div>
+      <div class="usecase-card">
+        <h4>Document summarisation and extraction</h4>
+        <p>Summarise policy documents, contracts, and regulatory filings.
+           Extract structured data from unstructured text. No document
+           content leaves UK infrastructure.</p>
+        <div class="usecase-tags">
+          <span class="tag">instruct</span>
+          <span class="tag">img2txt</span>
+        </div>
+      </div>
+      <div class="usecase-card">
+        <h4>Fraud and anomaly detection support</h4>
+        <p>Generate embeddings for transaction narratives and customer
+           communications. Use similarity search to surface anomalies
+           against a known baseline. Private, auditable, UK-resident.</p>
+        <div class="usecase-tags">
+          <span class="tag">text-embedding</span>
+          <span class="tag">text-similarity</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <h2 class="section-label">Frequently asked</h2>
+    <div class="faq-list">
+
+      <div class="faq-item">
+        <p class="faq-q">Does Marigold process data outside the UK?</p>
+        <p class="faq-a">
+          No. Inference runs on private AWS infrastructure in London (UK).
+          Data does not leave that region. No US-based model provider
+          receives your data.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <p class="faq-q">Does Marigold train on customer data?</p>
+        <p class="faq-a">
+          No. Inference inputs are not retained for training, fine-tuning,
+          or any other purpose. Outputs are stored briefly for retrieval
+          and then deleted.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <p class="faq-q">Can Marigold support our FCA operational resilience obligations?</p>
+        <p class="faq-a">
+          Marigold provides audit logs and UK-resident infrastructure with no
+          US sub-processors. Whether this satisfies your firm's specific
+          obligations under PS22/3 or related rules depends on your use case
+          and your compliance team's assessment. We are happy to discuss the
+          architecture in detail to support that process.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <p class="faq-q">Is a data processing agreement available?</p>
+        <p class="faq-a">
+          We are able to discuss data processing terms with firms that have
+          specific requirements. We do not currently have a standard DPA
+          document ready to issue. Contact us and we will work through
+          your requirements directly.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <p class="faq-q">What models are available?</p>
+        <p class="faq-a">
+          The hosted registry includes instruct models for text generation and
+          summarisation, embedding models for search and classification, and
+          image-to-text models. All are open-weight with publicly documented
+          provenance. See the <a href="/open-weights.html">full registry</a>.
+        </p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="tagline-break" id="contact">
+  <div class="wrap">
+    <h2 class="slogan">AI inference with a clear compliance story.</h2>
+    <p>If you are evaluating AI tooling for a regulated firm, we would like to hear from you. Register your interest below or contact us directly.</p>
+    {% include waitlist_form.html
+       source="financial-services"
+       heading="Register interest"
+       subtext="Tell us your firm type and use case and we will follow up directly."
+       placeholder="you@yourfirm.com"
+       button="Register interest" %}
+    <p style="margin-top:1.5rem;font-size:0.875rem;color:var(--ink-mid);">
+      Prefer to talk directly?
+      <a href="mailto:ed@bayis.co.uk">ed@bayis.co.uk</a>
+    </p>
+  </div>
+</section>
+
+</main>

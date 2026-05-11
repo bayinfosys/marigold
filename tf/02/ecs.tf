@@ -85,6 +85,13 @@ data "aws_iam_policy_document" "model_task" {
     actions   = ["s3:PutObject"]
     resources = ["${aws_s3_bucket.model_outputs.arn}/outputs/*"]
   }
+
+  statement {
+    sid = "ChangeMessageVisibility"
+    effect = "Allow"
+    actions = ["sqs:changemessagevisibility"]
+    resources = [for x in aws_sqs_queue.model_queues : x.arn]
+  }
 }
 
 resource "aws_iam_role_policy" "model_task" {

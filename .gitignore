@@ -4,3 +4,6 @@ tf/*/builds
 cache/
 assets/*.json
 assets/*.tfvars
+
+html/dist/
+html/_data/

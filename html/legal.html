@@ -1,0 +1,333 @@
+---
+layout: default
+title: "AI Inference for Legal Professionals, Client Confidentiality -- Marigold"
+description: "AI inference for solicitors, barristers, and in-house legal teams. UK data residency, no US sub-processors, no training on client communications. Built for practices where confidentiality is not negotiable."
+canonical: "https://marigold.run/legal.html"
+og_title: "AI Inference for Legal Services -- Marigold"
+og_description: "Private AI inference for legal professionals. UK data residency, no US sub-processors, no training on client communications."
+nav_links:
+  - text: Pricing
+    href: /pricing.html
+  - text: Data sovereignty
+    href: /data-sovereign.html
+  - text: Get in touch
+    href: "#contact"
+    cta: true
+schema: |
+  <script type="application/ld+json">
+  [
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Marigold", "item": "https://marigold.run" },
+        { "@type": "ListItem", "position": 2, "name": "Legal services", "item": "https://marigold.run/legal" }
+      ]
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Does Marigold process data outside the UK?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Inference runs on private AWS infrastructure in London (UK) by default. Data does not leave that region as part of inference. No US-based model provider receives your data." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Marigold train on client communications or inference inputs?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Inference inputs are not retained for training, fine-tuning, or any other purpose. Outputs are stored briefly for retrieval and then deleted." }
+        },
+        {
+          "@type": "Question",
+          "name": "Is Marigold appropriate for legally privileged communications?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Whether using Marigold for privileged communications is appropriate depends on your firm's risk assessment and SRA compliance framework. What Marigold provides: UK-resident processing, no US sub-processors, no data retention beyond the job window, and a data processing agreement on the Pro tier. How those properties interact with privilege in your specific use case is a matter for your IG team to determine." }
+        },
+        {
+          "@type": "Question",
+          "name": "Is a data processing agreement available?",
+          "acceptedAnswer": { "@type": "Answer", "text": "We are able to discuss data processing terms with practices that have specific requirements. We do not currently have a standard DPA document ready to issue. Contact us and we will work through your requirements directly." }
+        }
+      ]
+    }
+  ]
+  </script>
+---
+
+<main>
+
+<section class="hero">
+  <div class="wrap">
+    <p class="hero-eyebrow">Legal services</p>
+    <h1 class="slogan">AI inference you can use for confidential client data.</h1>
+    <p class="hero-tagline">UK data residency. No US sub-processors. No training on client communications.</p>
+    <p class="hero-sub">
+      Legal teams using commercial AI APIs to process client correspondence,
+      contracts, and advice face a question their providers cannot fully answer:
+      what happens to the data, and who might see it. Marigold runs inference
+      on private AWS in London. No data reaches a US-based model provider.
+      Nothing is retained for training. For privileged communications and
+      confidential client data, the architecture makes the answer straightforward.
+    </p>
+    <div class="hero-actions">
+      <a href="#contact" class="btn-primary">Get in touch</a>
+      <a href="/data-sovereign.html" class="btn-secondary">Architecture detail</a>
+    </div>
+  </div>
+</section>
+
+<section class="statement">
+  <div class="wrap">
+    <p>
+      Commercial AI APIs are third-party data processors. Under the SRA Code of
+      Conduct, the data you send through them is data you are responsible for.
+      <strong>Marigold gives your information governance team a clear, documentable
+      answer to where the data goes, who can access it, and whether it is retained.</strong>
+    </p>
+  </div>
+</section>
+
+<section class="pillars" id="properties">
+  <div class="wrap">
+    <h2 class="section-label">Data handling properties</h2>
+    <div class="pillar-grid">
+      <div class="pillar">
+        <p class="pillar-num">01</p>
+        <h3>UK data residency</h3>
+        <p>Inference runs on private AWS in London. Data does not leave
+           that region as part of inference, storage, or queuing.
+           No cross-border transfer occurs.</p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">02</p>
+        <h3>No US sub-processors</h3>
+        <p>No inference request reaches OpenAI, Anthropic, Google, or any
+           other US-based model provider. The model runs from weights held
+           on UK infrastructure. Your AI supply chain has one link.</p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">03</p>
+        <h3>No training on inputs</h3>
+        <p>Client data passed to the inference API is not retained for
+           training, fine-tuning, or any secondary purpose. Outputs are
+           stored briefly for retrieval and then deleted.</p>
+      </div>
+    </div>
+    <div class="pillar-grid" style="margin-top:1px;">
+      <div class="pillar">
+        <p class="pillar-num">04</p>
+        <h3>Open-weight models</h3>
+        <p>All models run from publicly documented open-weight checkpoints.
+           Weights, architecture, and training provenance are inspectable.
+           No proprietary black-box model receives your data.</p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">05</p>
+        <h3>Audit trail</h3>
+        <p>Every inference job records status, timing, and identity within
+           the UK region. Execution history is queryable. Access logs are
+           retained in CloudWatch within London.</p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">06</p>
+        <h3>UK-registered company</h3>
+        <p>Bay Information Systems is a UK-registered company. Any
+           contractual relationship is with a UK entity subject to
+           UK law.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="sra">
+  <div class="wrap">
+    <h2 class="section-label">SRA and privilege considerations</h2>
+    <p style="font-size:1.15rem;color:var(--ink);margin-bottom:0.5rem;font-family:'Junction','Trebuchet MS','Gill Sans',sans-serif;">
+      Know your data supply chain
+    </p>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:66ch;line-height:1.65;margin-bottom:1.5rem;">
+      The SRA Code of Conduct requires solicitors to keep client affairs
+      confidential and to have effective systems for doing so. Where AI tooling
+      processes client data, the tooling is part of that system. Sending client
+      data to a US-based API constitutes a transfer to a third-party processor
+      in a foreign jurisdiction. Under most standard commercial terms, that data
+      may be subject to retention, review, or training unless an enterprise
+      agreement explicitly prohibits it.
+    </p>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:66ch;line-height:1.65;margin-bottom:1.5rem;">
+      Whether any specific use of Marigold is appropriate for privileged
+      communications is a matter for your firm's risk assessment and your IG
+      team's judgement. What Marigold provides is a clear technical answer to
+      the data handling question: UK-resident processing, no US sub-processors,
+      no retention beyond the job window, and a DPA available on the Pro tier.
+      We are happy to provide the technical documentation your IG team needs
+      to complete that assessment.
+    </p>
+
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th>Property</th>
+          <th class="col-marigold">Marigold</th>
+          <th>US-based AI API</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Data processed in UK</td>
+          <td class="col-marigold val-yes">Yes</td>
+          <td class="val-no">No</td>
+        </tr>
+        <tr>
+          <td>UK-registered processor</td>
+          <td class="col-marigold val-yes">Yes</td>
+          <td class="val-no">No</td>
+        </tr>
+        <tr>
+          <td>No US sub-processor for inference</td>
+          <td class="col-marigold val-yes">Yes</td>
+          <td class="val-no">No</td>
+        </tr>
+        <tr>
+          <td>No training on client data</td>
+          <td class="col-marigold val-yes">Yes</td>
+          <td class="val-no">Varies / opt-out required</td>
+        </tr>
+        <tr>
+          <td>Audit log within UK region</td>
+          <td class="col-marigold val-yes">Yes</td>
+          <td class="val-no">No</td>
+        </tr>
+        <tr>
+          <td>Inspectable open-weight models</td>
+          <td class="col-marigold val-yes">Yes</td>
+          <td class="val-no">No</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="usecases">
+  <div class="wrap">
+    <h2 class="section-label">Use cases</h2>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:66ch;line-height:1.65;margin-bottom:2rem;">
+      These are illustrative. Whether any specific use case is appropriate
+      for your practice depends on the data involved, its classification,
+      and your firm's risk framework.
+    </p>
+    <div class="usecase-grid">
+      <div class="usecase-card">
+        <h4>Contract review and extraction</h4>
+        <p>Extract key terms, obligations, defined terms, and critical dates
+           from contracts at volume. Structured output for review, not
+           replacement of review. No document content leaves UK jurisdiction.</p>
+        <div class="usecase-tags">
+          <span class="tag">instruct</span>
+          <span class="tag">img2txt</span>
+        </div>
+      </div>
+      <div class="usecase-card">
+        <h4>Due diligence document review</h4>
+        <p>Classify and summarise large document sets in M&amp;A, litigation,
+           or regulatory matters. Surface relevant documents against a query.
+           Audit trail for every classification decision.</p>
+        <div class="usecase-tags">
+          <span class="tag">instruct</span>
+          <span class="tag">text-embedding</span>
+          <span class="tag">text-similarity</span>
+        </div>
+      </div>
+      <div class="usecase-card">
+        <h4>Client correspondence classification</h4>
+        <p>Classify incoming correspondence by matter, urgency, and type.
+           Route to the correct fee-earner without manual triage. All
+           processing within UK jurisdiction.</p>
+        <div class="usecase-tags">
+          <span class="tag">instruct</span>
+          <span class="tag">text-embedding</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <h2 class="section-label">Frequently asked</h2>
+    <div class="faq-list">
+
+      <div class="faq-item">
+        <p class="faq-q">Does Marigold process data outside the UK?</p>
+        <p class="faq-a">
+          No. Inference runs on private AWS in London by default. Data does
+          not leave that region as part of inference. No US-based model
+          provider receives your data.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <p class="faq-q">Does Marigold train on client communications or inference inputs?</p>
+        <p class="faq-a">
+          No. Inference inputs are not retained for training, fine-tuning, or
+          any other purpose. Outputs are stored briefly for retrieval and then
+          deleted on schedule.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <p class="faq-q">Is Marigold appropriate for legally privileged communications?</p>
+        <p class="faq-a">
+          Whether using Marigold for privileged communications is appropriate
+          depends on your firm's risk assessment and SRA compliance framework.
+          What Marigold provides: UK-resident processing, no US sub-processors,
+          no retention beyond the job window, and a data processing agreement
+          on the Pro tier. How those properties interact with privilege in your
+          specific use case is a matter for your IG team to assess. We are
+          happy to discuss the technical architecture in detail to support
+          that process.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <p class="faq-q">Is a data processing agreement available?</p>
+        <p class="faq-a">
+          We are able to discuss data processing terms with practices that have
+          specific requirements. We do not currently have a standard DPA document
+          ready to issue. Contact us and we will work through your requirements
+          directly.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <p class="faq-q">What models are available?</p>
+        <p class="faq-a">
+          The hosted registry includes instruct models for text generation and
+          summarisation, embedding models for search and classification, and
+          image-to-text models. All are open-weight with publicly documented
+          provenance. See the <a href="/open-weights.html">full registry</a>.
+        </p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="tagline-break" id="contact">
+  <div class="wrap">
+    <h2 class="slogan">AI inference with a clear answer to every data handling question.</h2>
+    <p>If you are evaluating AI tooling for a legal practice or in-house team, we would like to hear from you. Register your interest below or contact us directly.</p>
+    {% include waitlist_form.html
+       source="legal"
+       heading="Register interest"
+       subtext="Tell us your practice type and use case and we will follow up directly."
+       placeholder="you@yourfirm.com"
+       button="Register interest" %}
+    <p style="margin-top:1.5rem;font-size:0.875rem;color:var(--ink-mid);">
+      Prefer to talk directly?
+      <a href="mailto:ed@bayis.co.uk">ed@bayis.co.uk</a>
+    </p>
+  </div>
+</section>
+
+</main>

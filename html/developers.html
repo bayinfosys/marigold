@@ -1,0 +1,230 @@
+---
+layout: default
+title: "OpenAI Alternative API -- Marigold | Private Open-Weight Inference"
+description: "OpenAI-compatible inference API backed by open-weight models on private AWS. Change the base URL, keep the code. UK and EU data residency, flat monthly pricing."
+canonical: "https://marigold.run/developers.html"
+og_title: "OpenAI Alternative API -- Marigold"
+og_description: "Drop-in OpenAI-compatible endpoint backed by open-weight models. Private AWS, flat monthly pricing, no prompt retention."
+nav_links:
+  - text: Pricing
+    href: /pricing.html
+  - text: Models
+    href: /open-weights.html
+  - text: Join waitlist
+    href: "#waitlist"
+    cta: true
+schema: |
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Marigold",
+    "url": "https://marigold.run/developers",
+    "description": "OpenAI-compatible inference API backed by open-weight HuggingFace models on private AWS. Drop-in base URL replacement, flat monthly pricing, UK and EU data residency.",
+    "applicationCategory": "DeveloperApplication",
+    "offers": {
+      "@type": "Offer",
+      "price": "19",
+      "priceCurrency": "GBP",
+      "description": "Developer tier from &pound;19/month"
+    },
+    "provider": {
+      "@type": "Organization",
+      "name": "Bay Information Systems",
+      "url": "https://www.bayis.co.uk"
+    },
+    "breadcrumb": {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Marigold",   "item": "https://marigold.run" },
+        { "@type": "ListItem", "position": 2, "name": "Developers", "item": "https://marigold.run/developers" }
+      ]
+    }
+  }
+  </script>
+---
+
+<main>
+
+<section class="hero">
+  <div class="wrap">
+    <p class="hero-eyebrow">For developers</p>
+    <h1 class="slogan">OpenAI-compatible inference, done properly.</h1>
+    <p class="hero-tagline">Change the base URL. Keep the code. Open-weight models in your region.</p>
+    <p class="hero-sub">
+      The <code>POST /v1/chat/completions</code> endpoint accepts the same request
+      shape as the OpenAI Chat Completions API. Behind it: open-weight models running
+      on private AWS in London, with no prompt retention and a flat monthly rate.
+      Works in any tool or SDK that supports a custom OpenAI base URL.
+    </p>
+    <div class="hero-actions">
+      <a href="#swap" class="btn-primary">See the code</a>
+      <a href="/ide-setup.html" class="btn-secondary">IDE setup guide</a>
+    </div>
+  </div>
+</section>
+
+<section class="statement">
+  <div class="wrap">
+    <p>
+      Every OpenAI integration is one environment variable from pointing at a
+      <strong>private open-weight model running in your jurisdiction</strong>,
+      with a predictable monthly cost and no token-by-token exposure.
+    </p>
+  </div>
+</section>
+
+<section id="swap">
+  <div class="wrap">
+    <h2 class="section-label">One-line swap</h2>
+    <p style="font-size:1.15rem;color:var(--ink);margin-bottom:0.5rem;font-family:'Junction','Trebuchet MS','Gill Sans',sans-serif;">
+      Change the base URL. Keep the code.
+    </p>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:58ch;line-height:1.65;margin-bottom:2rem;">
+      The <code>model</code> parameter maps to a Marigold model name.
+      The rest of the request is unchanged.
+    </p>
+
+    <p class="code-label">Before</p>
+    <pre><code>from openai import OpenAI
+
+client = OpenAI(api_key="sk-...")
+
+response = client.chat.completions.create(
+    model="gpt-4.1-mini",
+    messages=[{"role": "user", "content": "Summarise this document: ..."}]
+)</code></pre>
+
+    <p class="code-label">After</p>
+    <pre><code>from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://api.marigold.run/v1",
+    api_key="your-api-key"
+)
+
+response = client.chat.completions.create(
+    model="qwen/qwen2.5-7b-instruct",
+    messages=[{"role": "user", "content": "Summarise this document: ..."}]
+)</code></pre>
+
+    <p class="code-label">Raw HTTP</p>
+    <pre><code>curl https://api.marigold.run/v1/chat/completions \
+  -H "Authorization: Bearer your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen/qwen2.5-7b-instruct",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'</code></pre>
+  </div>
+</section>
+
+<section id="api">
+  <div class="wrap">
+    <h2 class="section-label">Native async API</h2>
+    <p style="font-size:1.15rem;color:var(--ink);margin-bottom:0.5rem;font-family:'Junction','Trebuchet MS','Gill Sans',sans-serif;">
+      Beyond chat completions
+    </p>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:58ch;line-height:1.65;margin-bottom:2rem;">
+      The native API covers the full model registry: embeddings, image-to-text,
+      text-to-speech, depth estimation, segmentation, and eval. Submit a job,
+      poll for the result, retrieve binary outputs from storage.
+    </p>
+
+    <p class="code-label">Submit and poll</p>
+    <pre><code>import requests, time
+
+API = "https://api.marigold.run"
+KEY = {"Authorization": "Bearer your-api-key"}
+
+job = requests.post(f"{API}/infer", headers=KEY, json={
+    "model_type": "text-embedding",
+    "model_name": "sentence-transformers/all-MiniLM-L6-v2",
+    "input": "The quick brown fox"
+}).json()
+
+while True:
+    result = requests.get(f"{API}/infer/{job['job_id']}", headers=KEY).json()
+    if result["status"] == "complete":
+        print(result["output"]["embedding"])
+        break
+    time.sleep(0.5)</code></pre>
+  </div>
+</section>
+
+<section id="ides">
+  <div class="wrap">
+    <h2 class="section-label">IDE and editor support</h2>
+    <p style="font-size:1.15rem;color:var(--ink);margin-bottom:0.5rem;font-family:'Junction','Trebuchet MS','Gill Sans',sans-serif;">
+      Works wherever a custom OpenAI base URL is accepted
+    </p>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:58ch;line-height:1.65;margin-bottom:2rem;">
+      Cursor, Continue, Cline, and Aider all support a custom OpenAI-compatible
+      endpoint. Set the base URL to <code>https://api.marigold.run/v1</code>
+      and your Marigold API key. Full configuration instructions are on the
+      <a href="/ide-setup.html">IDE setup page</a>.
+    </p>
+    <a href="/ide-setup.html" class="btn-secondary">IDE setup guide &rarr;</a>
+  </div>
+</section>
+
+<section class="pillars" id="features">
+  <div class="wrap">
+    <h2 class="section-label">What you get</h2>
+    <div class="pillar-grid">
+      <div class="pillar">
+        <p class="pillar-num">01</p>
+        <h3>OpenAI-compatible endpoint</h3>
+        <p>Chat completions and embeddings via the same interface as the OpenAI
+           API. Swap the base URL; the rest of your code is unchanged. Works with
+           any SDK or tool that accepts a custom base URL.</p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">02</p>
+        <h3>Full model registry</h3>
+        <p>Instruct, embedding, TTS, image-to-text, depth, segmentation, and
+           eval model types. One API key gives access to all of them.
+           See the <a href="/open-weights.html">full registry</a>.</p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">03</p>
+        <h3>Flat monthly pricing</h3>
+        <p>No per-token billing. No usage alerts. No end-of-month reconciliation.
+           From <a href="/pricing.html">&pound;19/month</a> for individual developer access.</p>
+      </div>
+    </div>
+    <div class="pillar-grid" style="margin-top:1px;">
+      <div class="pillar">
+        <p class="pillar-num">04</p>
+        <h3>Private AWS deployment</h3>
+        <p>Models run on private AWS infrastructure in London. No shared
+           multi-tenant pool. Your data does not leave your chosen region
+           as part of inference.</p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">05</p>
+        <h3>LangChain and LlamaIndex compatible</h3>
+        <p>Any framework that wraps the OpenAI SDK works. Set
+           <code>openai_api_base</code> and your key; the model name maps
+           to a Marigold model. No custom integration required.</p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">06</p>
+        <h3>No prompt retention</h3>
+        <p>Inference inputs are not retained for any downstream purpose.
+           Outputs are stored briefly for retrieval and then deleted.
+           UK and EU data residency by default.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="tagline-break" id="waitlist">
+  <div class="wrap">
+    <h2 class="slogan">One URL change. Your data stays in your region.</h2>
+    <p>Paid plans are in limited release. Leave your email to be notified when developer access opens.</p>
+    {% include waitlist_form.html source="developers" %}
+  </div>
+</section>
+
+</main>

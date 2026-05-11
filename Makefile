@@ -187,6 +187,8 @@ build/api-definition:
 	docker run -it --rm \
 	  -v $(shell pwd)/package/src/:/app:ro \
 	  -v $(shell pwd)/tf/03/rest:/out \
+	  -e CORS_ORIGINS="*" \
+	  -e CORS_HEADERS="Content-Type,Authorization,Origin,x-api-key" \
 	  bayis/fastapi_aws:v0.0.11-1-ga17b8a1 \
 	    --title mdl \
 	    --router api.routes:router \
@@ -206,6 +208,9 @@ PYTHONPATH   := package/src
 ASSETS_S3    := $(shell terraform -chdir=tf/02 output -raw asset_bucket_name 2>/dev/null)
 REGION       := eu-west-2
 GENERATE     := PYTHONPATH=$(PYTHONPATH) $(PYTHON) package/src/tools/generate_models_tfvars.py
+JEKYLL_DIR  := html
+SITE_DATA   := $(JEKYLL_DIR)/_data
+SITE_DIST   := $(JEKYLL_DIR)/dist
 
 .venv:
 	virtualenv -p python3 .venv
@@ -235,16 +240,25 @@ assets/pull:
 assets/generate: .venv assets/pull assets/models.yaml assets/tools.yaml
 	$(GENERATE) assets/models.yaml tfvars > assets/models.tfvars
 	$(GENERATE) assets/models.yaml json   > assets/models.json
+	$(GENERATE) assets/models.yaml jekyll-data > $(SITE_DATA)/models.json
 	PYTHONPATH=$(PYTHONPATH) $(PYTHON) package/src/tools/generate_tools_index.py \
 	  assets/tools.yaml \
 	  assets/cache_state.json
 
 .PHONY: assets/catalogue
-assets/catalogue: .venv assets/models.yaml
+assets/merge-hf-data: .venv assets/models.yaml
 	HF_TOKEN=$(HF_TOKEN) $(GENERATE) assets/models.yaml public > assets/public_models_reference.json
 	PYTHONPATH=$(PYTHONPATH) $(PYTHON) package/src/tools/model_cli.py build-catalogue \
 	  assets/public_models_reference.json \
 	  --cache-state assets/cache_state.json
+
+
+.PHONY: assets/website
+assets/website:
+	docker run --rm \
+	  -v $(shell pwd)/$(JEKYLL_DIR):/srv/jekyll \
+	  jekyll/jekyll \
+	  jekyll build --destination /srv/jekyll/dist
 
 .PHONY: assets/upload
 assets/upload:

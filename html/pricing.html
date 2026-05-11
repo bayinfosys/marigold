@@ -1,0 +1,341 @@
+---
+layout: default
+title: "Pricing -- Marigold | Private Open-Weight Inference API"
+description: "Private open-weight model inference priced by usage pattern. Human, Developer, and Agentic tiers. Flat monthly rate for interactive and automation use. Provisioned dedicated capacity for production agent workloads."
+canonical: "https://marigold.run/pricing.html"
+og_title: "Pricing -- Marigold"
+og_description: "Inference priced by how you use it. Flat monthly rate for human and developer use. Provisioned dedicated capacity for agent workloads."
+nav_links:
+  - text: Developers
+    href: /developers.html
+  - text: Models
+    href: /open-weights.html
+  - text: Join waitlist
+    href: "#waitlist"
+    cta: true
+schema: |
+  <script type="application/ld+json">
+  [
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Marigold", "item": "https://marigold.run" },
+        { "@type": "ListItem", "position": 2, "name": "Pricing",  "item": "https://marigold.run/pricing" }
+      ]
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is the difference between the Human, Developer, and Agentic tiers?",
+          "acceptedAnswer": { "@type": "Answer", "text": "The tiers are priced by usage pattern, not seat count. Human covers interactive use where a person is driving each request. Developer covers automation and pipelines where a human initiates runs but does not sit in the loop. Agentic covers production systems running continuously without human initiation, where flat-rate pricing cannot be sustained and dedicated infrastructure is required." }
+        },
+        {
+          "@type": "Question",
+          "name": "How does Agentic tier pricing work?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Agentic is provisioned capacity, not a flat rate. The monthly minimum is a retainer that reserves dedicated GPU infrastructure for your workloads. Usage scales with your agents up to an agreed ceiling. Capacity is reserved exclusively for your account; your agents are never queued behind other customers. Accounts that consistently use significantly below their provisioned capacity are moved to the Developer tier." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does Marigold train on my data?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Inference requests are not retained for training, fine-tuning, or any other purpose. Outputs are stored briefly for retrieval and then deleted. Agentic tier accounts can obtain a GDPR data processing agreement." }
+        },
+        {
+          "@type": "Question",
+          "name": "What models does Marigold support?",
+          "acceptedAnswer": { "@type": "Answer", "text": "The hosted registry includes Qwen2.5 instruct variants (1.5B, 7B, 14B), Mistral 7B Instruct, PaliGemma 3B for image-to-text, CLIP for image and text embedding, the facebook/mms-tts family for text-to-speech in English, Welsh, French, German, Spanish, Finnish, and Dutch, plus depth estimation and segmentation models." }
+        },
+        {
+          "@type": "Question",
+          "name": "Is there a free tier?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Guest access requires no account. Rate limits apply per IP across text-embedding and instruct model types. Paid plans lift rate limits and add GPU model access." }
+        },
+        {
+          "@type": "Question",
+          "name": "Where does my data go?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Inference runs on private AWS infrastructure in London (UK) by default. Data does not leave that region. No third-party model provider receives your inputs." }
+        },
+        {
+          "@type": "Question",
+          "name": "What is the OpenAI-compatible endpoint?",
+          "acceptedAnswer": { "@type": "Answer", "text": "POST /v1/chat/completions accepts the same request shape as the OpenAI Chat Completions API. Switch the base URL and API key; the model parameter maps to a Marigold model name. No other code changes are required." }
+        }
+      ]
+    }
+  ]
+  </script>
+---
+
+<main>
+
+<section class="hero">
+  <div class="wrap">
+    <p class="hero-eyebrow">Pricing</p>
+    <h1 class="slogan">Priced by how you use it.</h1>
+    <p class="hero-tagline">Flat rate for human and developer use. Provisioned dedicated capacity for agents.</p>
+    <p class="hero-sub">
+      Flat-rate inference works when usage is human-paced. It does not work
+      for production agent workloads running continuously at scale. Marigold
+      offers both: a predictable monthly amount for interactive and automation
+      use, and reserved dedicated infrastructure for agent workloads that
+      need a capacity guarantee.
+    </p>
+    <div class="hero-actions">
+      <a href="#plans" class="btn-primary">See the plans</a>
+      <a href="#faq" class="btn-secondary">How the tiers work</a>
+    </div>
+  </div>
+</section>
+
+<section class="statement">
+  <div class="wrap">
+    <p>
+      A human cannot send requests faster than they can think.
+      An agent can. <strong>The tier you need depends on
+      who is driving the requests, not how many people are on the account.</strong>
+    </p>
+  </div>
+</section>
+
+<section id="plans">
+  <div class="wrap">
+    <h2 class="section-label">Plans</h2>
+
+    <div class="pricing-grid">
+
+      <div class="plan">
+        <p class="plan-name">Human</p>
+        <p class="plan-price">&pound;19</p>
+        <p class="plan-period">per month</p>
+        <ul class="plan-list">
+          <li>Interactive and IDE use</li>
+          <li>CPU model access</li>
+          <li>Shared infrastructure</li>
+          <li>Full model registry</li>
+          <li>Output storage included</li>
+          <li>Email support</li>
+        </ul>
+        <a href="#waitlist" class="btn-secondary"
+           style="display:block;text-align:center;">Join waitlist</a>
+      </div>
+
+      <div class="plan plan-featured">
+        <p class="plan-name">Developer</p>
+        <p class="plan-price">&pound;79</p>
+        <p class="plan-period">per month</p>
+        <ul class="plan-list">
+          <li>Automation and pipeline use</li>
+          <li>CPU and GPU model access</li>
+          <li>Shared infrastructure</li>
+          <li>Full model registry</li>
+          <li>Eval surface included</li>
+          <li>Output storage included</li>
+          <li>Priority support</li>
+        </ul>
+        <a href="#waitlist" class="btn-primary"
+           style="display:block;text-align:center;">Join waitlist</a>
+      </div>
+
+      <div class="plan">
+        <p class="plan-name">Agentic</p>
+        <p class="plan-price">from &pound;299</p>
+        <p class="plan-period">per month</p>
+        <ul class="plan-list">
+          <li>Production agent workloads</li>
+          <li>Dedicated GPU capacity</li>
+          <li>No shared queue</li>
+          <li>Scales with your workload</li>
+          <li>Custom model onboarding</li>
+          <li>GDPR data processing agreement</li>
+          <li>Dedicated account support</li>
+          <li>SLA available</li>
+        </ul>
+        <a href="mailto:ed@bayis.co.uk" class="btn-secondary"
+           style="display:block;text-align:center;">Talk to us</a>
+      </div>
+
+    </div>
+
+    <div class="callout">
+      <p>
+        Guest access is available with no account required. Rate limits apply.
+        Sufficient to evaluate the API and test model outputs before committing
+        to a plan.
+      </p>
+      <a href="#waitlist" class="btn-primary">Request access</a>
+    </div>
+
+  </div>
+</section>
+
+<section id="compare">
+  <div class="wrap">
+    <h2 class="section-label">How the tiers compare</h2>
+    <p style="font-size:1.15rem;color:var(--ink);margin-bottom:0.5rem;font-family:'Junction','Trebuchet MS','Gill Sans',sans-serif;">
+      Usage pattern determines the right tier
+    </p>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:58ch;line-height:1.65;margin-bottom:2rem;">
+      The distinction is not about the number of people on an account.
+      It is about whether there is a human in the loop deciding when
+      requests are made.
+    </p>
+
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th>Usage pattern</th>
+          <th>Human</th>
+          <th class="col-marigold">Developer</th>
+          <th>Agentic</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>IDE and interactive use</td>
+          <td class="val-yes">Yes</td>
+          <td class="col-marigold val-yes">Yes</td>
+          <td class="val-yes">Yes</td>
+        </tr>
+        <tr>
+          <td>Scripted automation</td>
+          <td class="val-no">Limited</td>
+          <td class="col-marigold val-yes">Yes</td>
+          <td class="val-yes">Yes</td>
+        </tr>
+        <tr>
+          <td>Continuous agent loops</td>
+          <td class="val-no">No</td>
+          <td class="col-marigold val-no">No</td>
+          <td class="val-yes">Yes</td>
+        </tr>
+        <tr>
+          <td>GPU model access</td>
+          <td class="val-no">No</td>
+          <td class="col-marigold val-yes">Yes</td>
+          <td class="val-yes">Yes</td>
+        </tr>
+        <tr>
+          <td>Dedicated capacity</td>
+          <td class="val-no">No</td>
+          <td class="col-marigold val-no">No</td>
+          <td class="val-yes">Yes</td>
+        </tr>
+        <tr>
+          <td>Pricing model</td>
+          <td>Flat monthly</td>
+          <td class="col-marigold">Flat monthly</td>
+          <td>Provisioned</td>
+        </tr>
+        <tr>
+          <td>Data processing agreement</td>
+          <td class="val-no">No</td>
+          <td class="col-marigold val-no">No</td>
+          <td class="val-yes">Yes</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <h2 class="section-label">Frequently asked</h2>
+    <div class="faq-list">
+
+      <div class="faq-item">
+        <p class="faq-q">What is the difference between the three tiers?</p>
+        <p class="faq-a">
+          The tiers are priced by usage pattern, not seat count or key count.
+          Human covers interactive use: IDE assistants, manual scripts, occasional
+          API calls where a person decides when each request happens.
+          Developer covers automation and pipelines: scheduled jobs, eval runs,
+          batch processing initiated by a human but not requiring their presence.
+          Agentic covers production systems running continuously without human
+          initiation -- loops, pipelines, and workloads where the whole point
+          is removing the human from the request path.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <p class="faq-q">How does Agentic tier pricing work?</p>
+        <p class="faq-a">
+          Agentic is provisioned capacity, not a flat rate. The monthly minimum
+          is a retainer that reserves dedicated GPU infrastructure for your
+          workloads. Usage scales with your agents up to an agreed ceiling.
+          Your agents are never queued behind other customers' workloads.
+          Accounts that consistently use significantly below their provisioned
+          capacity are moved to the Developer tier -- the reservation only
+          makes sense if the capacity is being used.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <p class="faq-q">Why is there no flat rate for agent workloads?</p>
+        <p class="faq-a">
+          A production agent running continuously can consume GPU capacity
+          worth multiples of any reasonable flat monthly fee within days.
+          Flat-rate pricing for agent workloads either caps the agent
+          (defeating the purpose) or is not sustainable at the infrastructure
+          cost. Provisioned capacity is honest about what it costs to run
+          dedicated GPU infrastructure and gives you a guarantee in return.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <p class="faq-q">Does Marigold train on my data?</p>
+        <p class="faq-a">
+          No. Inference requests are not retained for training, fine-tuning,
+          or any other purpose. Outputs are stored briefly for retrieval
+          and then deleted. Agentic tier accounts can obtain a GDPR data
+          processing agreement that sets this out contractually.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <p class="faq-q">Where does my data go?</p>
+        <p class="faq-a">
+          Inference runs on private AWS infrastructure in London (UK) by
+          default. Data does not leave that region. No third-party model
+          provider receives your inputs. Output references are purged after
+          a configurable retention window.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <p class="faq-q">What is the OpenAI-compatible endpoint?</p>
+        <p class="faq-a">
+          <code>POST /v1/chat/completions</code> accepts the same request
+          shape as the OpenAI Chat Completions API. Switch the base URL
+          and API key; the <code>model</code> parameter maps to a Marigold
+          model name. The <a href="/developers.html">developer page</a>
+          has a before-and-after example.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <p class="faq-q">What is the difference between Marigold and self-hosting a model directly?</p>
+        <p class="faq-a">
+          Self-hosting requires provisioning compute, managing model weights,
+          implementing an inference API, and maintaining all of it. Marigold
+          provides the typed async API, weight caching, and an eval surface
+          as a managed layer on private AWS infrastructure. You control the
+          deployment region and the model selection.
+        </p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="tagline-break" id="waitlist">
+  <div class="wrap">
+    <h2 class="slogan">Know what inference costs before you build.</h2>
+    <p>Human and Developer plans are in limited release. For Agentic capacity, get in touch directly.</p>
+    {% include waitlist_form.html source="pricing" subtext="No spam. One email when your tier opens." %}
+  </div>
+</section>
+
+</main>

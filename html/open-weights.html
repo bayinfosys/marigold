@@ -1,0 +1,211 @@
+---
+layout: default
+title: "Qwen API, Mistral API, HuggingFace Model Hosting -- Marigold"
+description: "Hosted API access to Qwen2.5, Mistral 7B, PaliGemma, MMS-TTS, and other open-weight HuggingFace models. Private inference, flat monthly pricing, UK and EU data residency."
+canonical: "https://marigold.run/open-weights.html"
+og_title: "Qwen API, Mistral API, Open-Weight Model Hosting -- Marigold"
+og_description: "Hosted API access to Qwen2.5, Mistral, PaliGemma, and MMS-TTS. Private AWS inference, flat monthly rate."
+nav_links:
+  - text: Pricing
+    href: /pricing.html
+  - text: Developers
+    href: /developers.html
+  - text: Join waitlist
+    href: "#waitlist"
+    cta: true
+schema: |
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Marigold -- Open-Weight Model API",
+    "url": "https://marigold.run/open-weights",
+    "description": "Hosted API access to Qwen2.5, Mistral 7B, PaliGemma, CLIP, and MMS-TTS open-weight models. Private AWS infrastructure, flat monthly pricing.",
+    "applicationCategory": "DeveloperApplication",
+    "provider": {
+      "@type": "Organization",
+      "name": "Bay Information Systems",
+      "url": "https://www.bayis.co.uk"
+    },
+    "breadcrumb": {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Marigold",            "item": "https://marigold.run" },
+        { "@type": "ListItem", "position": 2, "name": "Open-weight models",  "item": "https://marigold.run/open-weights" }
+      ]
+    }
+  }
+  </script>
+---
+
+<main>
+
+<section class="hero">
+  <div class="wrap">
+    <p class="hero-eyebrow">Open-weight models</p>
+    <h1 class="slogan">Qwen. Mistral. MMS-TTS. Hosted.</h1>
+    <p class="hero-tagline">Open-weight HuggingFace models via a typed async API. Ready on demand, flat monthly pricing.</p>
+    <p class="hero-sub">
+      The hosted model registry covers instruct, embedding, text-to-speech,
+      image-to-text, depth estimation, segmentation, and eval model types.
+      One API, one auth token, no per-token billing regardless of how many
+      times you call any model.
+    </p>
+    <div class="hero-actions">
+      <a href="#registry" class="btn-primary">See the registry</a>
+      <a href="/pricing.html" class="btn-secondary">View pricing</a>
+    </div>
+  </div>
+</section>
+
+<section class="usecases" id="registry">
+  <div class="wrap">
+    <h2 class="section-label">Hosted model registry</h2>
+    <div class="usecase-grid">
+
+      <div class="usecase-card">
+        <h4>Instruct (text generation)</h4>
+        <p>Instruction-following and chat completion. OpenAI-compatible endpoint
+           available. Qwen2.5 covers 1.5B, 7B, and 14B parameter variants.</p>
+        <div class="usecase-tags">
+          <span class="tag">qwen/qwen2.5-1.5b-instruct</span>
+          <span class="tag">qwen/qwen2.5-7b-instruct</span>
+          <span class="tag">qwen/qwen2.5-14b-instruct</span>
+          <span class="tag">mistralai/mistral-7b-instruct-v0.3</span>
+        </div>
+      </div>
+
+      <div class="usecase-card">
+        <h4>Text and image embedding</h4>
+        <p>Dense vector representations for search, clustering, and retrieval.
+           CLIP serves both image and text embedding, enabling cross-modal
+           similarity in a single pipeline.</p>
+        <div class="usecase-tags">
+          <span class="tag">sentence-transformers/all-MiniLM-L6-v2</span>
+          <span class="tag">openai/clip-vit-large-patch14</span>
+        </div>
+      </div>
+
+      <div class="usecase-card">
+        <h4>Image to text</h4>
+        <p>Vision-language model for captioning, structured description,
+           and visual question answering. Accepts image references
+           as input.</p>
+        <div class="usecase-tags">
+          <span class="tag">google/paligemma-3b-pt-224</span>
+        </div>
+      </div>
+
+      <div class="usecase-card">
+        <h4>Text to speech</h4>
+        <p>Language-specific synthesis via the Facebook MMS family.
+           Welsh (mms-tts-cym) is a specific capability absent from most
+           commercial TTS services.</p>
+        <div class="usecase-tags">
+          <span class="tag">facebook/mms-tts-eng</span>
+          <span class="tag">facebook/mms-tts-cym</span>
+          <span class="tag">facebook/mms-tts-fra</span>
+          <span class="tag">facebook/mms-tts-deu</span>
+          <span class="tag">facebook/mms-tts-spa</span>
+          <span class="tag">facebook/mms-tts-fin</span>
+          <span class="tag">facebook/mms-tts-nld</span>
+        </div>
+      </div>
+
+      <div class="usecase-card">
+        <h4>Depth and segmentation</h4>
+        <p>Monocular depth estimation and image segmentation for vision
+           pipelines. Used in change detection, conformance checking,
+           and spatial analysis.</p>
+        <div class="usecase-tags">
+          <span class="tag">depth-estimation</span>
+          <span class="tag">img2mask</span>
+        </div>
+      </div>
+
+      <div class="usecase-card">
+        <h4>Evaluation models</h4>
+        <p>Text, image, and cross-modal scoring for pipeline quality assessment.
+           Run any model against a labelled dataset using the same API.</p>
+        <div class="usecase-tags">
+          <span class="tag">text-eval</span>
+          <span class="tag">image-eval</span>
+          <span class="tag">image-text-eval</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section id="call">
+  <div class="wrap">
+    <h2 class="section-label">Calling a model</h2>
+    <p style="font-size:1.15rem;color:var(--ink);margin-bottom:0.5rem;font-family:'Junction','Trebuchet MS','Gill Sans',sans-serif;">
+      The same API across all model types
+    </p>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:58ch;line-height:1.65;margin-bottom:2rem;">
+      Submit via the OpenAI-compatible endpoint for instruct models, or via the
+      native async API for any model type. Binary outputs are returned as
+      storage references, not inlined in the response.
+    </p>
+
+    <p class="code-label">Qwen instruct via OpenAI-compatible endpoint</p>
+    <pre><code>curl https://api.marigold.run/v1/chat/completions \
+  -H "Authorization: Bearer your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen/qwen2.5-7b-instruct",
+    "messages": [{"role": "user", "content": "Translate to Welsh: Good morning."}]
+  }'</code></pre>
+
+    <p class="code-label">TTS via native async API</p>
+    <pre><code>import requests, time
+
+API = "https://api.marigold.run"
+KEY = {"Authorization": "Bearer your-api-key"}
+
+job = requests.post(f"{API}/infer", headers=KEY, json={
+    "model_type": "tts",
+    "model_name": "facebook/mms-tts-cym",
+    "text": "Bore da, sut ydych chi?"
+}).json()
+
+while True:
+    r = requests.get(f"{API}/infer/{job['job_id']}", headers=KEY).json()
+    if r["status"] == "complete":
+        print(r["output"])   # storage reference to audio file
+        break
+    time.sleep(0.5)</code></pre>
+  </div>
+</section>
+
+<section id="custom">
+  <div class="wrap">
+    <h2 class="section-label">Custom models</h2>
+    <p style="font-size:1.15rem;color:var(--ink);margin-bottom:0.5rem;font-family:'Junction','Trebuchet MS','Gill Sans',sans-serif;">
+      Request a model not in the registry
+    </p>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:58ch;line-height:1.65;margin-bottom:1.5rem;">
+      Any HuggingFace model compatible with the standard handler types can be
+      onboarded. Custom model onboarding is available on the Pro tier.
+    </p>
+    <div class="callout">
+      <p>
+        Send the HuggingFace model ID and intended use case. If it fits an existing
+        handler type, onboarding is typically a day's work.
+      </p>
+      <a href="mailto:ed@bayis.co.uk" class="btn-secondary">Request a model</a>
+    </div>
+  </div>
+</section>
+
+<section class="tagline-break" id="waitlist">
+  <div class="wrap">
+    <h2 class="slogan">Open weights. Private infrastructure.</h2>
+    <p>Leave your email to be notified when access opens. Mention specific models and we will confirm registry availability.</p>
+    {% include waitlist_form.html source="open-weights" %}
+  </div>
+</section>
+
+</main>

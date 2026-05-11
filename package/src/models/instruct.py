@@ -102,6 +102,9 @@ class InstructModel(BaseModelHandler):
         if request.top_p is not None:
             gen_kwargs["do_sample"] = True
             gen_kwargs["top_p"] = request.top_p
+        if request.min_p is not None:
+            gen_kwargs["do_sample"] = True
+            gen_kwargs["min_p"] = request.min_p
         if request.repetition_penalty is not None:
             gen_kwargs["repetition_penalty"] = request.repetition_penalty
         if request.no_repeat_ngram_size is not None:

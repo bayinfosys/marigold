@@ -1,0 +1,359 @@
+---
+layout: default
+title: "Cursor Custom Model, Continue.dev Setup, Aider Config -- Marigold"
+description: "Set up Marigold as a custom OpenAI-compatible endpoint in Cursor, Continue, Cline, and Aider. Step-by-step configuration for each tool."
+canonical: "https://marigold.run/ide-setup.html"
+og_title: "Use Marigold in Cursor, Continue, Cline, and Aider"
+og_description: "Configure Marigold as a custom OpenAI-compatible endpoint in your coding tools. Private open-weight models in your IDE."
+nav_links:
+  - text: Pricing
+    href: /pricing.html
+  - text: Developers
+    href: /developers.html
+  - text: Join waitlist
+    href: "#waitlist"
+    cta: true
+schema: |
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "HowTo",
+    "name": "Set up Marigold in your IDE",
+    "description": "Configure Marigold as a custom OpenAI-compatible endpoint in Cursor, Continue, Cline, and Aider.",
+    "url": "https://marigold.run/ide-setup",
+    "step": [
+      {
+        "@type": "HowToStep",
+        "name": "Cursor",
+        "text": "In Cursor settings, add a new model with API type OpenAI-compatible, set the base URL to https://api.marigold.run/v1, and add your Marigold API key."
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Continue",
+        "text": "In ~/.continue/config.json, add a model entry with provider openai, set apiBase to https://api.marigold.run/v1, and set apiKey to your Marigold key."
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Cline",
+        "text": "In the Cline VS Code extension settings, set API Provider to OpenAI Compatible, Base URL to https://api.marigold.run/v1, and add your Marigold API key."
+      },
+      {
+        "@type": "HowToStep",
+        "name": "Aider",
+        "text": "Run aider with --openai-api-base https://api.marigold.run/v1 and --openai-api-key set to your Marigold key, or set these in .aider.conf.yml."
+      }
+    ],
+    "breadcrumb": {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Marigold",  "item": "https://marigold.run" },
+        { "@type": "ListItem", "position": 2, "name": "IDE setup", "item": "https://marigold.run/ide-setup" }
+      ]
+    }
+  }
+  </script>
+---
+
+<main>
+
+<section class="hero">
+  <div class="wrap">
+    <p class="hero-eyebrow">IDE setup</p>
+    <h1 class="slogan">Private open-weight models in your editor.</h1>
+    <p class="hero-tagline">Cursor, Continue, Cline, Aider. All accept a custom OpenAI-compatible base URL.</p>
+    <p class="hero-sub">
+      Marigold exposes a <code>POST /v1/chat/completions</code> endpoint that
+      any tool built on the OpenAI SDK accepts. Set the base URL, add your API key,
+      choose a model. Your code and prompts go to private AWS infrastructure in
+      London, not to OpenAI.
+    </p>
+    <div class="hero-actions">
+      <a href="#models-ref" class="btn-primary">See the models</a>
+      <a href="/pricing.html" class="btn-secondary">View pricing</a>
+    </div>
+  </div>
+</section>
+
+<section class="statement">
+  <div class="wrap">
+    <p>
+      Two values to set in every tool below: base URL
+      <code>https://api.marigold.run/v1</code> and your Marigold API key.
+      <strong>The model name is the only thing that varies between tools.</strong>
+    </p>
+  </div>
+</section>
+
+<section id="models-ref">
+  <div class="wrap">
+    <h2 class="section-label">Model names for IDE use</h2>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:58ch;line-height:1.65;margin-bottom:1.5rem;">
+      Use these exact strings in the model field of each tool's configuration.
+      For general coding assistance, the 7B instruct model is a reasonable starting point.
+    </p>
+
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>qwen/qwen2.5-7b-instruct</code></td>
+          <td>General purpose. Good balance of speed and capability.</td>
+        </tr>
+        <tr>
+          <td><code>qwen/qwen2.5-14b-instruct</code></td>
+          <td>Stronger reasoning.</td>
+        </tr>
+        <tr>
+          <td><code>qwen/qwen2.5-1.5b-instruct</code></td>
+          <td>Fast and lightweight. Suited to autocomplete-style tasks.</td>
+        </tr>
+        <tr>
+          <td><code>mistralai/mistral-7b-instruct-v0.3</code></td>
+          <td>Alternative instruct model.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="cursor">
+  <div class="wrap">
+    <h2 class="section-label">Cursor</h2>
+    <p style="font-size:1.15rem;color:var(--ink);margin-bottom:0.5rem;font-family:'Junction','Trebuchet MS','Gill Sans',sans-serif;">
+      Add Marigold as a custom model
+    </p>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:58ch;line-height:1.65;margin-bottom:1.5rem;">
+      Cursor supports any OpenAI-compatible provider via its model settings.
+      Open <strong>Settings &rarr; Models</strong> and add a new model entry.
+    </p>
+
+    <p class="code-label">Settings &rarr; Models &rarr; Add model</p>
+    <pre><code>API Provider:  OpenAI-compatible
+Base URL:      https://api.marigold.run/v1
+API Key:       your-marigold-api-key
+Model name:    qwen/qwen2.5-7b-instruct</code></pre>
+
+    <p style="font-size:0.875rem;color:var(--ink-mid);line-height:1.65;max-width:58ch;margin-bottom:1.5rem;">
+      Alternatively, set these in your Cursor
+      <code>~/.cursor/settings.json</code> and restart.
+    </p>
+
+    <p class="code-label">~/.cursor/settings.json</p>
+    <pre><code>{
+  "openai.apiKey":  "your-marigold-api-key",
+  "openai.baseURL": "https://api.marigold.run/v1"
+}</code></pre>
+  </div>
+</section>
+
+<section id="continue">
+  <div class="wrap">
+    <h2 class="section-label">Continue</h2>
+    <p style="font-size:1.15rem;color:var(--ink);margin-bottom:0.5rem;font-family:'Junction','Trebuchet MS','Gill Sans',sans-serif;">
+      Add Marigold to config.json
+    </p>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:58ch;line-height:1.65;margin-bottom:1.5rem;">
+      Continue stores its model configuration in
+      <code>~/.continue/config.json</code> on macOS and Linux,
+      or <code>%USERPROFILE%\.continue\config.json</code> on Windows.
+      Add one or more entries to the <code>models</code> array.
+    </p>
+
+    <p class="code-label">~/.continue/config.json</p>
+    <pre><code>{
+  "models": [
+    {
+      "title":    "Qwen 7B (Marigold)",
+      "provider": "openai",
+      "model":    "qwen/qwen2.5-7b-instruct",
+      "apiBase":  "https://api.marigold.run/v1",
+      "apiKey":   "your-marigold-api-key"
+    },
+    {
+      "title":    "Qwen 14B (Marigold)",
+      "provider": "openai",
+      "model":    "qwen/qwen2.5-14b-instruct",
+      "apiBase":  "https://api.marigold.run/v1",
+      "apiKey":   "your-marigold-api-key"
+    }
+  ]
+}</code></pre>
+
+    <p style="font-size:0.875rem;color:var(--ink-mid);line-height:1.65;max-width:58ch;">
+      Multiple models can coexist in the array. Continue lets you switch between
+      them from the chat panel. The <code>title</code> field is what appears in
+      the dropdown.
+    </p>
+  </div>
+</section>
+
+<section id="cline">
+  <div class="wrap">
+    <h2 class="section-label">Cline</h2>
+    <p style="font-size:1.15rem;color:var(--ink);margin-bottom:0.5rem;font-family:'Junction','Trebuchet MS','Gill Sans',sans-serif;">
+      Set the API provider to OpenAI Compatible
+    </p>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:58ch;line-height:1.65;margin-bottom:1.5rem;">
+      In VS Code, open the Cline extension settings panel. Set the API provider
+      to <strong>OpenAI Compatible</strong> and fill in the three fields below.
+    </p>
+
+    <p class="code-label">Cline extension settings</p>
+    <pre><code>API Provider:  OpenAI Compatible
+Base URL:      https://api.marigold.run/v1
+API Key:       your-marigold-api-key
+Model ID:      qwen/qwen2.5-7b-instruct</code></pre>
+
+    <p style="font-size:0.875rem;color:var(--ink-mid);line-height:1.65;max-width:58ch;">
+      The model ID field accepts the full Marigold model name including the
+      namespace prefix. Cline stores this in VS Code user or workspace settings.
+    </p>
+  </div>
+</section>
+
+<section id="aider">
+  <div class="wrap">
+    <h2 class="section-label">Aider</h2>
+    <p style="font-size:1.15rem;color:var(--ink);margin-bottom:0.5rem;font-family:'Junction','Trebuchet MS','Gill Sans',sans-serif;">
+      Pass the base URL and key on the command line or in config
+    </p>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:58ch;line-height:1.65;margin-bottom:1.5rem;">
+      Aider requires the <code>openai/</code> prefix on the model name when using
+      an OpenAI-compatible provider. Note this is Aider's own provider prefix,
+      not the model namespace -- use <code>openai/qwen2.5-7b-instruct</code>,
+      not <code>qwen/qwen2.5-7b-instruct</code>.
+    </p>
+
+    <p class="code-label">Command line</p>
+    <pre><code>aider \
+  --openai-api-base https://api.marigold.run/v1 \
+  --openai-api-key  your-marigold-api-key \
+  --model           openai/qwen2.5-7b-instruct</code></pre>
+
+    <p class="code-label">.aider.conf.yml (project root or home directory)</p>
+    <pre><code>openai-api-base: https://api.marigold.run/v1
+openai-api-key:  your-marigold-api-key
+model:           openai/qwen2.5-7b-instruct</code></pre>
+
+    <p class="code-label">Environment variables</p>
+    <pre><code>export OPENAI_API_BASE=https://api.marigold.run/v1
+export OPENAI_API_KEY=your-marigold-api-key
+
+aider --model openai/qwen2.5-7b-instruct</code></pre>
+  </div>
+</section>
+
+<section id="sdk">
+  <div class="wrap">
+    <h2 class="section-label">Direct SDK use</h2>
+    <p style="font-size:1.15rem;color:var(--ink);margin-bottom:0.5rem;font-family:'Junction','Trebuchet MS','Gill Sans',sans-serif;">
+      Building your own tool or script
+    </p>
+    <p style="font-size:0.9rem;color:var(--ink-mid);max-width:58ch;line-height:1.65;margin-bottom:1.5rem;">
+      Any SDK or library that wraps the OpenAI API accepts a custom base URL.
+      Pass <code>base_url</code> (or the equivalent parameter) and your
+      Marigold key. The model name is the full registry name with namespace prefix.
+    </p>
+
+    <p class="code-label">Python -- openai SDK</p>
+    <pre><code>from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://api.marigold.run/v1",
+    api_key="your-marigold-api-key"
+)
+
+response = client.chat.completions.create(
+    model="qwen/qwen2.5-7b-instruct",
+    messages=[{"role": "user", "content": "..."}]
+)</code></pre>
+
+    <p class="code-label">Python -- LangChain</p>
+    <pre><code>from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(
+    model="qwen/qwen2.5-7b-instruct",
+    openai_api_base="https://api.marigold.run/v1",
+    openai_api_key="your-marigold-api-key"
+)</code></pre>
+
+    <p class="code-label">TypeScript / Node</p>
+    <pre><code>import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "https://api.marigold.run/v1",
+  apiKey:  "your-marigold-api-key",
+});
+
+const response = await client.chat.completions.create({
+  model:    "qwen/qwen2.5-7b-instruct",
+  messages: [{ role: "user", content: "..." }],
+});</code></pre>
+  </div>
+</section>
+
+<section id="troubleshooting">
+  <div class="wrap">
+    <h2 class="section-label">Common issues</h2>
+    <div class="faq-list">
+
+      <div class="faq-item">
+        <p class="faq-q">The tool says the model name is invalid</p>
+        <p class="faq-a">
+          The model name must include the namespace prefix exactly as listed:
+          <code>qwen/qwen2.5-7b-instruct</code>, not <code>qwen2.5-7b-instruct</code>.
+          For Aider specifically, substitute the <code>qwen/</code> namespace prefix
+          with <code>openai/</code> -- this is Aider's provider prefix and is
+          required regardless of which model you are using.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <p class="faq-q">I get a 401 Unauthorized response</p>
+        <p class="faq-a">
+          The API key must be sent as a Bearer token in the
+          <code>Authorization</code> header. Most tools handle this automatically
+          when you set the API key field. Verify the key has not been truncated
+          by your tool's settings panel, and that you are pointing at the correct
+          base URL.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <p class="faq-q">The first response takes a long time</p>
+        <p class="faq-a">
+          The first request after a period of inactivity may take a few seconds
+          longer while the model container initialises. Subsequent requests within
+          the same session are faster. This applies to the Developer tier; Team
+          and Pro tiers have higher baseline capacity.
+        </p>
+      </div>
+
+      <div class="faq-item">
+        <p class="faq-q">My tool does not have a base URL field</p>
+        <p class="faq-a">
+          Set the <code>OPENAI_API_BASE</code> environment variable to
+          <code>https://api.marigold.run/v1</code> before launching the tool.
+          Most tools that use the OpenAI SDK read this variable automatically.
+          Also set <code>OPENAI_API_KEY</code> to your Marigold key.
+        </p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="tagline-break" id="waitlist">
+  <div class="wrap">
+    <h2 class="slogan">Private models in your editor, done properly.</h2>
+    <p>Paid plans are in limited release. Leave your email and we will reach out when developer access opens.</p>
+    {% include waitlist_form.html source="ide-setup" %}
+  </div>
+</section>
+
+</main>

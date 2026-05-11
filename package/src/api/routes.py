@@ -40,7 +40,7 @@ from .models import (
 )
 from .workflow.routes import router as workflow_router
 
-apikey_auth = APIKeyAuthorizer(authorizer_name="${apikey_authorizer_name}")
+apikey_auth = APIKeyAuthorizer(authorizer_name="${apikey_authorizer_name}", header_names=["x-api-key"])
 
 # cognito_auth = CognitoAuthorizer(
 #     authorizer_name="${cognito_authorizer_name}"
@@ -359,4 +359,29 @@ async def list_api_keys(user=Security(cognito_auth)):
     tags=["keys"],
 )
 async def delete_api_key(user=Security(cognito_auth)):
+    return
+
+
+
+#
+# landing page waitlist
+#
+@router.post(
+    "/users/waitlist",
+    description="join the waitlist for a feature",
+    summary="waitlist",
+    aws_dynamodb_table_name="${users_table_name}",
+    aws_dynamodb_pk_pattern="WAITLIST",
+    aws_dynamodb_sk_pattern="EMAIL#$body.email#SOURCE#$body.source",
+    aws_dynamodb_fields="""
+    "email": { "S": "$body.email" },
+    "source": { "S": "$body.source" },
+    "created_at": { "S": "$context.requestTimeEpoch" },
+    "source_ip": { "S": "$context.identity.sourceIp" },
+    "user_agent": { "S": "$context.identity.userAgent" }
+    """,
+    aws_iam_arn="${users_table_iam_role_arn}",
+    tags=["users"]
+)
+async def join_waitlist():
     return

@@ -1,0 +1,163 @@
+---
+layout: default
+title: "Model Registry -- Marigold | Qwen, Mistral, DeepSeek, CLIP, MMS-TTS API"
+description: "Full registry of open-weight models available via the Marigold API. Qwen, Mistral, DeepSeek, PaliGemma, CLIP, MMS-TTS and more. Private AWS inference, flat monthly pricing, UK and EU data residency."
+canonical: "https://marigold.run/models.html"
+og_title: "Marigold Model Registry -- Qwen, Mistral, DeepSeek API"
+og_description: "Open-weight HuggingFace models available via the Marigold API. Instruct, embedding, TTS, image-to-text, depth, segmentation, and eval types. Private AWS, flat monthly pricing."
+nav_links:
+  - text: Pricing
+    href: /pricing.html
+  - text: Developers
+    href: /developers.html
+  - text: Join waitlist
+    href: "#waitlist"
+    cta: true
+schema: |
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    "name": "Marigold Model Registry",
+    "url": "https://marigold.run/models",
+    "description": "Open-weight HuggingFace models available via the Marigold inference API.",
+    "provider": {
+      "@type": "Organization",
+      "name": "Bay Information Systems",
+      "url": "https://www.bayis.co.uk"
+    },
+    "breadcrumb": {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Marigold",        "item": "https://marigold.run" },
+        { "@type": "ListItem", "position": 2, "name": "Model registry",  "item": "https://marigold.run/models" }
+      ]
+    }
+  }
+  </script>
+---
+
+<section class="hero">
+  <div class="wrap">
+    <p class="hero-eyebrow">Model registry</p>
+    <h1 class="slogan">Every model. One API.</h1>
+    <p class="hero-tagline">Open-weight HuggingFace models on private AWS. One key, one flat monthly rate.</p>
+    <p class="hero-sub">
+      The Marigold model registry covers instruct, embedding, text-to-speech,
+      image-to-text, depth estimation, segmentation, and eval model types.
+      All accessible through the same typed async API, with no per-token billing
+      and no data leaving your chosen AWS region.
+    </p>
+    <div class="hero-actions">
+      <a href="#instruct" class="btn-primary">Browse models</a>
+      <a href="/developers.html" class="btn-secondary">API documentation</a>
+    </div>
+  </div>
+</section>
+
+{% if site.data.models %}
+
+{% assign model_types = site.data.models | map: "type" | uniq | sort %}
+
+{% for type in model_types %}
+{% assign type_models = site.data.models | where: "type", type %}
+
+<section id="{{ type }}">
+  <div class="wrap">
+    <p class="section-label">{{ type | replace: "-", " " }}</p>
+    <div class="model-list">
+      {% for model in type_models %}
+      <div class="model-row" id="{{ model.name | slugify }}">
+        <div class="model-meta">
+          <h3 class="model-name">{{ model.name }}</h3>
+          <p class="model-desc">{{ model.description }}</p>
+          <div class="usecase-tags" style="margin-top:0.75rem;">
+            <span class="tag">{{ model.input }} &rarr; {{ model.output }}</span>
+            {% if model.licence and model.licence != "" %}
+            <span class="tag">{{ model.licence }}</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="model-example">
+          <p class="code-label">
+            {% if type == "instruct" %}
+              OpenAI-compatible endpoint
+            {% else %}
+              Native async API
+            {% endif %}
+          </p>
+          {% if type == "instruct" %}
+          <pre><code>curl https://api.marigold.run/v1/chat/completions \
+  -H "Authorization: Bearer your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "{{ model.name }}",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'</code></pre>
+          {% elsif type == "tts" %}
+          <pre><code>curl https://api.marigold.run/infer \
+  -H "Authorization: Bearer your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_type": "tts",
+    "model_name": "{{ model.name }}",
+    "text": "Hello world",
+    "language_code": "{{ model.langcode | default: "en-gb" }}"
+  }'</code></pre>
+          {% elsif type == "text-embedding" %}
+          <pre><code>curl https://api.marigold.run/infer \
+  -H "Authorization: Bearer your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_type": "text-embedding",
+    "model_name": "{{ model.name }}",
+    "input": "The text to embed"
+  }'</code></pre>
+          {% elsif type == "image-embedding" %}
+          <pre><code>curl https://api.marigold.run/infer \
+  -H "Authorization: Bearer your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_type": "image-embedding",
+    "model_name": "{{ model.name }}",
+    "input": "<base64-encoded-image>"
+  }'</code></pre>
+          {% else %}
+          <pre><code>curl https://api.marigold.run/infer \
+  -H "Authorization: Bearer your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_type": "{{ type }}",
+    "model_name": "{{ model.name }}",
+    "input": "..."
+  }'</code></pre>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+{% endfor %}
+
+{% else %}
+
+<section>
+  <div class="wrap">
+    <p style="color:var(--ink-muted);font-size:0.9rem;">
+      Model data not yet generated. Run <code>make assets/generate</code> to
+      populate <code>html/_data/models.json</code>.
+    </p>
+  </div>
+</section>
+
+{% endif %}
+
+<section class="tagline-break" id="waitlist">
+  <div class="wrap">
+    <h2 class="slogan">Open weights. Private infrastructure.</h2>
+    <p>Request a specific model not listed here. Custom onboarding is available on the Pro tier.</p>
+    {% include waitlist_form.html source="models" %}
+  </div>
+</section>

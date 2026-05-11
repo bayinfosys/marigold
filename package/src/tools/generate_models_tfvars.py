@@ -117,6 +117,7 @@ class ModelDefinition(BaseModel):
     log_level: str = "INFO"
     extra_env: Dict[str, str] = Field(default_factory=dict)
     parameters: ModelParameters = Field(default_factory=ModelParameters)
+    description: str = Field("", description="one or two sentence human description for the public catalogue")
 
     @field_validator("log_level")
     @classmethod
@@ -392,11 +393,33 @@ def render_public_json(config: ModelsConfig, token: str = "") -> str:
     return json.dumps(result, indent=2) + "\n"
 
 
+def render_jekyll_json(config: ModelsConfig) -> str:
+    """Write a flat array for Jekyll _data consumption.
+
+    Array of model objects, each with all public fields.
+    No infrastructure fields. No MD5 keys.
+    Ordered by type then name for stable diffs.
+    """
+    models = sorted(config.models, key=lambda m: (m.type.value, m.name))
+    result = []
+    for model in models:
+        result.append({
+            "name":        model.name,
+            "type":        model.type.value,
+            "provider":    model.provider.value,
+            "input":       model.input,
+            "output":      model.output,
+            "description": model.description,
+            "licence":     model.parameters.licence if hasattr(model.parameters, "licence") else "",
+        })
+    return json.dumps(result, indent=2) + "\n"
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
-COMMANDS = ("tfvars", "json", "public", "validate")
+COMMANDS = ("tfvars", "json", "public", "jekyll-data", "validate")
 
 
 def usage():
@@ -438,19 +461,22 @@ def main():
     if command == "validate":
         print("ok: %i models" % len(config.models))
         sys.exit(0)
-
-    if command == "tfvars":
+    elif command == "tfvars":
         sys.stdout.write(render_tfvars(config))
         sys.exit(0)
-
-    if command == "json":
+    elif command == "json":
         sys.stdout.write(render_internal_json(config))
         sys.exit(0)
-
-    if command == "public":
+    elif command == "jekyll-data":
+        sys.stdout.write(render_jekyll_json(config))
+        sys.exit(0)
+    elif command == "public":
         token = os.environ.get("HF_TOKEN", "")
         sys.stdout.write(render_public_json(config, token=token))
         sys.exit(0)
+    else:
+        print("unknown command")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

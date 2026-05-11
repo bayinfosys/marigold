@@ -295,6 +295,10 @@ class SQSWorker:
                 message_id,
                 sqs_msg.model_type,
             )
+            _write_results(sqs_msg, "error", {
+                "error": "unknown model_type",
+                "model_type": sqs_msg.model_type,
+            })
             return
 
         request = spec.request_model.model_validate(
@@ -310,6 +314,8 @@ class SQSWorker:
             message_id,
             json.dumps(request.model_dump()),
         )
+
+        _write_results(sqs_msg, "submitted")
 
         try:
             result = self.model.process(user_id, message_id, request)

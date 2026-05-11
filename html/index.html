@@ -1,35 +1,37 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Marigold hosts open-weight HuggingFace models on private AWS infrastructure. Typed async inference API, declarative YAML workflow engine, and an eval surface for measuring output quality against your own data.">
-  <meta name="author" content="Bay Information Systems">
-  <link rel="canonical" href="https://marigold.run/">
-  <link rel="icon" type="image/png" href="/favicon.png">
-
-  <!-- Open Graph -->
-  <meta property="og:type"        content="website">
-  <meta property="og:url"         content="https://marigold.run/">
-  <meta property="og:title"       content="Marigold -- Private Model Hosting and Inference Pipelines">
-  <meta property="og:description" content="Self-hosted open-weight models on your own AWS infrastructure. Typed inference API, declarative workflow engine, and evals built from your production data.">
-  <meta property="og:site_name"   content="Marigold">
-
-  <title>Marigold -- Private HuggingFace Model Hosting and Inference Pipelines</title>
-
-  <!-- JSON-LD -->
+---
+layout: default
+title: "Marigold -- Private HuggingFace Model Hosting and Inference Pipelines"
+description: "Marigold hosts open-weight HuggingFace models on private AWS in London. Typed async inference API, declarative YAML workflow engine, and an eval surface for measuring output quality against your production data."
+canonical: "https://marigold.run/"
+og_title: "Marigold -- Private Model Hosting and Inference Pipelines"
+og_description: "Open-weight models on private AWS in London. Typed inference API, declarative workflow engine, and evals built from your production data."
+nav_links:
+  - text: Pricing
+    href: /pricing.html
+  - text: Developers
+    href: /developers.html
+  - text: Join waitlist
+    href: "#waitlist"
+    cta: true
+schema: |
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "Marigold",
     "url": "https://marigold.run/",
-    "description": "Private hosting for open-weight HuggingFace models. Typed async inference API, declarative YAML workflow engine, and an eval surface for measuring output quality.",
+    "description": "Private hosting for open-weight HuggingFace models on AWS in London. Typed async inference API, declarative YAML workflow engine, and an eval surface for measuring output quality.",
     "applicationCategory": "DeveloperApplication",
     "operatingSystem": "AWS",
     "offers": {
       "@type": "Offer",
-      "description": "Available as a managed deployment or a consultancy engagement."
+      "priceSpecification": {
+        "@type": "PriceSpecification",
+        "price": "19",
+        "priceCurrency": "GBP",
+        "billingPeriod": "P1M"
+      },
+      "description": "From £19/month. Flat rate, no token billing."
     },
     "provider": {
       "@type": "Organization",
@@ -38,22 +40,7 @@
     }
   }
   </script>
-
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/junction@5/index.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Knewave&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css" title="Default">
-  <link rel="sitemap" type="application/xml" href="/sitemap.xml">
-</head>
-<body>
-
-<nav>
-  <div class="wrap">
-    <a href="/" class="wordmark">Marigold</a>
-    <a href="#contact" class="cta-sm">Get in touch</a>
-  </div>
-</nav>
+---
 
 <section class="hero">
   <div class="wrap">
@@ -61,40 +48,43 @@
     <h1 class="slogan">Self-hosted open-weight inference, done properly.</h1>
     <p class="hero-tagline">Define your task. Build your pipeline. Measure and improve.</p>
     <p class="hero-sub">
-      Marigold hosts open-weight HuggingFace models on private AWS infrastructure
-      and exposes them through a typed async inference API. Build declarative
-      YAML workflows over the model registry, then measure and refine output
-      quality against task specifications built from your own data.
-      Your data never leaves your infrastructure.
+      Most AI inference pipelines are built once per engagement and discarded.
+      Marigold is the layer you bring once and keep: open-weight models on private
+      AWS in London, a typed async inference API, declarative YAML workflows, and
+      an eval surface that sharpens with production use. No request reaches OpenAI,
+      Anthropic, or any other external provider.
+      From <a href="/pricing.html">£19/month</a>, flat rate.
     </p>
     <div class="hero-actions">
       <a href="#usecases" class="btn-primary">See what it runs</a>
-      <a href="#contact" class="btn-secondary">Talk to us</a>
+      <a href="#waitlist" class="btn-secondary">Join the waitlist</a>
     </div>
   </div>
 </section>
 
 <section class="statement">
   <div class="wrap">
-<p>
-  Most AI pipeline infrastructure is built <strong>bespoke, on every
-  engagement, and thrown away.</strong> Marigold is the layer you bring
-  once: privately hosted open-weight models, a declarative workflow engine,
-  and an eval surface that grows with production use.
-</p>
+    <p>
+      Inference runs on private AWS in London. No request leaves UK jurisdiction,
+      no third-party model provider is in the request path, and no inference input
+      is retained for training.
+      <strong>For regulated sectors, that combination resolves the constraint
+      before procurement begins.</strong>
+      <a href="/data-sovereign.html">Architecture and compliance detail &rarr;</a>
+    </p>
   </div>
 </section>
 
 <section class="pillars">
   <div class="wrap">
-<p class="section-label">Hosting. Workflows. Evals.</p>
+    <h2 class="section-label">Hosting. Workflows. Evals.</h2>
     <div class="pillar-grid">
       <div class="pillar">
         <p class="pillar-num">01</p>
         <h3>Private Inference API</h3>
         <p>A unified async API over self-hosted HuggingFace models covering
         text, image, audio, and cross-modal operations. One container image,
-        one EFS weight cache, per-model isolation. The marginal cost of
+        one weight cache, per-model isolation. The marginal cost of
         adding a model falls with each one added.</p>
       </div>
       <div class="pillar">
@@ -119,7 +109,7 @@
 
 <section class="usecases" id="usecases">
   <div class="wrap">
-    <p class="section-label">What runs on it</p>
+    <h2 class="section-label">What runs on it</h2>
     <div class="usecase-grid">
       <div class="usecase-card">
         <h4>Content ingestion and moderation</h4>
@@ -195,7 +185,7 @@
 
 <section class="how">
   <div class="wrap">
-    <p class="section-label">What workflows can do</p>
+    <h2 class="section-label">What workflows can do</h2>
     <div class="how-cols">
       <div>
         <h3>Model types</h3>
@@ -220,32 +210,28 @@
         </ul>
       </div>
     </div>
-<p class="how-note">
-  Workflow execution is built on
-  <a href="https://pypi.org/project/runfox/">runfox</a>
-  and
-  <a href="https://pypi.org/project/json-logic-path/">json-logic-path</a>,
-  open source libraries available on PyPI.
-</p>
-
+    <p class="how-note">
+      Workflow execution is built on
+      <a href="https://pypi.org/project/runfox/">runfox</a>
+      and
+      <a href="https://pypi.org/project/json-logic-path/">json-logic-path</a>,
+      open source libraries available on PyPI.
+    </p>
   </div>
 </section>
 
-<section class="tagline-break" id="contact">
+<section class="tagline-break" id="waitlist">
   <div class="wrap">
     <h2 class="slogan">Production AI pipelines should not be built from scratch each time.</h2>
-    <p>Available as a managed deployment or a consultancy engagement.</p>
-    <a href="mailto:ed@bayis.co.uk" class="btn-primary">Get in touch</a>
+    <p>Paid plans are in limited release. Leave your email and we will reach out when access opens.</p>
+    {% include waitlist_form.html
+       source="index"
+       heading="Join the waitlist"
+       subtext="No spam. One email when your tier opens."
+       placeholder="you@example.com"
+       button="Join waitlist" %}
+    <p style="margin-top:1.5rem;font-size:0.875rem;color:var(--ink-mid);">
+      Questions? <a href="mailto:ed@bayis.co.uk">ed@bayis.co.uk</a>
+    </p>
   </div>
 </section>
-
-<footer>
-  <div class="wrap">
-    <p>Marigold &#8212; Bay Information Systems</p>
-    <p><a href="mailto:ed@bayis.co.uk">ed@bayis.co.uk</a></p>
-  </div>
-</footer>
-
-
-</body>
-</html>

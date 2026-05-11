@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="{{ page.description }}">
+  <meta name="author" content="Bay Information Systems">
+  <link rel="canonical" href="{{ page.canonical }}">
+  <link rel="icon" type="image/png" href="/favicon.png">
+
+  <meta property="og:type"        content="website">
+  <meta property="og:url"         content="{{ page.canonical }}">
+  <meta property="og:title"       content="{{ page.og_title | default: page.title }}">
+  <meta property="og:description" content="{{ page.og_description | default: page.description }}">
+  <meta property="og:site_name"   content="Marigold">
+
+  <title>{{ page.title }}</title>
+
+  {% if page.schema %}{{ page.schema }}{% endif %}
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/junction@5/index.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Knewave&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml">
+</head>
+<body>
+
+{% include nav.html %}
+
+{{ content }}
+
+{% include footer.html %}
+
+<script>
+function submitWaitlist(source) {
+  var email = document.getElementById('wl-' + source).value;
+  var note  = document.getElementById('wl-note-' + source);
+  if (!email || email.indexOf('@') < 0) return;
+  fetch('{{ site.api_base }}/users/waitlist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email, source: source })
+  }).then(function(r) {
+    if (r.ok) note.style.display = 'block';
+  }).catch(function() { note.style.display = 'block'; });
+}
+</script>
+
+</body>
+</html>

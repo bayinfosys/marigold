@@ -1,0 +1,9 @@
+<div class="waitlist-block" style="margin:2rem auto 0;text-align:left;">
+  <h3>{{ include.heading | default: "Join the waitlist" }}</h3>
+  <p>{{ include.subtext | default: "No spam. One email when access opens." }}</p>
+  <div class="waitlist-row">
+    <input type="email" id="wl-{{ include.source }}" placeholder="{{ include.placeholder | default: "you@company.com" }}">
+    <a href="#" class="btn-primary" onclick="submitWaitlist('{{ include.source }}');return false;">{{ include.button | default: "Request access" }}</a>
+  </div>
+  <p class="waitlist-note" id="wl-note-{{ include.source }}">Noted. We will be in touch.</p>
+</div>

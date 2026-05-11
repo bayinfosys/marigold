@@ -49,6 +49,25 @@ resource "aws_s3_bucket_policy" "web" {
   policy = data.aws_iam_policy_document.web.json
 }
 
+resource "aws_cloudfront_function" "append_html" {
+  name    = join("-", [var.org_name, var.project_name, var.env, "append-html"])
+  runtime = "cloudfront-js-2.0"
+  comment = "Append .html to extensionless URIs before S3 origin lookup"
+  publish = true
+
+  code = <<-EOT
+    function handler(event) {
+      var request = event.request;
+      var uri = request.uri;
+      if (uri.endsWith('/') || uri.includes('.')) {
+        return request;
+      }
+      request.uri = uri + '.html';
+      return request;
+    }
+  EOT
+}
+
 resource "aws_cloudfront_distribution" "s3_distribution" {
   origin {
     domain_name = aws_s3_bucket.web.bucket_regional_domain_name
@@ -61,7 +80,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
 
   enabled             = true
   is_ipv6_enabled     = true
-  comment             = join("-", [var.project_name, var.env])
+  comment             = join("-", [var.org_name, var.project_name, var.env])
   default_root_object = "index.html"
 
   aliases = [local.web_domain, "www.${local.web_domain}"]
@@ -84,6 +103,11 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
     default_ttl            = 3600
     max_ttl                = 86400
     compress               = true
+
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.append_html.arn
+    }
   }
 
   custom_error_response {
@@ -116,11 +140,11 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
 }
 
 resource "aws_s3_object" "web_landing_page_files" {
-  for_each = fileset("${path.module}/../../html", "**")
+  for_each = fileset("${path.module}/../../html/dist", "**")
 
   bucket = aws_s3_bucket.web.bucket
   key    = each.value
-  source = "${path.module}/../../html/${each.value}"
+  source = "${path.module}/../../html/dist/${each.value}"
 
   content_type = lookup(
     local.mime_types,
@@ -128,7 +152,7 @@ resource "aws_s3_object" "web_landing_page_files" {
     "application/octet-stream"
   )
 
-  etag = filemd5("${path.module}/../../html/${each.value}")
+  etag = filemd5("${path.module}/../../html/dist/${each.value}")
 }
 
 resource "aws_route53_record" "apex" {

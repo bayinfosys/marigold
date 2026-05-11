@@ -1,0 +1,24 @@
+title: Marigold
+url: https://marigold.run
+baseurl: ""
+
+description: >
+  Private hosting for open-weight HuggingFace models.
+  Typed async inference API, declarative workflow engine,
+  and evals built from your production data.
+
+# Used in the waitlist form POST
+api_base: https://api.dev.mdl.bayis.co.uk
+
+plugins:
+  - jekyll-sitemap
+
+# Keep flat .html output so Terraform fileset() picks up everything
+# and S3 keys match the existing URL structure.
+permalink: /:basename:output_ext
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - README.md
+  - dist

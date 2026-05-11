@@ -74,38 +74,79 @@ resource "aws_iam_role_policy" "apigateway_lambda_policy" {
 }
 
 
-#resource "aws_iam_role" "apigateway_s3_read" {
-#  name = join("-", [var.org_name, var.project_name, var.env, "apigw-s3-read"])
-#
-#  assume_role_policy = jsonencode({
-#    Version = "2012-10-17",
-#    Statement = [
-#      {
-#        Action = "sts:AssumeRole",
-#        Effect = "Allow",
-#        Principal = {
-#          Service = "apigateway.amazonaws.com"
-#        }
-#      }
-#    ]
-#  })
-#}
-#
-#resource "aws_iam_role_policy" "apigateway_s3_read_policy" {
-#  role = aws_iam_role.apigateway_s3_read.id
-#
-#  policy = jsonencode({
-#    Version = "2012-10-17",
-#    Statement = [
-#      {
-#        Effect = "Allow",
-#        Action = "s3:GetObject",
-#        Resource = [ "${aws_s3_bucket.www.arn}/docs/models.json"
-#        ]
-#      }
-#    ]
-#  })
-#}
+resource "aws_iam_role" "apigateway_s3_read" {
+  name = join("-", [var.org_name, var.project_name, var.env, "apigw-s3-read"])
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Action = "sts:AssumeRole",
+        Effect = "Allow",
+        Principal = {
+          Service = "apigateway.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "apigateway_s3_read_policy" {
+  role = aws_iam_role.apigateway_s3_read.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = "s3:GetObject",
+        Resource = [
+          "${data.aws_s3_bucket.assets.arn}/cache_state.json",
+          "${data.aws_s3_bucket.assets.arn}/models.json",
+          "${data.aws_s3_bucket.assets.arn}/models_config.json",
+          "${data.aws_s3_bucket.assets.arn}/openapi.json",
+          "${data.aws_s3_bucket.assets.arn}/public_models_reference.json"
+        ]
+      }
+    ]
+  })
+}
+
+
+resource "aws_iam_role" "apigateway_dynamodb" {
+  name = join("-", [var.org_name, var.project_name, var.env, "apigw-dynamodb"])
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Action = "sts:AssumeRole",
+        Effect = "Allow",
+        Principal = {
+          Service = "apigateway.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "apigateway_dynamodb_policy" {
+  role = aws_iam_role.apigateway_dynamodb.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Action = "dynamodb:PutItem",
+        Effect = "Allow",
+        Resource = [
+          aws_dynamodb_table.users.arn
+        ]
+      }
+    ]
+  })
+}
+
 
 resource "aws_api_gateway_rest_api" "default" {
   name        = join("-", [var.org_name, var.project_name, var.env, "api"])
@@ -128,7 +169,7 @@ resource "aws_api_gateway_rest_api" "default" {
 
     # binary model outputs
     s3_output_bucket_name       = data.aws_s3_bucket.model_outputs.id
-    s3_read_output_iam_role_arn = aws_iam_role.apigateway_lambda.arn
+    s3_read_output_iam_role_arn = aws_iam_role.apigateway_s3_read.arn
 
     # web assets
     s3_assets_bucket_name           = data.aws_s3_bucket.assets.id
@@ -141,6 +182,10 @@ resource "aws_api_gateway_rest_api" "default" {
     # workflows
     workflow_api_lambda_arn          = data.aws_lambda_function.workflow_api_lambda.invoke_arn
     workflow_api_lambda_iam_role_arn  = aws_iam_role.apigateway_lambda.arn
+
+    # users
+    users_table_name = aws_dynamodb_table.users.name
+    users_table_iam_role_arn = aws_iam_role.apigateway_dynamodb.arn
 
     region = var.region
   })
@@ -166,6 +211,17 @@ resource "aws_api_gateway_stage" "default" {
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.default.arn
     format          = local.access_log_format
+  }
+}
+
+resource "aws_api_gateway_method_settings" "waitlist_limits" {
+  rest_api_id = aws_api_gateway_rest_api.default.id
+  stage_name  = aws_api_gateway_stage.default.stage_name
+  method_path = "waitlist/POST"
+
+  settings {
+    throttling_rate_limit  = 5    # requests per second sustained
+    throttling_burst_limit = 10   # token bucket burst
   }
 }
 

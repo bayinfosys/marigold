@@ -123,6 +123,7 @@ class InstructRequest(ModelRequest):
     max_tokens: int = Field(1000, description="maximum tokens to generate")
     top_k: Optional[int] = Field(None)
     top_p: Optional[float] = Field(None)
+    min_p: Optional[float] = Field(None, description="minimum token probability as a fraction of the top token probability; range 0.0-1.0")
     repetition_penalty: Optional[float] = Field(None)
     no_repeat_ngram_size: Optional[int] = Field(None)
 

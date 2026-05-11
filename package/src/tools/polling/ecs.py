@@ -229,7 +229,7 @@ def handle_submission(userid, event):
             existing_status,
             request_id,
         )
-        return mk_resp(200, {"message_id": message_id, "status": existing_status})
+        return mk_resp(200, {"message_id": body_md5, "status": existing_status})
 
     # get the list of available models, queues, etc
     models = load_model_config()
@@ -290,6 +290,7 @@ def handle_submission(userid, event):
         logger.info(
             "[%s/%s] launching task for '%s'", userid, message_id, model_name
         )
+        update_status(userid, message_id, "provisioning")
         launcher.launch(dispatch)
 
     return mk_resp(200, {"message_id": body_md5})
