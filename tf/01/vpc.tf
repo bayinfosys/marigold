@@ -89,17 +89,17 @@ module "vpc_endpoints" {
       tags                = { Name = "logs" }
     }
     dynamodb = {
-      service      = "dynamodb"
-      service_type = "Gateway"
-      route_table_ids  = module.vpc.private_route_table_ids
-      tags = { Name = "dynamodb" }
+      service         = "dynamodb"
+      service_type    = "Gateway"
+      route_table_ids = module.vpc.private_route_table_ids
+      tags            = { Name = "dynamodb" }
     }
     s3 = {
       service             = "s3"
       private_dns_enabled = true
       security_group_ids  = [module.vpc.default_security_group_id]
       subnet_ids          = module.vpc.private_subnets
-      tags = { Name = "s3" }
+      tags                = { Name = "s3" }
     },
     sqs = {
       service             = "sqs"
@@ -107,6 +107,54 @@ module "vpc_endpoints" {
       security_group_ids  = [module.vpc.default_security_group_id]
       subnet_ids          = module.vpc.private_subnets
       tags                = { Name = "sqs" }
+    }
+    ssm = {
+      service             = "ssm"
+      service_type        = "Interface"
+      private_dns_enabled = true
+      subnet_ids          = module.vpc.private_subnets
+      security_group_ids  = [module.vpc.default_security_group_id]
+      tags                = { Name = "ssm" }
+    }
+    ssmmessages = {
+      service             = "ssmmessages"
+      service_type        = "Interface"
+      private_dns_enabled = true
+      subnet_ids          = module.vpc.private_subnets
+      security_group_ids  = [module.vpc.default_security_group_id]
+      tags                = { Name = "ssmmessages" }
+    }
+    ec2messages = {
+      service             = "ec2messages"
+      service_type        = "Interface"
+      private_dns_enabled = true
+      subnet_ids          = module.vpc.private_subnets
+      security_group_ids  = [module.vpc.default_security_group_id]
+      tags                = { Name = "ec2messages" }
+    }
+    ecs = {
+      service             = "ecs"
+      service_type        = "Interface"
+      private_dns_enabled = true
+      subnet_ids          = module.vpc.private_subnets
+      security_group_ids  = [module.vpc.default_security_group_id]
+      tags                = { Name = "ecs" }
+    }
+    ecs_agent = {
+      service             = "ecs-agent"
+      service_type        = "Interface"
+      private_dns_enabled = true
+      subnet_ids          = module.vpc.private_subnets
+      security_group_ids  = [module.vpc.default_security_group_id]
+      tags                = { Name = "ecs-agent" }
+    }
+    ecs_telemetry = {
+      service             = "ecs-telemetry"
+      service_type        = "Interface"
+      private_dns_enabled = true
+      subnet_ids          = module.vpc.private_subnets
+      security_group_ids  = [module.vpc.default_security_group_id]
+      tags                = { Name = "ecs-telemetry" }
     }
   }
 

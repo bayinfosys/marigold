@@ -9,9 +9,11 @@ code can import it without depending on the API layer.
 from datetime import datetime
 from typing import Dict, Generic, List, Literal, Optional, TypeVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from shared.models import (Embedding, EmbeddingQuantization, InstructMessage,
                            InstructMessages, OutputReference)
+
+from enum import Enum
 
 T = TypeVar("T")
 
@@ -70,13 +72,45 @@ class DeleteCacheResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class EncryptionMethod(str, Enum):
+    ECIES_SECP256K1_AES256GCM = "ecies-secp256k1-aes256gcm"
+
+
+class EncryptionParams(BaseModel):
+    method: EncryptionMethod = EncryptionMethod.ECIES_SECP256K1_AES256GCM
+    pubkey: str    # base64-encoded secp256k1 compressed public key (33 bytes)
+
+    @field_validator("pubkey")
+    @classmethod
+    def validate_pubkey(cls, v: str) -> str:
+        import base64
+        try:
+            decoded = base64.b64decode(v)
+        except Exception:
+            raise ValueError("pubkey must be base64-encoded")
+        if len(decoded) == 33 and decoded[0] in (0x02, 0x03):
+            return v    # compressed
+        if len(decoded) == 65 and decoded[0] == 0x04:
+            return v    # uncompressed
+        raise ValueError(
+            "pubkey must be a secp256k1 key: "
+            "33-byte compressed (0x02/0x03 prefix) or "
+            "65-byte uncompressed (0x04 prefix)"
+        )
+
+
 class ModelRequest(BaseModel):
     """Common fields present on every model request."""
 
     model: str = Field(..., description="HuggingFace model identifier")
-    seed: Optional[int] = Field(
-        None, description="random seed for reproducible outputs"
-    )
+    seed: Optional[int] = Field(None, description="random seed for reproducible outputs")
+    nonce: Optional[str] = Field(None, description="cache busting random field")
+    encrypt: Optional[EncryptionParams] = Field(None, description="encryption method and key")
+
+    @field_validator("model")
+    @classmethod
+    def normalise_model_name(cls, v: str) -> str:
+        return v.lower()
 
 
 # ---------------------------------------------------------------------------

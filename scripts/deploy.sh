@@ -12,6 +12,7 @@ set -euo pipefail
 # Pure transformation, no network required.
 make models/validate
 make assets/generate
+make assets/upload
 
 # layer 01: VPC, EFS, ECR
 LAYER=01 make init

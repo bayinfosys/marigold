@@ -40,27 +40,15 @@ variable "lambda_runtime" {
 variable "models" {
   description = "Model container definitions, generated from assets/models.yaml."
   type = map(object({
-    cpu_size              = optional(number, 1024)
-    memory_size           = optional(number, 8192)
-    requires_gpu          = optional(bool, false)
+    memory_res            = optional(number, 4096)
+    gpu_tier              = optional(string, "none")
+    gpu_units             = optional(number, 0)
     timeout               = optional(number, 600)
     idle_timeout          = optional(number, 600)
     auth_required         = optional(bool, false)
     provider              = optional(string, "huggingface")
     environment_variables = optional(map(string), {})
   }))
-}
-
-variable "enable_gpu_services" {
-  description = <<-EOT
-    Controls whether ECS services are created for GPU models.
-    Set to true only when the GPU capacity provider has active EC2 instances
-    and the cluster is confirmed to be accepting EC2 tasks.
-    GPU task definitions and SQS queues are always created regardless of
-    this flag -- only the services are gated.
-  EOT
-  type    = bool
-  default = false
 }
 
 variable "efs_mount_point" {
@@ -71,4 +59,28 @@ variable "efs_mount_point" {
 variable "efs_model_cache_path" {
   description = "Path inside the cache builder container where EFS is mounted for model weights."
   default     = "/mnt/shared/models"
+}
+
+variable "capacity_provider_gpu_sm" {
+  description = "ECS capacity provider name for small GPU instances (T4)"
+  type        = string
+  default     = "gpu-sm"
+}
+
+variable "capacity_provider_gpu_lrg" {
+  description = "ECS capacity provider name for large GPU instances (A10G)"
+  type        = string
+  default     = "gpu-lrg"
+}
+
+variable "capacity_provider_big_cpu" {
+  description = "ECS capacity provider name for large CPU instances"
+  type        = string
+  default     = "big-cpu"
+}
+
+variable "anonchat_model" {
+  description = "Model name for the anon chat service. Must be cached on EFS."
+  type        = string
+  default     = "meta-llama/llama-3.1-8b-instruct"
 }

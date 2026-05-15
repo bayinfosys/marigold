@@ -100,6 +100,7 @@ def standard_loader(
             local_files_only=local_files_only,
             low_cpu_mem_usage=low_cpu_mem_usage,
             quantization_config=quantization_config,
+            device_map="auto",
         )
     except OSError as e:
         logger.error("'%s' not in local cache [%s]", modelname, str(e))

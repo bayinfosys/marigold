@@ -106,11 +106,11 @@ def load_txt2audio(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoad
         model.eval()
         logger.info("loaded '%s' MusicGen in %0.2fs", modelname, clock() - T0)
         return ModelLoaderResult(processor=processor, model=model)
-
-    if modelname.startswith("cvssp/audioldm2"):
+    elif modelname.startswith("cvssp/audioldm2"):
         from diffusers import AudioLDM2Pipeline
 
         pipe = AudioLDM2Pipeline.from_pretrained(modelname, cache_dir=cache_dir)
+        pipe.projection_model = pipe.projection_model.float()  # fix dtype mismatch error
         logger.info("loaded '%s' AudioLDM2 pipeline in %0.2fs", modelname, clock() - T0)
         return ModelLoaderResult(processor=None, model=pipe)
 

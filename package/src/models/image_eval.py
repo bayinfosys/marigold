@@ -27,11 +27,11 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
 
-def load_image_eval(modelname: str, **kwargs) -> ModelLoaderResult:
+def load_image_eval(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
     """Image classification models for image scoring."""
     from transformers import AutoImageProcessor as T
     from transformers import AutoModelForImageClassification as M
-    return standard_loader(T, M, modelname, **kwargs)
+    return standard_loader(T, M, modelname, cache_dir=cache_dir, **kwargs)
 
 
 @model_spec(

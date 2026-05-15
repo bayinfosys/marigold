@@ -82,7 +82,7 @@ def load_available_models() -> set[str]:
         obj = s3.get_object(Bucket=bucket, Key=key)
         data = json.loads(obj["Body"].read())
         # models.json is a list of model objects with a "name" field
-        _available_model_names = {m["name"] for m in data}
+        _available_model_names = {m["name"].lower() for m in data}
         logger.info("loaded %d available models", len(_available_model_names))
     except Exception as e:
         logger.warning("failed to load available models from s3: %s -- skipping availability check", str(e))
@@ -92,33 +92,23 @@ def load_available_models() -> set[str]:
 
 load_available_models()
 
-
 # ---------------------------------------------------------------------------
 # Launch type
 # ---------------------------------------------------------------------------
 
-
 def get_launch_kwargs(dispatch: ModelDispatch, user_tier: str = "free") -> dict:
-    """Return the ECS run_task launch kwargs for this dispatch and user tier.
+    provider = {
+        "lrg": os.environ.get("ECS_CAPACITY_PROVIDER_GPU_LRG"),
+        "sm":  os.environ.get("ECS_CAPACITY_PROVIDER_GPU_SM"),
+    }.get(dispatch.gpu_tier, os.environ.get("ECS_CAPACITY_PROVIDER_BIG_CPU"))
 
-    Returns either launchType (Fargate) or capacityProviderStrategy (EC2/GPU).
-    These are mutually exclusive in the ECS API and must not both be present.
-
-    GPU capacity is gated on user tier. Free tier always receives Fargate.
-    When GPU capacity providers are activated in tf/02, add tier checks here.
-    """
-    # TODO: when GPU capacity provider is active, check dispatch.model_type
-    # and user_tier to route GPU-eligible models for paid tiers:
-    #
-    #   if user_tier in ("gold", "enterprise") and dispatch.requires_gpu:
-    #       return {
-    #           "capacityProviderStrategy": [
-    #               {"capacityProvider": "gpu-capacity-provider", "weight": 1}
-    #           ]
-    #       }
-    #
-    # For now all tasks run on Fargate regardless of tier.
-    return {"launchType": "FARGATE"}
+    return {
+        "capacityProviderStrategy": [{
+            "capacityProvider": provider,
+            "weight": 1,
+            "base":   0,
+        }]
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +137,23 @@ class TaskLauncher:
             maxResults=5,
         )
         return bool(resp.get("taskArns"))
+
+    def is_pending(self, model: ModelDispatch) -> bool:
+        """Check if a task for this model family is pending (container starting,
+        model not yet loaded). A pending task must block new launches just as
+        a running task does -- model load times of 400-700s create a large
+        window where is_running returns False but a task is already in flight."""
+        resp = self.ecs.list_tasks(
+            cluster=self.cluster,
+            desiredStatus="PENDING",
+            family=model.family,
+            maxResults=5,
+        )
+        return bool(resp.get("taskArns"))
+
+    def is_active(self, model: ModelDispatch) -> bool:
+        """Return True if any task for this model is running or pending."""
+        return self.is_running(model) or self.is_pending(model)
 
     def launch(self, model: ModelDispatch, user_tier: str = "free"):
         logger.info("launching ecs task for '%s'", model.family)
@@ -219,6 +226,8 @@ def handle_submission(userid, event):
     if not model_name:
         return mk_resp(400, {"status": "error", "message": "model field required"})
 
+    model_name = model_name.lower()  # force it to lowercase
+
     # check if this message is already on the queue
     existing_status = get_status(userid, message_id)
     if existing_status:
@@ -286,7 +295,7 @@ def handle_submission(userid, event):
         update_status(userid, message_id, status="error")
         return mk_resp(500, {"status": "error", "message": "internal error"})
 
-    if not launcher.is_running(dispatch):
+    if not launcher.is_active(dispatch):
         logger.info(
             "[%s/%s] launching task for '%s'", userid, message_id, model_name
         )

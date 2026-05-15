@@ -316,7 +316,7 @@ async def openapi_spec(user=Security(apikey_auth)):
 @router.get(
     "/models.json",
     aws_s3_bucket="${s3_assets_bucket_name}",
-    aws_s3_object_key="public_models_reference.json",
+    aws_s3_object_key="models.json",
     aws_iam_arn="${s3_read_api_object_iam_role_arn}",
     tags=["api"],
 )

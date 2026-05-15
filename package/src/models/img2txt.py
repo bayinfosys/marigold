@@ -37,12 +37,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_PROMPT = "Describe this image."
 
 
-def load_img2txt(modelname: str, **kwargs) -> ModelLoaderResult:
+def load_img2txt(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
     """Image-to-text: captioning, OCR, VQA."""
     from transformers import AutoModelForVision2Seq as M
     from transformers import AutoProcessor as T
 
-    return standard_loader(T, M, modelname, **kwargs)
+    return standard_loader(T, M, modelname, cache_dir=cache_dir, **kwargs)
 
 
 def _build_hf_prompt(request: Img2TxtRequest) -> tuple:

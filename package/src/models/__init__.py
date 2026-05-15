@@ -22,10 +22,10 @@ Optional environment variables:
 
 import logging
 import os
-
-from shared.registry import BaseModelHandler, _SPECS  # noqa: F401
+import sys
 
 from models.worker import SQSWorker
+from shared.registry import _SPECS, BaseModelHandler  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +41,11 @@ def load_all():
     Must be called before any code that looks up _SPECS by model type.
     Importing this module alone does not trigger these imports.
     """
-    from models import depth, image_embed, image_eval, image_text_eval  # noqa: F401
-    from models import img2mask, img2txt, instruct, text_embed  # noqa: F401
-    from models import text_eval, text_similarity, tts, txt2img  # noqa: F401
-    from models import txt2audio  # noqa: F401
     from models import http  # noqa: F401
+    from models import txt2audio  # noqa: F401
+    from models import (depth, image_embed, image_eval,  # noqa: F401
+                        image_text_eval, img2mask, img2txt, instruct,
+                        text_embed, text_eval, text_similarity, tts, txt2img)
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +54,9 @@ def load_all():
 
 
 def sqs_handler():
-    """Fixed ECS task entry point for all model types."""
+    """Fixed ECS task entry point for all model types.
+    NB: if model load fails, we exit, queues are per-model, so one model load fail means all model loads will fail
+    """
     load_all()
 
     model_type = os.environ["MODEL_TYPE"]
@@ -64,14 +66,26 @@ def sqs_handler():
     idle_timeout = int(os.getenv("IDLE_TIMEOUT", "0"))
 
     if model_type not in _SPECS:
-        raise ValueError(
-            "unknown MODEL_TYPE '%s'; registered types: %s"
-            % (model_type, sorted(_SPECS))
+        logger.error(
+            "unknown MODEL_TYPE '%s'; registered types: %s",
+            model_type,
+            sorted(_SPECS),
         )
+        sys.exit(1)
 
     spec = _SPECS[model_type]
     logger.info("loading '%s' for model '%s'", spec.handler_class.__name__, modelname)
 
-    model = spec.handler_class(modelname)
+    try:
+        model = spec.handler_class(modelname)
+    except Exception as e:
+        logger.exception(
+            "fatal: failed to load '%s' for model '%s': %s -- exiting",
+            spec.handler_class.__name__,
+            modelname,
+            e,
+        )
+        sys.exit(1)
+
     worker = SQSWorker(queue_url, model, visibility_timeout, idle_timeout)
     worker.run()

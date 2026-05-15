@@ -70,6 +70,12 @@ logging.basicConfig(
 )
 log = logging.getLogger("model-cli")
 
+# suppress noisy HTTP request logging from huggingface_hub and its dependencies
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub.utils").setLevel(logging.WARNING)
+
 
 # ---------------------------------------------------------------------------
 # Environment

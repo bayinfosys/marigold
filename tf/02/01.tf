@@ -36,3 +36,8 @@ data "aws_ecr_image" "environment_image" {
   repository_name = data.terraform_remote_state.containers.outputs["environment_ecr_name"]
   image_tag       = var.git_tag
 }
+
+data "aws_ecr_image" "environment_image_gpu" {
+  repository_name = data.terraform_remote_state.containers.outputs["environment_ecr_name"]
+  image_tag       = "${var.git_tag}-gpu"
+}

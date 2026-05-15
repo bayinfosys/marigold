@@ -31,15 +31,37 @@ logger = logging.getLogger(__name__)
 def load_txt2img(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
     """Text-to-image via diffusers DiffusionPipeline.
 
+    Loads in float16 and places on GPU if available, CPU otherwise.
+    Uses device_map="balanced" when accelerate is present and multiple
+    GPUs are available (e.g. g5.12xlarge with 4x A10G).
+
     Returns a ModelLoaderResult with processor=None. The pipeline is stored
     in the model field and accessed via self.pipe in the handler.
     """
     from diffusers import DiffusionPipeline
 
+    has_cuda   = torch.cuda.is_available()
+    gpu_count  = torch.cuda.device_count() if has_cuda else 0
+    dtype      = torch.float16 if has_cuda else torch.float32
+    local_files_only = os.getenv("HF_HUB_OFFLINE", "true").lower() != "0"
+
+    logger.info("loading '%s' -- cuda=%s gpus=%d dtype=%s", modelname, has_cuda, gpu_count, dtype)
+
     T0 = clock()
-    pipe = DiffusionPipeline.from_pretrained(modelname, cache_dir=cache_dir).to("cpu")
-    pipe.safety_checker = None
-    pipe.requires_safety_checker = False
+
+    load_kwargs = dict(
+        cache_dir        = cache_dir,
+        torch_dtype      = dtype,
+        local_files_only = local_files_only,
+    )
+
+    if gpu_count > 1:
+        load_kwargs["device_map"] = "balanced"
+        pipe = DiffusionPipeline.from_pretrained(modelname, **load_kwargs)
+    else:
+        target = "cuda" if has_cuda else "cpu"
+        pipe = DiffusionPipeline.from_pretrained(modelname, **load_kwargs).to(target)
+
     logger.info("loaded '%s' pipeline in %0.2fs", modelname, clock() - T0)
     return ModelLoaderResult(processor=None, model=pipe)
 

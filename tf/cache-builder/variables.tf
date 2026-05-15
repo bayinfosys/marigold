@@ -41,7 +41,7 @@ variable "instance_type" {
     process requires more than 8 GB RAM.
   EOT
   type    = string
-  default = "t3.large"
+  default = "r5.2xlarge"
 }
 
 variable "max_runtime_seconds" {

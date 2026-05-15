@@ -61,8 +61,13 @@ class InstructModel(BaseModelHandler):
 
         # FIXME: add chat_template fallbacks for models without a built-in template
         try:
+            messages_as_dicts = [
+                {"role": m.role.value, "content": m.content}
+                for m in request.messages
+            ]
+            # apply chat template requires dicts, not our pydantic type
             inputs = self.processor.apply_chat_template(
-                request.messages,
+                messages_as_dicts,
                 return_tensors="pt",
                 tokenize=False,
                 add_generation_prompt=True,
@@ -84,6 +89,7 @@ class InstructModel(BaseModelHandler):
             raise
 
         model_inputs = self.processor([inputs], return_tensors="pt")
+        model_inputs = model_inputs.to(self.model.device)   # ensure device compat
 
         if request.seed is not None:
             set_seed(request.seed)

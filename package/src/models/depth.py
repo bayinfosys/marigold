@@ -29,7 +29,7 @@ def load_depth(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderRe
     from transformers import AutoImageProcessor as T
     from transformers import AutoModelForDepthEstimation as M
 
-    return standard_loader(T, M, modelname, **kwargs)
+    return standard_loader(T, M, modelname, cache_dir=cache_dir, **kwargs)
 
 
 @model_spec(

@@ -31,10 +31,28 @@ build/environment:
 	  -t $(PROJECT_NAME)/environment:$(TAG) \
 	  -f package/src/models/environment/Dockerfile.ecs .
 
+	# the gpu environment container provides everything for running marigold on nvidia gpus
+	# --build-arg BASE_IMAGE=nvidia/cuda:13.1.2-cudnn-runtime-ubuntu24.04 \
+	docker build \
+	  --build-arg BASE_IMAGE=nvidia/cuda:13.1.2-cudnn-runtime-ubuntu24.04 \
+	  -t $(PROJECT_NAME)/cuda-python312:$(TAG) \
+	  -f package/src/models/environment/Dockerfile.python312.gpu .
+
+	docker build \
+	  --build-arg BASE_IMAGE=$(PROJECT_NAME)/cuda-python312:$(TAG) \
+	  --build-arg GPU_ENABLED=1 \
+	  --build-arg GIT_TAG=$(TAG) \
+	  --build-arg TORCH_REQS=pytorch-gpu.requirements.txt \
+	  -t $(PROJECT_NAME)/environment:$(TAG)-gpu \
+	  -f package/src/models/environment/Dockerfile.ecs .
+
 push/environment:
 	docker tag $(PROJECT_NAME)/environment:$(TAG) $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG) && \
+	docker tag $(PROJECT_NAME)/environment:$(TAG)-gpu $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG)-gpu && \
 	docker push $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG) && \
-	docker rmi $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG)
+	docker push $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG)-gpu && \
+	docker rmi $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG) && \
+	docker rmi $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG)-gpu
 
 # ---------------------------------------------------------------------------
 # Tools
@@ -238,8 +256,8 @@ assets/pull:
 
 .PHONY: assets/generate
 assets/generate: .venv assets/pull assets/models.yaml assets/tools.yaml
-	$(GENERATE) assets/models.yaml tfvars > assets/models.tfvars
-	$(GENERATE) assets/models.yaml json   > assets/models.json
+	$(GENERATE) assets/models.yaml terraform-data > assets/models.tfvars
+	$(GENERATE) assets/models.yaml infra-data   > assets/models.json
 	$(GENERATE) assets/models.yaml jekyll-data > $(SITE_DATA)/models.json
 	PYTHONPATH=$(PYTHONPATH) $(PYTHON) package/src/tools/generate_tools_index.py \
 	  assets/tools.yaml \
@@ -348,6 +366,7 @@ deploy/cache-builder:
 	  -var-file=../$(ENV).tfvars \
 	  -var="git_tag=$(TAG)" \
 	  -var="ssh_allowed_cidr=$(MY_IP)" \
+	  -var="hf_token=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" \
 	  $(TF_EXTRA_VARS) \
 	  -out new.plan
 	terraform -chdir=tf/cache-builder apply -parallelism=0 new.plan \
@@ -368,3 +387,21 @@ get-api-spec:
 
 get-cache-builder-instance:
 	terraform -chdir=tf/cache-builder output -raw cache_builder_instance_id
+
+
+# ---------------------
+# Verification
+# ---------------------
+
+CLUSTER_NAME    := bayis-vecmdl-dev-inference
+PRIVATE_SUBNET  := subnet-06f82a9df9caae8d9
+ECS_SG_ID       := sg-0334e9e6a92ddc6f7
+
+# run the smoke test task for the cluster - separate tasks for gpu, big-cpu and test capacity providers
+smoke/%:
+	aws ecs run-task \
+	  --cluster $(CLUSTER_NAME) \
+	  --task-definition bayis-$(PROJECT_NAME)-$(ENV)-instance-check-$* \
+	  --capacity-provider-strategy capacityProvider=$*,weight=1 \
+	  --network-configuration "awsvpcConfiguration={subnets=[$(PRIVATE_SUBNET)],securityGroups=[$(ECS_SG_ID)],assignPublicIp=DISABLED}" \
+	  --count 1

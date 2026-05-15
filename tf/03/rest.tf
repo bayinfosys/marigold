@@ -64,7 +64,7 @@ resource "aws_iam_role_policy" "apigateway_lambda_policy" {
         Action = "s3:GetObject",
         Effect = "Allow",
         Resource = [
-          "${data.aws_s3_bucket.results.arn}/*",
+          #"${data.aws_s3_bucket.results.arn}/*",
           "${data.aws_s3_bucket.assets.arn}/*",
           "${data.aws_s3_bucket.model_outputs.arn}/outputs/*",
         ]
@@ -106,6 +106,14 @@ resource "aws_iam_role_policy" "apigateway_s3_read_policy" {
           "${data.aws_s3_bucket.assets.arn}/models_config.json",
           "${data.aws_s3_bucket.assets.arn}/openapi.json",
           "${data.aws_s3_bucket.assets.arn}/public_models_reference.json"
+        ]
+      },
+      {
+        Effect = "Allow",
+        Action = "s3:ListBucket",
+        Resource = [
+          data.aws_s3_bucket.assets.arn,
+          "${data.aws_s3_bucket.assets.arn}/*"
         ]
       }
     ]
@@ -173,7 +181,7 @@ resource "aws_api_gateway_rest_api" "default" {
 
     # web assets
     s3_assets_bucket_name           = data.aws_s3_bucket.assets.id
-    s3_read_api_object_iam_role_arn = aws_iam_role.apigateway_lambda.arn
+    s3_read_api_object_iam_role_arn = aws_iam_role.apigateway_s3_read.arn
 
     # apikey
     key_management_lambda_arn         = module.apikey_lambda.lambda_function_invoke_arn

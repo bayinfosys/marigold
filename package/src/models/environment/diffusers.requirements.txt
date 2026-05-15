@@ -1,0 +1,3 @@
+# diffusers sometimes needs to be the latest from github for brand new models
+diffusers
+# git+https://github.com/huggingface/diffusers.git

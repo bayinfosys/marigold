@@ -1,47 +1,50 @@
 # ---------------------------------------------------------------------------
 # ECS services -- one per model declared in models.yaml.
 #
-# CPU services (Fargate):
+# CPU services (Fargate, gpu_tier=none):
 #   Start at desired_count=0. Application Auto Scaling drives them up when
 #   the SQS queue is non-empty and back to 0 when the queue drains.
 #
-# GPU services (EC2):
-#   Placeholder services at desired_count=0. Will not schedule work until
-#   the GPU capacity provider has active EC2 instances. launch_type is
-#   temporarily set to FARGATE so the resource can be created. Switch to
-#   capacity_provider_strategy when GPU instances are available.
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Local: idle period calculation
+# GPU sm services (EC2, gpu_tier=sm, T4):
+#   Desired count managed by the polling Lambda via RunTask.
+#   Capacity provider routes to gpu-sm ASG (g4dn family).
 #
-# idle_timeout is in seconds. CloudWatch alarm evaluation_periods counts
-# 60-second periods. Convert and floor to a minimum of 1.
-# A model with idle_timeout=3600 keeps its task running for 60 periods
-# (1 hour) after its queue empties before scaling to zero.
+# GPU lrg services (EC2, gpu_tier=lrg, A10G):
+#   Desired count managed by the polling Lambda via RunTask.
+#   Capacity provider routes to gpu-lrg ASG (g5 family).
 # ---------------------------------------------------------------------------
 
 locals {
+  cpu_service_models     = { for k, v in var.models : k => v if v.gpu_tier == "none" }
+  gpu_sm_service_models  = { for k, v in var.models : k => v if v.gpu_tier == "sm"   }
+  gpu_lrg_service_models = { for k, v in var.models : k => v if v.gpu_tier == "lrg"  }
+
+  # idle_timeout in seconds -> CloudWatch evaluation periods (60s each), min 1
   idle_periods = {
     for k, v in var.models : k => max(1, floor(v.idle_timeout / 60))
-    if !v.requires_gpu
+    if v.gpu_tier == "none"
   }
 }
 
 # ---------------------------------------------------------------------------
-# CPU services (Fargate)
+# CPU services (EC2, gpu_tier=none)
 # ---------------------------------------------------------------------------
 
 resource "aws_ecs_service" "model_services_cpu" {
-  for_each = {
-    for k, v in var.models : k => v if !v.requires_gpu
-  }
+  for_each = local.cpu_service_models
 
   name            = join("-", [var.project_name, var.env, each.key])
   cluster         = module.ecs.cluster_arn
-  task_definition = aws_ecs_task_definition.model_tasks[each.key].arn
+  task_definition = aws_ecs_task_definition.cpu[each.key].arn
   desired_count   = 0
-  launch_type     = "FARGATE"
+
+  capacity_provider_strategy {
+    capacity_provider = var.capacity_provider_big_cpu
+    weight            = 1
+    base              = 0
+  }
+
+  force_new_deployment = true
 
   network_configuration {
     subnets          = [for s in data.aws_subnet.private_subnets : s.id]
@@ -57,24 +60,57 @@ resource "aws_ecs_service" "model_services_cpu" {
 }
 
 # ---------------------------------------------------------------------------
-# GPU services (EC2 placeholder)
+# GPU sm services (EC2, gpu_tier=sm, g4dn/T4)
 # ---------------------------------------------------------------------------
 
-resource "aws_ecs_service" "model_services_gpu" {
-  for_each = var.enable_gpu_services ? {
-    for k, v in var.models : k => v if v.requires_gpu
-  } : {}
+resource "aws_ecs_service" "model_services_gpu_sm" {
+  for_each = local.gpu_sm_service_models
 
   name            = join("-", [var.project_name, var.env, each.key])
   cluster         = module.ecs.cluster_arn
-  task_definition = aws_ecs_task_definition.model_tasks[each.key].arn
+  task_definition = aws_ecs_task_definition.gpu_sm[each.key].arn
   desired_count   = 0
 
   capacity_provider_strategy {
-    capacity_provider = "gpu"
-    weight            = 100
+    capacity_provider = var.capacity_provider_gpu_sm
+    weight            = 1
     base              = 0
   }
+
+  force_new_deployment = true
+
+  network_configuration {
+    subnets          = [for s in data.aws_subnet.private_subnets : s.id]
+    security_groups  = [data.aws_security_group.vpc_default_security_group.id]
+    assign_public_ip = false
+  }
+
+  lifecycle {
+    ignore_changes = [desired_count, task_definition]
+  }
+
+  tags = var.project_tags
+}
+
+# ---------------------------------------------------------------------------
+# GPU lrg services (EC2, gpu_tier=lrg, g5/A10G)
+# ---------------------------------------------------------------------------
+
+resource "aws_ecs_service" "model_services_gpu_lrg" {
+  for_each = local.gpu_lrg_service_models
+
+  name            = join("-", [var.project_name, var.env, each.key])
+  cluster         = module.ecs.cluster_arn
+  task_definition = aws_ecs_task_definition.gpu_lrg[each.key].arn
+  desired_count   = 0
+
+  capacity_provider_strategy {
+    capacity_provider = var.capacity_provider_gpu_lrg
+    weight            = 1
+    base              = 0
+  }
+
+  force_new_deployment = true
 
   network_configuration {
     subnets          = [for s in data.aws_subnet.private_subnets : s.id]
@@ -91,12 +127,13 @@ resource "aws_ecs_service" "model_services_gpu" {
 
 # ---------------------------------------------------------------------------
 # Application Auto Scaling -- CPU services only
+#
+# GPU services are launched on demand by the polling Lambda via RunTask.
+# Auto scaling for GPU would require custom metrics and is deferred.
 # ---------------------------------------------------------------------------
 
 resource "aws_appautoscaling_target" "model_services_cpu" {
-  for_each = {
-    for k, v in var.models : k => v if !v.requires_gpu
-  }
+  for_each = local.cpu_service_models
 
   max_capacity       = 1
   min_capacity       = 0
@@ -104,13 +141,13 @@ resource "aws_appautoscaling_target" "model_services_cpu" {
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
 
+  tags = var.project_tags
+
   depends_on = [aws_ecs_service.model_services_cpu]
 }
 
 resource "aws_appautoscaling_policy" "scale_up" {
-  for_each = {
-    for k, v in var.models : k => v if !v.requires_gpu
-  }
+  for_each = local.cpu_service_models
 
   name               = join("-", [var.project_name, var.env, each.key, "scale-up"])
   policy_type        = "StepScaling"
@@ -131,9 +168,7 @@ resource "aws_appautoscaling_policy" "scale_up" {
 }
 
 resource "aws_appautoscaling_policy" "scale_down" {
-  for_each = {
-    for k, v in var.models : k => v if !v.requires_gpu
-  }
+  for_each = local.cpu_service_models
 
   name               = join("-", [var.project_name, var.env, each.key, "scale-down"])
   policy_type        = "StepScaling"
@@ -154,9 +189,7 @@ resource "aws_appautoscaling_policy" "scale_down" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "queue_not_empty" {
-  for_each = {
-    for k, v in var.models : k => v if !v.requires_gpu
-  }
+  for_each = local.cpu_service_models
 
   alarm_name          = join("-", [var.project_name, var.env, each.key, "queue-not-empty"])
   comparison_operator = "GreaterThanThreshold"
@@ -178,9 +211,7 @@ resource "aws_cloudwatch_metric_alarm" "queue_not_empty" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "queue_empty" {
-  for_each = {
-    for k, v in var.models : k => v if !v.requires_gpu
-  }
+  for_each = local.cpu_service_models
 
   alarm_name          = join("-", [var.project_name, var.env, each.key, "queue-empty"])
   comparison_operator = "LessThanOrEqualToThreshold"

@@ -11,10 +11,6 @@ data "aws_s3_bucket" "assets" {
   bucket = data.terraform_remote_state.pipelines.outputs["asset_bucket_name"]
 }
 
-data "aws_s3_bucket" "results" {
-  bucket = data.terraform_remote_state.pipelines.outputs["results_bucket"]
-}
-
 data "aws_s3_bucket" "model_outputs" {
   bucket = data.terraform_remote_state.pipelines.outputs["model_outputs_bucket_name"]
 }

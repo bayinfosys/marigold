@@ -2,8 +2,7 @@
 # ECS cluster, task IAM role, and capacity provider configuration.
 #
 # Capacity providers:
-#   FARGATE       -- serverless CPU (default)
-#   FARGATE_SPOT  -- serverless CPU spot (cost-optimised)
+#   EC2           -- CPU (default)
 #   gpu           -- EC2 GPU instances via ASG (see ecs-gpu.tf)
 #                    min_size=0, desired_capacity=0 until GPU tasks are needed
 # ---------------------------------------------------------------------------
@@ -34,10 +33,13 @@ resource "aws_iam_role" "model_task" {
 
 data "aws_iam_policy_document" "model_task" {
   statement {
-    sid       = "WorkQueuePermissions"
-    effect    = "Allow"
-    actions   = ["sqs:ReceiveMessage", "sqs:DeleteMessage"]
-    resources = [for x in aws_sqs_queue.model_queues : x.arn]
+    sid     = "WorkQueuePermissions"
+    effect  = "Allow"
+    actions = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes", "sqs:ChangeMessageVisibility"]
+    resources = [
+      "arn:aws:sqs:${var.region}:${data.aws_caller_identity.current.account_id}:${var.org_name}-${var.project_name}-${var.env}-*-queue",
+      aws_sqs_queue.anonchat_queue.arn,
+    ]
   }
 
   statement {
@@ -59,9 +61,9 @@ data "aws_iam_policy_document" "model_task" {
   }
 
   statement {
-    sid    = "WorkflowStepsPermissions"
-    effect = "Allow"
-    actions = ["dynamodb:PutItem"]
+    sid       = "WorkflowStepsPermissions"
+    effect    = "Allow"
+    actions   = ["dynamodb:PutItem"]
     resources = [aws_dynamodb_table.workflow_steps.arn]
   }
 
@@ -85,13 +87,6 @@ data "aws_iam_policy_document" "model_task" {
     actions   = ["s3:PutObject"]
     resources = ["${aws_s3_bucket.model_outputs.arn}/outputs/*"]
   }
-
-  statement {
-    sid = "ChangeMessageVisibility"
-    effect = "Allow"
-    actions = ["sqs:changemessagevisibility"]
-    resources = [for x in aws_sqs_queue.model_queues : x.arn]
-  }
 }
 
 resource "aws_iam_role_policy" "model_task" {
@@ -107,39 +102,77 @@ resource "aws_iam_role_policy" "model_task" {
 module "ecs" {
   source       = "terraform-aws-modules/ecs/aws"
   version      = "~> 7.5"
-  cluster_name = join("-", [var.project_name, var.env, "fargate-cluster"])
+  cluster_name = join("-", [var.org_name, var.project_name, var.env, "inference"])
 
   create_task_exec_iam_role = true
   create_task_exec_policy   = true
 
-  # FARGATE and FARGATE_SPOT are AWS-managed providers -- they are
-  # associated via cluster_capacity_providers, not capacity_providers.
-  # capacity_providers is for EC2 ASG-backed providers only.
-  cluster_capacity_providers = ["FARGATE", "FARGATE_SPOT"]
+  cluster_capacity_providers = [
+    var.capacity_provider_big_cpu,
+    var.capacity_provider_gpu_sm,
+    var.capacity_provider_gpu_lrg,
+    "anonchat",
+  ]
 
-  # EC2-backed capacity providers -- empty until GPU is enabled
-  capacity_providers = var.enable_gpu_services ? {
-    gpu = {
+  capacity_providers = {
+    (var.capacity_provider_gpu_sm) = {
       auto_scaling_group_provider = {
-        auto_scaling_group_arn         = aws_autoscaling_group.gpu.arn
-        managed_termination_protection = "ENABLED"
+        auto_scaling_group_arn         = aws_autoscaling_group.gpu_sm.arn
+        managed_termination_protection = "DISABLED"
         managed_scaling = {
           status                    = "ENABLED"
           target_capacity           = 100
           minimum_scaling_step_size = 1
-          maximum_scaling_step_size = 4
+          maximum_scaling_step_size = 2
+          instance_warmup_period    = 300
         }
       }
     }
-  } : {}
+    (var.capacity_provider_gpu_lrg) = {
+      auto_scaling_group_provider = {
+        auto_scaling_group_arn         = aws_autoscaling_group.gpu_lrg.arn
+        managed_termination_protection = "DISABLED"
+        managed_scaling = {
+          status                    = "ENABLED"
+          target_capacity           = 100
+          minimum_scaling_step_size = 1
+          maximum_scaling_step_size = 1
+          instance_warmup_period    = 420
+        }
+      }
+    }
+    anonchat = {
+      auto_scaling_group_provider = {
+        auto_scaling_group_arn         = aws_autoscaling_group.anonchat.arn
+        managed_termination_protection = "DISABLED"
+        managed_scaling = {
+          status                    = "ENABLED"
+          target_capacity           = 100
+          minimum_scaling_step_size = 1
+          maximum_scaling_step_size = 1
+          instance_warmup_period    = 300
+        }
+      }
+    }
+    (var.capacity_provider_big_cpu) = {
+      auto_scaling_group_provider = {
+        auto_scaling_group_arn         = aws_autoscaling_group.big_cpu.arn
+        managed_termination_protection = "DISABLED"
+        managed_scaling = {
+          status                    = "ENABLED"
+          target_capacity           = 100
+          minimum_scaling_step_size = 1
+          maximum_scaling_step_size = 2
+          instance_warmup_period    = 120
+        }
+      }
+    }
+  }
 
   default_capacity_provider_strategy = {
-    FARGATE = {
-      weight = 50
-      base   = 20
-    }
-    FARGATE_SPOT = {
-      weight = 50
+    (var.capacity_provider_big_cpu) = {
+      weight = 1
+      base   = 1
     }
   }
 

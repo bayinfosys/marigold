@@ -1,0 +1,10 @@
+#
+# install some python packages to a target directory
+# NB: for local install we set PIP_TARGET to /host-packages (mounted in container)
+#     for aws efs, we do not set that var so the packages go to a standard location
+#
+
+# pytorch
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision

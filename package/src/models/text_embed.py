@@ -33,12 +33,20 @@ def load_text_embedding(modelname: str, cache_dir: str = None, **kwargs) -> Mode
     loaded separately and stored as processor for token-counting only.
     """
     from sentence_transformers import SentenceTransformer as ST
-    from transformers import AutoTokenizer as T
+    from transformers import AutoTokenizer
 
-    T0 = clock()
-    tokenizer = T.from_pretrained(modelname, cache_dir=cache_dir)
-    model = ST(modelname, cache_folder=cache_dir)
-    logger.info("loaded '%s' in %0.2fs", modelname, clock() - T0)
+    st_kwargs = {}
+    if cache_dir:
+        st_kwargs["model_kwargs"] = {"cache_dir": cache_dir}
+        st_kwargs["tokenizer_kwargs"] = {"cache_dir": cache_dir}
+
+    model = ST(modelname, cache_folder=cache_dir, **st_kwargs)
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        modelname,
+        cache_dir=cache_dir,
+    )
+
     return ModelLoaderResult(processor=tokenizer, model=model)
 
 

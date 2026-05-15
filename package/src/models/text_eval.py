@@ -46,7 +46,7 @@ def _is_token_classification(model) -> bool:
     return "TokenClassification" in type(model).__name__
 
 
-def load_text_eval(modelname: str, **kwargs) -> ModelLoaderResult:
+def load_text_eval(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
     """Load a text evaluation model.
 
     Tries AutoModelForTokenClassification first. Falls back to
@@ -60,9 +60,9 @@ def load_text_eval(modelname: str, **kwargs) -> ModelLoaderResult:
         AutoModelForSequenceClassification,
     )
     try:
-        return standard_loader(T, AutoModelForTokenClassification, modelname, **kwargs)
+        return standard_loader(T, AutoModelForTokenClassification, modelname, cache_dir=cache_dir, **kwargs)
     except Exception:
-        return standard_loader(T, AutoModelForSequenceClassification, modelname, **kwargs)
+        return standard_loader(T, AutoModelForSequenceClassification, modelname, cache_dir=cache_dir, **kwargs)
 
 
 @model_spec(

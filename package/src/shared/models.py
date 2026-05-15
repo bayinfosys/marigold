@@ -4,7 +4,7 @@ from typing import Dict, List, TypeVar, Union, Any
 
 import httpx
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from shared.enums import ModelModalities, ModelProvider, ModelType
 
 T = TypeVar("T")
@@ -48,6 +48,7 @@ class ModelDispatch(BaseModel):
     task_definition: str
     family: str
     model_type: str
+    gpu_tier: str = "none"  # "none", "sm", "lrg"
 
 
 ModelDispatchRoutes = Dict[str, ModelDispatch]
@@ -133,6 +134,14 @@ class InstructMessage(BaseModel, use_enum_values=True):
 
     role: InstructRole
     content: Union[str, InstructMessageContentList] = Field(...)
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def coerce_role(cls, v):
+        if isinstance(v, InstructRole):
+            return v
+
+        return InstructRole(v)
 
 
 InstructMessages = List[InstructMessage]

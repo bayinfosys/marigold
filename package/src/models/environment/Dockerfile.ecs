@@ -1,4 +1,5 @@
-FROM python:3.12-slim AS base_image
+ARG BASE_IMAGE=python:3.12-slim
+FROM $BASE_IMAGE AS base_image
 
 ENV HF_HUB_DISABLE_PROGRESS_BARS=1
 ENV HF_HUB_DISABLE_TELEMETRY=1
@@ -17,25 +18,38 @@ ENV USE_FAST=0
 # install `lame` for the tts and other audio outputs
 RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
-COPY ./package/src/models/environment/non-env-requirements.txt /tmp/requirements.txt
-RUN pip install -r /tmp/requirements.txt
-
 # build the torch/hf/env
-COPY ./package/src/models/environment/build-environment.sh /usr/bin
-RUN build-environment.sh
+ARG TORCH_REQS=pytorch-cpu.requirements.txt
+COPY ./package/src/models/environment/$TORCH_REQS /tmp/requirements.txt
+RUN pip install --no-cache-dir --break-system-packages  -r /tmp/requirements.txt
+
+COPY ./package/src/models/environment/huggingface.requirements.txt  /tmp/requirements.txt
+RUN pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
+
+COPY ./package/src/models/environment/diffusers.requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
+
+COPY ./package/src/models/environment/misc.requirements.txt  /tmp/requirements.txt
+RUN pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
 
 # get package deps
 COPY ./requirements.txt /tmp/requirements.txt
-RUN pip install -r /tmp/requirements.txt
+RUN pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
 
+# add the test script
+ARG GPU_ENABLED=0
+ENV GPU_ENABLED=$GPU_ENABLED
+#COPY ./package/src/models/environment/container-info.py
+#RUN python3 ./container-info.py
+
+# build the actual image
 FROM base_image
 
 ARG GIT_TAG=unknown
-
 ENV BUILD_VERSION=${GIT_TAG}
 
 # copy code into container
 WORKDIR /app
 COPY ./package/src .
 
-CMD ["python", "-c", "import logging; logging.warning('container booted'); import time; time.sleep(30)"]
+CMD ["python3", "-c", "import logging; logging.warning('container booted'); import time; time.sleep(30)"]

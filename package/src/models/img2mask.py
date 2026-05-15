@@ -32,7 +32,7 @@ def load_img2mask(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoade
     from transformers import AutoModelForMaskGeneration as M
     from transformers import AutoProcessor as T
 
-    return standard_loader(T, M, modelname, **kwargs)
+    return standard_loader(T, M, modelname, cache_dir=cache_dir, **kwargs)
 
 
 @model_spec(

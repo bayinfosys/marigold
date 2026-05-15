@@ -1,0 +1,4 @@
+# pytorch gpu comes from the docker container with CUDA etc already installed
+# ensure we have torchvision and other torch libraries here
+torch
+torchvision

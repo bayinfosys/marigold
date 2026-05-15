@@ -1,0 +1,8 @@
+# huggingface stuff
+transformers
+sentence-transformers
+bitsandbytes
+accelerate
+sentencepiece
+protobuf
+einops

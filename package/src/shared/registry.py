@@ -137,9 +137,17 @@ class BaseModelHandler(ABC):
     def __init__(self, modelname: str):
         self.modelname = modelname
         cache_dir = os.getenv("CACHE_DIR", "/mnt/efs/cache")
+
+        loader_kwargs = {
+            "load_in_4bit":      os.getenv("LOAD_IN_4BIT",     "").lower() == "true",
+            "use_fast":          os.getenv("USE_FAST",          "").lower() == "true",
+            "remote_code":       os.getenv("TRUST_REMOTE_CODE", "").lower() == "true",
+            "low_cpu_mem_usage": os.getenv("LOW_CPU_MEM_USAGE", "true").lower() == "true",
+        }
+
         spec = _SPECS[self._model_type.value]  # set by decorator
         T = clock()
-        result = spec.loader(self.modelname, cache_dir)
+        result = spec.loader(self.modelname, cache_dir, **loader_kwargs)
         self.processor = result.processor
         self.model = result.model
         logger.info("'%s' loaded in %0.2fs", modelname, clock() - T)

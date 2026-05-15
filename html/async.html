@@ -1,0 +1,231 @@
+---
+layout: default
+title: "AI inference that does not drop requests -- Marigold"
+description: "Queue-based AI inference for production pipelines. Submit jobs, retrieve results when ready. No dropped requests, no timeouts, full audit trail."
+canonical: "https://marigold.run/async.html"
+---
+
+<main>
+
+<section class="hero">
+  <div class="wrap">
+    <p class="hero-eyebrow">Reliable AI inference</p>
+    <h1 class="slogan">AI jobs that complete.<br>Even under load.</h1>
+    <p class="hero-sub">
+      Most inference APIs are synchronous. Under load, they slow down, rate
+      limit, or drop requests. Marigold is queue-first: every job is
+      durably stored and processed to completion, regardless of load.
+    </p>
+    <a href="#waitlist" class="btn-primary">Request access</a>
+  </div>
+</section>
+
+<section class="section-light">
+  <div class="wrap">
+    <h2 class="section-label">The problem with synchronous inference</h2>
+    <p class="section-intro">
+      A synchronous HTTP call to an inference API requires a persistent
+      connection for the entire duration of inference. For a 30-second
+      image generation or a 60-second large model response, this means
+      30 to 60 seconds of held TCP connections, mobile networks dropping
+      mid-request, and load spikes that cascade into 429 errors or
+      silent failures. Every dropped connection is a lost request.
+    </p>
+    <div class="pillar-grid">
+      <div class="pillar">
+        <p class="pillar-num">01</p>
+        <h3>Submit and disconnect</h3>
+        <p>
+          POST your request and receive a job ID immediately. The
+          connection closes. Your process, browser tab, or mobile
+          app does not need to stay open. Retrieve the result when
+          convenient -- seconds, minutes, or hours later.
+        </p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">02</p>
+        <h3>No dropped requests under load</h3>
+        <p>
+          Jobs queue durably. A burst of 100 requests with one GPU
+          available processes sequentially without losing a single
+          job. There are no 429 errors, no silent failures, no
+          requests to retry. The queue absorbs the burst.
+        </p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">03</p>
+        <h3>Full pipeline visibility</h3>
+        <p>
+          Every job has a status: queued, provisioning, processing,
+          complete, or error. Queue depth is observable. You know
+          exactly where every request is in the pipeline at all
+          times.
+        </p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">04</p>
+        <h3>Decouple submission from retrieval</h3>
+        <p>
+          The system that submits a job does not need to be the
+          system that retrieves the result. Share a job ID between
+          services, pipelines, or teams. A batch process submits;
+          a dashboard retrieves. A mobile app submits; a server
+          collects and stores.
+        </p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">05</p>
+        <h3>Webhook delivery</h3>
+        <p>
+          Provide a callback URL at submission time. When the job
+          completes, Marigold POSTs the result directly to your
+          endpoint. No polling loop required for event-driven
+          architectures.
+        </p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-num">06</p>
+        <h3>Full audit trail</h3>
+        <p>
+          Every submission, status transition, and completion is
+          recorded with timestamps. Every result is stored and
+          retrievable for up to seven days. Regulated industries
+          require this. Marigold provides it by default.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section-dark">
+  <div class="wrap">
+    <h2 class="section-label">How it works</h2>
+    <div class="code-walkthrough">
+
+      <div class="code-step">
+        <p class="code-step-label">1. Submit a job</p>
+        <pre><code>POST /gen/instruct
+{
+  "model": "mistralai/mistral-small-24b-instruct-2501",
+  "messages": [{"role": "user", "content": "Summarise this contract..."}],
+  "callback_url": "https://your-system.com/webhooks/ai"
+}
+
+-> { "message_id": "a3f1c2..." }</code></pre>
+        <p class="code-step-note">
+          Returns immediately. The job is durably queued.
+          Your connection closes.
+        </p>
+      </div>
+
+      <div class="code-step">
+        <p class="code-step-label">2. Poll for status (optional)</p>
+        <pre><code>GET /output/gen/instruct/a3f1c2...
+
+-> { "status": "processing" }
+-> { "status": "complete", "result": { "choices": [...] } }</code></pre>
+        <p class="code-step-note">
+          Poll from any process, any machine, any time.
+          Or skip polling entirely and use a webhook.
+        </p>
+      </div>
+
+      <div class="code-step">
+        <p class="code-step-label">3. Receive via webhook (optional)</p>
+        <pre><code>POST https://your-system.com/webhooks/ai
+{
+  "message_id": "a3f1c2...",
+  "status": "complete",
+  "result": { "choices": [...], "usage": {...} }
+}</code></pre>
+        <p class="code-step-note">
+          Marigold delivers the result to your endpoint
+          when the job completes. No polling required.
+        </p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="section-light">
+  <div class="wrap">
+    <h2 class="section-label">Built for production pipelines</h2>
+    <div class="use-case-list">
+
+      <div class="use-case">
+        <h3>Overnight batch processing</h3>
+        <p>
+          Submit thousands of document classification, embedding, or
+          summarisation jobs before close of business. Retrieve
+          results the next morning. No held connections, no timeouts,
+          no babysitting.
+        </p>
+      </div>
+
+      <div class="use-case">
+        <h3>Mobile and browser applications</h3>
+        <p>
+          Submit an image generation or long-form inference request
+          from a mobile app. The user closes the app. When they
+          return, the result is waiting. No background process
+          required on the client.
+        </p>
+      </div>
+
+      <div class="use-case">
+        <h3>Multi-step pipelines</h3>
+        <p>
+          Fan out a document to ten models in parallel. Each job
+          has its own ID. A reconciliation process collects results
+          as they complete and assembles the final output.
+          No coordination infrastructure required.
+        </p>
+      </div>
+
+      <div class="use-case">
+        <h3>Cross-team workflows</h3>
+        <p>
+          A data team submits a batch of inference jobs and shares
+          the job IDs with a compliance team. The compliance team
+          retrieves and reviews results independently, on their
+          own schedule. No shared credentials, no coupled systems.
+        </p>
+      </div>
+
+      <div class="use-case">
+        <h3>Event-driven architectures</h3>
+        <p>
+          A webhook fires when each job completes. Your downstream
+          system triggers on the event rather than polling.
+          Marigold integrates with any event-driven architecture
+          without additional infrastructure.
+        </p>
+      </div>
+
+      <div class="use-case">
+        <h3>Regulated industries</h3>
+        <p>
+          Every job is logged with submission time, completion time,
+          model used, token counts, and result. Seven-day result
+          retention by default. The audit trail required by FCA,
+          NHS, and public sector procurement is built in.
+        </p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="tagline-break" id="waitlist">
+  <div class="wrap">
+    <h2 class="slogan">AI inference that finishes what it starts.</h2>
+    <p>
+      Paid plans are in limited release. Leave your email to be
+      notified when developer access opens.
+    </p>
+    {% include waitlist_form.html source="async" %}
+  </div>
+</section>
+
+</main>
