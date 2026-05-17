@@ -65,9 +65,8 @@ class ModelDefinition(BaseModel):
     output: str
     gpu_tier: str = Field("none", description="GPU capacity provider tier: none, sm, or lrg")
     gpu_units: int = Field(0, ge=0, le=4, description="Number of GPU units to reserve. 0 = CPU only.")
-    memory_size: int = 1024
-    timeout: int = Field(300, ge=30)
-    idle_timeout: int = Field(600, ge=0)
+    memory_size: int = 4096
+    timeout: int = Field(10, ge=10)
     auth_required: bool = False
     langcode: Optional[str] = None
     log_level: str = "INFO"
@@ -127,7 +126,6 @@ class TFVarsEntry(BaseModel):
     gpu_units: int
     memory_reservation: int
     timeout: int
-    idle_timeout: int
     auth_required: bool
     provider: str
     environment_variables: Dict[str, str]
@@ -145,7 +143,6 @@ class TFVarsEntry(BaseModel):
             "    gpu_units     = %i" % self.gpu_units,
             "    memory_res    = %i" % self.memory_reservation,
             "    timeout       = %i" % self.timeout,
-            "    idle_timeout  = %i" % self.idle_timeout,
             "    auth_required = %s" % hcl_bool(self.auth_required),
             "    provider      = %s" % hcl_str(self.provider),
             "    environment_variables = {",
@@ -166,7 +163,6 @@ class InternalCatalogueEntry(BaseModel):
     input: str
     output: str
     timeout: int
-    idle_timeout: int
     auth_required: bool
     gpu_tier: str
     parameters: Dict[str, Any]
@@ -244,7 +240,6 @@ def to_tfvars_entry(model: ModelDefinition) -> TFVarsEntry:
         gpu_units=model.gpu_units,
         memory_reservation=model.memory_size,
         timeout=model.timeout,
-        idle_timeout=model.idle_timeout,
         auth_required=model.auth_required,
         provider=model.provider.value,
         environment_variables=_make_env_vars(model),
@@ -259,7 +254,6 @@ def to_internal_entry(model: ModelDefinition) -> InternalCatalogueEntry:
         input=model.input,
         output=model.output,
         timeout=model.timeout,
-        idle_timeout=model.idle_timeout,
         auth_required=model.auth_required,
         gpu_tier=model.gpu_tier,
         parameters=model.parameters.model_dump(exclude_none=True),

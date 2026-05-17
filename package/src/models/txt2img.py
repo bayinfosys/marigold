@@ -15,14 +15,13 @@ from time import perf_counter as clock
 
 import numpy as np
 import torch
+from api.models import Txt2ImgRequest, Txt2ImgResponse
+from models.standard_loader import ModelLoaderResult
 from PIL import Image
-
 from shared.enums import ModelMode, ModelType, OutputMimeType
 from shared.outputs import image_to_png_bytes
 from shared.registry import BaseModelHandler, OutputField, model_spec
 from shared.usage import record_usage
-from models.standard_loader import ModelLoaderResult
-from api.models import Txt2ImgRequest, Txt2ImgResponse
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -134,6 +133,8 @@ class Txt2ImgModel(BaseModelHandler):
             modelname=self.modelname,
             duration=duration,
             inference=iduration,
+            load_time_ms=self.load_time_ms,
+            model_size_bytes=self.model_size_bytes,
         )
 
         return Txt2ImgResponse(

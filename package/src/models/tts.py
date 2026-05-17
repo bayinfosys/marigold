@@ -26,13 +26,12 @@ from time import perf_counter as clock
 
 import numpy as np
 import torch
+from api.models import TTSRequest, TTSResponse
+from models.standard_loader import ModelLoaderResult, standard_loader
 from pydub import AudioSegment
-
 from shared.enums import ModelMode, ModelType, OutputMimeType
 from shared.registry import BaseModelHandler, OutputField, model_spec
 from shared.usage import record_usage
-from models.standard_loader import ModelLoaderResult, standard_loader
-from api.models import TTSRequest, TTSResponse
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -159,6 +158,8 @@ class TTSModel(BaseModelHandler):
             duration=duration,
             inference=iduration,
             input_tokens=inputs.input_ids.nelement(),
+            load_time_ms=self.load_time_ms,
+            model_size_bytes=self.model_size_bytes,
         )
 
         return TTSResponse(

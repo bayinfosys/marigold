@@ -139,17 +139,25 @@ class BaseModelHandler(ABC):
         cache_dir = os.getenv("CACHE_DIR", "/mnt/efs/cache")
 
         loader_kwargs = {
-            "load_in_4bit":      os.getenv("LOAD_IN_4BIT",     "").lower() == "true",
-            "use_fast":          os.getenv("USE_FAST",          "").lower() == "true",
+            "load_in_4bit":      os.getenv("LOAD_IN_4BIT",     "").lower() in ("1", "true"),
+            "use_fast":          os.getenv("USE_FAST",          "").lower() in ("1", "true"),
             "remote_code":       os.getenv("TRUST_REMOTE_CODE", "").lower() == "true",
-            "low_cpu_mem_usage": os.getenv("LOW_CPU_MEM_USAGE", "true").lower() == "true",
+            "low_cpu_mem_usage": os.getenv("LOW_CPU_MEM_USAGE", "true").lower() in ("1", "true"),
         }
 
         spec = _SPECS[self._model_type.value]  # set by decorator
         T = clock()
-        result = spec.loader(self.modelname, cache_dir, **loader_kwargs)
+
+        try:
+            result = spec.loader(self.modelname, cache_dir, **loader_kwargs)
+        except Exception as e:
+            logger.exception("%s an exception on load", self.modelname)
+            raise
+
         self.processor = result.processor
         self.model = result.model
+        self.load_time_ms = result.load_time_ms
+        self.model_size_bytes = result.model_size_bytes
         logger.info("'%s' loaded in %0.2fs", modelname, clock() - T)
 
     def write_output(self, field_name: str, data: bytes, message_id: str):

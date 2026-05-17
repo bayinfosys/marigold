@@ -99,6 +99,9 @@ module "efs" {
     }
   }
 
+  # in elastic throughput mode we often get throttled, so try this.
+  throughput_mode = "elastic"
+
   # disable backup policy entirely - models can be recreated from HuggingFace
   create_backup_policy = false
   enable_backup_policy = false

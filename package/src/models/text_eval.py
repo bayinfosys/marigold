@@ -26,12 +26,11 @@ import os
 from time import perf_counter as clock
 
 import torch
-
+from api.models import EvalResponse, EvalScore, EvalTextRequest
+from models.standard_loader import ModelLoaderResult, standard_loader
 from shared.enums import ModelMode, ModelType
 from shared.registry import BaseModelHandler, model_spec
 from shared.usage import record_usage
-from models.standard_loader import ModelLoaderResult, standard_loader
-from api.models import EvalResponse, EvalScore, EvalTextRequest
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -54,11 +53,9 @@ def load_text_eval(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoad
     token classification. This covers NER and sequence classifier
     checkpoints without requiring the caller to specify the architecture.
     """
+    from transformers import (AutoModelForSequenceClassification,
+                              AutoModelForTokenClassification)
     from transformers import AutoTokenizer as T
-    from transformers import (
-        AutoModelForTokenClassification,
-        AutoModelForSequenceClassification,
-    )
     try:
         return standard_loader(T, AutoModelForTokenClassification, modelname, cache_dir=cache_dir, **kwargs)
     except Exception:
@@ -129,6 +126,8 @@ class TextEvalModel(BaseModelHandler):
             duration=duration,
             inference=iduration,
             input_tokens=input_tokens,
+            load_time_ms=self.load_time_ms,
+            model_size_bytes=self.model_size_bytes,
         )
 
         return EvalResponse(model=self.modelname, scores=scores, usage=usage)

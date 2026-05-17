@@ -14,14 +14,13 @@ from time import perf_counter as clock
 
 import numpy as np
 import torch
+from api.models import Img2MaskRequest, Img2MaskResponse
+from models.standard_loader import ModelLoaderResult, standard_loader
 from PIL import Image
-
 from shared.enums import ModelMode, ModelType, OutputMimeType
 from shared.outputs import decode_image, image_to_png_bytes
 from shared.registry import BaseModelHandler, OutputField, model_spec
 from shared.usage import record_usage
-from models.standard_loader import ModelLoaderResult, standard_loader
-from api.models import Img2MaskRequest, Img2MaskResponse
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -112,6 +111,8 @@ class Img2MaskModel(BaseModelHandler):
             modelname=self.modelname,
             duration=duration,
             inference=iduration,
+            load_time_ms=self.load_time_ms,
+            model_size_bytes=self.model_size_bytes,
         )
 
         return Img2MaskResponse(

@@ -36,6 +36,16 @@ def get_memory_usage() -> int:
     return 1 + int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0)
 
 
+def get_vram_usage() -> int:
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return torch.cuda.memory_allocated()
+        return 0
+    except Exception:
+        return 0
+
+
 def record_usage(
     user_id: str,
     model_type: ModelType,
@@ -44,6 +54,8 @@ def record_usage(
     inference: float,
     input_tokens: int = 0,
     output_tokens: int = 0,
+    load_time_ms:     int = 0,
+    model_size_bytes: int = 0,
 ) -> ModelUsageStats:
     """Build a ModelUsageStats instance, submit to the metrics backend,
     and return the stats for inclusion in the handler response.
@@ -54,6 +66,9 @@ def record_usage(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         memory_usage=get_memory_usage(),
+        load_time_ms     = load_time_ms,
+        model_size_bytes = model_size_bytes,
+        vram_usage_bytes = get_vram_usage(),
     )
     item = UsageItem.from_model_stats(
         stats=stats,

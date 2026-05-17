@@ -26,6 +26,7 @@ from shared.lambda_proxy import get_path_from_event, get_userid_from_event, mk_r
 from shared.sqs_models import MarigoldSQSMessage
 
 from .cache import create_status, delete_cache, get_response, get_status, update_status
+from .chathack import handle_chat_submission
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")
@@ -41,6 +42,7 @@ dynamodb = boto3.client("dynamodb")
 
 
 _config: ModelDispatchRoutes = {}
+_cache_state: dict = {}
 
 
 def load_model_config() -> ModelDispatchRoutes:
@@ -63,34 +65,31 @@ def load_model_config() -> ModelDispatchRoutes:
     return _config
 
 
-load_model_config()
-assert _config, "unable to load MODELS_CONFIG"
+def load_cache_state() -> dict:
+    global _cache_state
 
-
-_available_model_names: set[str] = set()
-
-
-def load_available_models() -> set[str]:
-    global _available_model_names
-
-    if _available_model_names:
-        return _available_model_names
+    if _cache_state:
+        return _cache_state
 
     bucket = os.environ["AWS_S3_ASSETS_BUCKET_NAME"]
-    key = os.environ.get("MODELS_S3_OBJECT", "models.json")
+    key = os.environ.get("CACHE_STATE_S3_OBJECT", "cache_state.json")
+
     try:
         obj = s3.get_object(Bucket=bucket, Key=key)
         data = json.loads(obj["Body"].read())
-        # models.json is a list of model objects with a "name" field
-        _available_model_names = {m["name"].lower() for m in data}
-        logger.info("loaded %d available models", len(_available_model_names))
+        _cache_state = data.get("models", {})
+        logger.info("loaded cache state for %d models", len(_cache_state))
     except Exception as e:
-        logger.warning("failed to load available models from s3: %s -- skipping availability check", str(e))
+        logger.warning("failed to load cache state: %s -- skipping cache check", str(e))
+        return {}
 
-    return _available_model_names
+    return _cache_state
 
 
-load_available_models()
+load_model_config()
+load_cache_state()
+assert _config, "unable to load MODELS_CONFIG"
+assert _cache_state, "unable to load CACHE_STATE"
 
 # ---------------------------------------------------------------------------
 # Launch type
@@ -155,12 +154,13 @@ class TaskLauncher:
         """Return True if any task for this model is running or pending."""
         return self.is_running(model) or self.is_pending(model)
 
-    def launch(self, model: ModelDispatch, user_tier: str = "free"):
+    def launch(self, model: ModelDispatch, user_tier: str = "free", token: str = ""):
         logger.info("launching ecs task for '%s'", model.family)
         launch_kwargs = get_launch_kwargs(model, user_tier)
         self.ecs.run_task(
             cluster=self.cluster,
             taskDefinition=model.task_definition,
+            #clientToken=model.family,  # idempotency token
             count=1,
             networkConfiguration={
                 "awsvpcConfiguration": {
@@ -187,7 +187,7 @@ launcher = TaskLauncher(
 
 def handler(event, context):
     logger.info("polling lambda version=%s", os.getenv("BUILD_VERSION", "unknown"))
-    logger.info("event: '%s'", str(event))
+    logger.debug("event: '%s'", str(event))
 
     method = event["httpMethod"]
     userid = get_userid_from_event(event)
@@ -199,12 +199,11 @@ def handler(event, context):
         "OPTIONS": lambda u, e: mk_resp(200, {}),
     }
 
-    fn = dispatch.get(method)
-    if fn is None:
-        return mk_resp(405, {"status": "error", "message": "method not allowed"})
-
     try:
-        return fn(userid, event)
+        return dispatch[method](userid, event)
+    except KeyError as e:
+        logger.warning("'%s' not found for '%s'", str(e), str(event))
+        return mk_resp(405, {"status": "error", "message": "method not allowed"})
     except Exception as e:
         logger.exception("error in handler: %s", str(e))
         return mk_resp(500, {"status": "error", "message": "internal error"})
@@ -216,9 +215,16 @@ def handle_submission(userid, event):
     body_md5 = md5(body.encode("utf-8")).hexdigest()
     message_id = "API#" + body_md5
 
-    logger.info(
-        "[%s/%s] submission request_id=%s", userid, message_id, request_id
-    )
+    path = event.get("path", "")
+
+    # HACK - demo chat
+    # /demo/chat shortcut -- routes directly to the anonchat queue
+    # no model lookup, no ECS launch, always-on service handles it
+    if path.startswith("/demo/chat"):
+        return handle_chat_submission(userid, event)
+    # HACK - end
+
+    logger.info("[%s/%s] request_id=%s", userid, message_id, request_id)
 
     message_content = json.loads(body)
 
@@ -240,9 +246,11 @@ def handle_submission(userid, event):
         )
         return mk_resp(200, {"message_id": body_md5, "status": existing_status})
 
+    # compute the model name hash
+    model_name_md5 = md5(model_name.encode()).hexdigest()
+
     # get the list of available models, queues, etc
     models = load_model_config()
-    model_name_md5 = md5(model_name.encode()).hexdigest()
 
     # attempt to get the dispatch function
     try:
@@ -251,15 +259,21 @@ def handle_submission(userid, event):
         logger.warning("[%s] unknown model requested: '%s'", userid, model_name)
         return mk_resp(400, {"status": "error", "message": "unknown model"})
 
-    # check if the model is actually in the cache
-    available = load_available_models()
-    if available and model_name not in available:
-        logger.warning("[%s] model not in cache: '%s'", userid, model_name)
-        return mk_resp(400, {
-            "status": "error",
-            "message": "model_not_available",
-            "model": model_name,
-        })
+    # verify the model is in the actual cache, not just requested
+    cache_state = load_cache_state()
+    if not cache_state:
+        logger.critical("[%s] cache state unavailable -- rejecting request", userid)
+        return mk_resp(503, {"status":  "error", "message": "service_unavailable", "detail":  "cache state could not be loaded"})
+
+    model_cache = cache_state.get(model_name)
+    if not model_cache:
+        logger.critical("[%s] model not in cache state: '%s'", userid, model_name)
+        return mk_resp(400, {"status":  "error", "message": "model_not_available", "model":   model_name})
+
+    if model_cache.get("status") != "ok":
+        logger.critical("[%s] model cache status is not ok: '%s' status=%s", userid, model_name, model_cache.get("status"))
+        return mk_resp(400, {"status":  "error", "message": "model_not_available", "model":   model_name, "cache_status": model_cache.get("status")})
+
 
     # all seems fine, go ahead and create a status row to update on progress
     create_status(userid, message_id, status="queued")
@@ -289,18 +303,19 @@ def handle_submission(userid, event):
         update_status(userid, message_id, status="error")
         return mk_resp(500, {"status": "error", "message": "internal routing error"})
     except Exception as e:
-        logger.exception(
-            "[%s/%s] unknown error sending to SQS: '%s'", userid, message_id, str(e)
-        )
+        logger.exception("[%s/%s] unknown error sending to SQS: '%s'", userid, message_id, str(e))
         update_status(userid, message_id, status="error")
         return mk_resp(500, {"status": "error", "message": "internal error"})
 
     if not launcher.is_active(dispatch):
-        logger.info(
-            "[%s/%s] launching task for '%s'", userid, message_id, model_name
-        )
+        logger.info("[%s/%s] launching task for '%s'", userid, message_id, model_name)
         update_status(userid, message_id, "provisioning")
-        launcher.launch(dispatch)
+        try:
+            launcher.launch(dispatch, token=body_md5)
+        except Exception as e:
+            # NB: this is not an error, the task is not initiated but the job is in the queue
+            # TODO: have a watch dog to check for queues which are not being served and start a worker
+            logger.critical("[%s/%s] failed to launch task for '%s'", userid, message_id, model_name)
 
     return mk_resp(200, {"message_id": body_md5})
 
@@ -315,6 +330,22 @@ def handle_status(userid, event):
         return mk_resp(
             200, {"status": status, "message_id": raw_id, "result": result}
         )
+#    # TODO: when we have the dynamodb tracking of jobs, we should respond with instance providing info to the user
+#    elif status == "provisioning":
+#        model_state = get_model_state(model_hash)
+#        if model_state:
+#            hint = {
+#                "loading":  "Model loading on GPU instance, ~%ds remaining" % estimated_remaining(model_state),
+#                "ready":    "Worker ready, processing your request shortly",
+#            }.get(model_state["status"], "GPU instance starting")
+#        else:
+#            hint = "GPU instance starting, estimated wait 3-5 minutes"
+#
+#        return mk_resp(202, {
+#            "status":    "provisioning",
+#            "message_id": raw_id,
+#            "hint":      hint,
+#        })
     elif status:
         return mk_resp(202, {"status": status, "message_id": raw_id})
     else:

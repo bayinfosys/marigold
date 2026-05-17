@@ -37,7 +37,7 @@ locals {
       { name = "WORKFLOW_STEPS_TABLE",   value = aws_dynamodb_table.workflow_steps.id },
       { name = "OUTPUT_BUCKET",          value = aws_s3_bucket.model_outputs.id },
       { name = "SQS_VISIBILITY_TIMEOUT", value = tostring(v.timeout) },
-      { name = "IDLE_TIMEOUT",           value = tostring(v.idle_timeout) },
+      { name = "SQS_POLL_WAIT_TIME",     value = "45" },
     ],
     v.provider == "huggingface" ? [
       { name = "CACHE_DIR",                    value = var.efs_model_cache_path },
@@ -62,7 +62,7 @@ locals {
 resource "aws_ecs_task_definition" "cpu" {
   for_each = local.cpu_models
 
-  family                   = join("-", [var.project_name, var.env, each.key])
+  family                   = join("-", [var.project_name, var.env, each.key, "cpu"])
   network_mode             = "awsvpc"
   requires_compatibilities = ["EC2"]
   execution_role_arn       = module.ecs.task_exec_iam_role_arn

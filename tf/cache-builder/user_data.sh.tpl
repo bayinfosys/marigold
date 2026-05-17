@@ -4,8 +4,6 @@
 #
 # models_yaml_etag: ${models_yaml_etag}
 
-set -euo pipefail
-
 exec > >(tee /var/log/cache-builder.log) 2>&1
 echo "cache builder starting: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -86,7 +84,7 @@ aws ecr get-login-password --region ${region} | \
     --password-stdin \
     ${ecr_registry}
 
-docker pull ${model_cache_image_uri}
+docker pull -q ${model_cache_image_uri}
 echo "image pulled"
 
 # ---------------------------------------------------------------------------
@@ -134,8 +132,8 @@ DOWNLOAD_CID=$(docker run -d \
   python3 -m tools.model_cli download-weights)
 
 echo "download container started: $DOWNLOAD_CID"
-docker logs -f "$DOWNLOAD_CID"
-DOWNLOAD_EXIT=$(docker wait "$DOWNLOAD_CID")
+docker logs -f "$DOWNLOAD_CID" || true
+DOWNLOAD_EXIT=$(docker wait "$DOWNLOAD_CID" || true)
 docker rm "$DOWNLOAD_CID"
 echo "cache download finished with exit code $DOWNLOAD_EXIT"
 
@@ -144,7 +142,7 @@ echo "cache download finished with exit code $DOWNLOAD_EXIT"
 # ---------------------------------------------------------------------------
 echo "running cache inspection"
 
-INSPECT_CID=$(docker run -d \
+docker run --rm \
   -e AWS_DEFAULT_REGION=${region} \
   -e MODELS_YAML_PATH=/app/assets/models.yaml \
   -e CACHE_DIR=${efs_model_cache_path} \
@@ -153,13 +151,12 @@ INSPECT_CID=$(docker run -d \
   -v /mnt/efs:${efs_mount_point} \
   -v $(pwd)/assets:/app/assets:ro \
   ${model_cache_image_uri} \
-  python3 -m tools.model_cli --json inspect-cache)
+  python3 -m tools.model_cli --json inspect-cache \
+  > /tmp/cache_state.json || true
+INSPECT_EXIT=$?
 
-echo "inspect container started: $INSPECT_CID"
-docker logs -f "$INSPECT_CID" > /tmp/cache_state.json 2>/var/log/cache-inspect-stderr.log
-INSPECT_EXIT=$(docker wait "$INSPECT_CID")
-docker rm "$INSPECT_CID"
 echo "cache inspection finished with exit code $INSPECT_EXIT"
+echo "cache state size: $(wc -c < /tmp/cache_state.json) bytes"
 
 echo "uploading cache state to s3://${assets_bucket}/cache_state.json"
 aws s3 cp /tmp/cache_state.json s3://${assets_bucket}/cache_state.json
@@ -189,6 +186,6 @@ INSTANCE_ID=$(curl -sf \
 echo "terminating instance $INSTANCE_ID"
 aws ec2 terminate-instances \
   --instance-ids "$INSTANCE_ID" \
-  --region ${region}
+  --region ${region} || true
 
 echo "termination requested"

@@ -121,7 +121,7 @@ module "ecs" {
         managed_termination_protection = "DISABLED"
         managed_scaling = {
           status                    = "ENABLED"
-          target_capacity           = 100
+          target_capacity           = 80
           minimum_scaling_step_size = 1
           maximum_scaling_step_size = 2
           instance_warmup_period    = 300
@@ -134,7 +134,7 @@ module "ecs" {
         managed_termination_protection = "DISABLED"
         managed_scaling = {
           status                    = "ENABLED"
-          target_capacity           = 100
+          target_capacity           = 80
           minimum_scaling_step_size = 1
           maximum_scaling_step_size = 1
           instance_warmup_period    = 420
@@ -147,7 +147,7 @@ module "ecs" {
         managed_termination_protection = "DISABLED"
         managed_scaling = {
           status                    = "ENABLED"
-          target_capacity           = 100
+          target_capacity           = 80
           minimum_scaling_step_size = 1
           maximum_scaling_step_size = 1
           instance_warmup_period    = 300
@@ -160,7 +160,7 @@ module "ecs" {
         managed_termination_protection = "DISABLED"
         managed_scaling = {
           status                    = "ENABLED"
-          target_capacity           = 100
+          target_capacity           = 80
           minimum_scaling_step_size = 1
           maximum_scaling_step_size = 2
           instance_warmup_period    = 120

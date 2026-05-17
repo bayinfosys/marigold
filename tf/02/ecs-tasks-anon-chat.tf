@@ -9,7 +9,7 @@ locals {
 }
 
 resource "aws_ecs_task_definition" "anonchat" {
-  family                   = join("-", [var.project_name, var.env, "anonchat"])
+  family                   = join("-", [var.project_name, var.env, "anonchat", "gpu"])
   cpu                      = 4096
   memory                   = 14336
   network_mode             = "awsvpc"

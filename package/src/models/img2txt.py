@@ -15,21 +15,14 @@ import os
 from time import perf_counter as clock
 
 import torch
-from transformers import set_seed
-
+from api.models import Img2TxtRequest, Img2TxtResponse
+from models.standard_loader import ModelLoaderResult, standard_loader
 from shared.enums import ModelMode, ModelType
+from shared.models import InstructMessage, InstructRole
 from shared.outputs import decode_image
 from shared.registry import BaseModelHandler, model_spec
 from shared.usage import record_usage
-from models.standard_loader import ModelLoaderResult, standard_loader
-from api.models import (
-    Img2TxtRequest,
-    Img2TxtResponse,
-)
-from shared.models import (
-    InstructMessage,
-    InstructRole,
-)
+from transformers import set_seed
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -155,6 +148,8 @@ class Img2TxtModel(BaseModelHandler):
             inference=iduration,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            load_time_ms=self.load_time_ms,
+            model_size_bytes=self.model_size_bytes,
         )
 
         return Img2TxtResponse(

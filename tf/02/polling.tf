@@ -61,16 +61,16 @@ resource "aws_s3_object" "models_config_internal" {
 
   content = jsonencode({
     for name, conf in var.models : md5(conf.environment_variables["MODELNAME"]) => {
-      queue_url = aws_sqs_queue.model_queues[name].url
+      queue_url  = aws_sqs_queue.model_queues[name].url
       model_name = conf.environment_variables["MODELNAME"]
       task_definition = (
         conf.gpu_tier == "lrg" ? aws_ecs_task_definition.gpu_lrg[name].arn :
-        conf.gpu_tier == "sm"  ? aws_ecs_task_definition.gpu_sm[name].arn  :
+        conf.gpu_tier == "sm" ? aws_ecs_task_definition.gpu_sm[name].arn :
         aws_ecs_task_definition.cpu[name].arn
       )
       family = (
         conf.gpu_tier == "lrg" ? aws_ecs_task_definition.gpu_lrg[name].family :
-        conf.gpu_tier == "sm"  ? aws_ecs_task_definition.gpu_sm[name].family  :
+        conf.gpu_tier == "sm" ? aws_ecs_task_definition.gpu_sm[name].family :
         aws_ecs_task_definition.cpu[name].family
       )
       model_type = conf.environment_variables["MODEL_TYPE"]
@@ -96,16 +96,19 @@ module "polling_lambda" {
   handler = "tools.polling.ecs.handler"
 
   environment_variables = {
-    ECS_CLUSTER_ARN           = module.ecs.cluster_arn
-    ECS_SUBNETS               = join(",", [for x in data.aws_subnet.private_subnets : x.id])
-    ECS_SECURITY_GROUPS       = join(",", [data.aws_security_group.lambda_sg.id])
-    DYNAMODB_TABLE            = aws_dynamodb_table.results_cache.id
-    APPEND_CORS_HEADERS       = "True"
-    AWS_S3_ASSETS_BUCKET_NAME = aws_s3_bucket.data.id
-    MODELS_CONFIG_S3_OBJECT   = aws_s3_object.models_config_internal.key
+    ECS_CLUSTER_ARN               = module.ecs.cluster_arn
+    ECS_SUBNETS                   = join(",", [for x in data.aws_subnet.private_subnets : x.id])
+    ECS_SECURITY_GROUPS           = join(",", [data.aws_security_group.lambda_sg.id])
+    DYNAMODB_TABLE                = aws_dynamodb_table.results_cache.id
+    APPEND_CORS_HEADERS           = "True"
+    AWS_S3_ASSETS_BUCKET_NAME     = aws_s3_bucket.data.id
+    MODELS_CONFIG_S3_OBJECT       = aws_s3_object.models_config_internal.key
     ECS_CAPACITY_PROVIDER_GPU_SM  = var.capacity_provider_gpu_sm
     ECS_CAPACITY_PROVIDER_GPU_LRG = var.capacity_provider_gpu_lrg
     ECS_CAPACITY_PROVIDER_BIG_CPU = var.capacity_provider_big_cpu
+    ANONCHAT_QUEUE_URL            = aws_sqs_queue.anonchat_queue.url
+    ANONCHAT_MODEL                = var.anonchat_model
+    BUILD_VERSION                 = var.git_tag
   }
 
   policy_statements = {
@@ -152,18 +155,19 @@ module "polling_lambda" {
     }
 
     s3_read = {
-      effect    = "Allow",
-      actions   = ["s3:GetObject"],
+      effect  = "Allow",
+      actions = ["s3:GetObject"],
       resources = [
         aws_s3_object.models_config_internal.arn,
         aws_s3_object.models_json.arn,
+        "${aws_s3_bucket.data.arn}/cache_state.json"
       ]
     }
 
     sqs_send = {
       effect    = "Allow"
       actions   = ["sqs:SendMessage"]
-      resources = [for x in aws_sqs_queue.model_queues : x.arn]
+      resources = concat([for x in aws_sqs_queue.model_queues : x.arn], [aws_sqs_queue.anonchat_queue.arn])
     }
 
     apigateway_read = {

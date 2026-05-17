@@ -12,13 +12,13 @@ import os
 from time import perf_counter as clock
 
 import torch
+from api.models import (EmbeddingQuantization, EmbeddingResponse,
+                        EmbedTextRequest)
+from models.standard_loader import ModelLoaderResult
 from sentence_transformers.quantization import quantize_embeddings
-
 from shared.enums import ModelMode, ModelType
 from shared.registry import BaseModelHandler, model_spec
 from shared.usage import record_usage
-from models.standard_loader import ModelLoaderResult
-from api.models import EmbeddingQuantization, EmbedTextRequest, EmbeddingResponse
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -108,6 +108,8 @@ class TextEmbeddingModel(BaseModelHandler):
             duration=duration,
             inference=inference_time,
             input_tokens=input_tokens,
+            load_time_ms=self.load_time_ms,
+            model_size_bytes=self.model_size_bytes,
         )
 
         return EmbeddingResponse(

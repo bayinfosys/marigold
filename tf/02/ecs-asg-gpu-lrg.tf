@@ -61,19 +61,18 @@ resource "aws_autoscaling_group" "gpu_lrg" {
         version            = "$Latest"
       }
 
-      override {
-        instance_type = "g5.48xlarge"
-      }
+#      override {
+#        instance_type = "g5.48xlarge"
+#      }
       override {
         instance_type = "g5.12xlarge"
       }
-      # the below instances have fewer 24Gb gpus and shouldn't really be used
-#      override {
-#        instance_type = "g5.8xlarge"
-#      }
-#      override {
-#        instance_type = "g5.4xlarge"
-#      }
+      override {
+        instance_type = "g5.8xlarge"
+      }
+      override {
+        instance_type = "g5.4xlarge"
+      }
 #      override {
 #        instance_type = "g5.2xlarge"
 #      }

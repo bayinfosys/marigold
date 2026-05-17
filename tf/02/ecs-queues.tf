@@ -11,7 +11,7 @@ resource "aws_sqs_queue" "model_queues" {
 
   name = join("-", [var.org_name, var.project_name, var.env, each.key, "queue"])
 
-  message_retention_seconds  = 3600
+  message_retention_seconds  = 86400    # 24 hours wait on the queue before we fail
   visibility_timeout_seconds = each.value.timeout
 
   redrive_policy = jsonencode({

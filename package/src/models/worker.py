@@ -39,7 +39,6 @@ from pydantic import ValidationError
 from shared.db_models import ResultsItem, WorkflowStep
 from shared.registry import _SPECS, BaseModelHandler
 from shared.sqs_models import MarigoldSQSMessage, make_job_id
-from models.standard_loader import ModelNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +46,9 @@ _LONG_POLL_WAIT = 20  # seconds; SQS maximum
 _HEARTBEAT_BUFFER = 5  # seconds before timeout to extend visibility
 
 DYNAMODB_TABLE = os.environ.get("DYNAMODB_RESULTS_TABLE", "")
+DEFAULT_SQS_POLL_WAIT_TIME = 60
+SQS_POLL_WAIT_TIME = int(os.getenv("SQS_POLL_WAIT_TIME") or DEFAULT_SQS_POLL_WAIT_TIME)
+
 
 _ddb = boto3.client("dynamodb")
 _dynawrap = DynamoDBBackend(_ddb)
@@ -227,7 +229,7 @@ class SQSWorker:
         self.queue_url = queue_url
         self.model = model
         self.visibility_timeout = visibility_timeout
-        self.idle_timeout = idle_timeout
+        self.idle_timeout = SQS_POLL_WAIT_TIME
         self.client = boto3.client("sqs")
         self._dynamodb = boto3.client("dynamodb")
 
@@ -239,27 +241,15 @@ class SQSWorker:
             self.idle_timeout,
         )
 
-    def get_message(self) -> dict | None:
-        response = self.client.receive_message(
-            QueueUrl=self.queue_url,
-            MaxNumberOfMessages=1,
-            WaitTimeSeconds=_LONG_POLL_WAIT,
-            VisibilityTimeout=self.visibility_timeout,
-        )
-        messages = response.get("Messages", [])
-        return messages[0] if messages else None
-
     def process_message(self, msg: dict):
-        receipt_handle = msg["ReceiptHandle"]
 
         try:
             payload = json.loads(msg["Body"])
             sqs_msg = MarigoldSQSMessage.model_validate(payload)
         except (json.JSONDecodeError, ValidationError) as e:
+            # this is the only place we cannot informt the user about an error
             logger.error("malformed SQS message, discarding [%s]", str(e))
-            self.client.delete_message(
-                QueueUrl=self.queue_url, ReceiptHandle=receipt_handle
-            )
+            #_write_results(sqs_msg, "error", {"error": str(e)})
             return
 
         user_id = sqs_msg.user_id
@@ -274,7 +264,7 @@ class SQSWorker:
             args=(
                 self.client,
                 self.queue_url,
-                receipt_handle,
+                msg["ReceiptHandle"],
                 self.visibility_timeout,
                 stop_heartbeat,
             ),
@@ -282,42 +272,14 @@ class SQSWorker:
         )
         heartbeat.start()
 
-        spec = _SPECS.get(sqs_msg.model_type)
-        if spec is None:
-            stop_heartbeat.set()
-            heartbeat.join(timeout=2)
-            self.client.delete_message(
-                QueueUrl=self.queue_url, ReceiptHandle=receipt_handle
-            )
-            logger.error(
-                "[%s/%s] unknown model_type %r, discarding",
-                user_id,
-                message_id,
-                sqs_msg.model_type,
-            )
-            _write_results(sqs_msg, "error", {
-                "error": "unknown model_type",
-                "model_type": sqs_msg.model_type,
-            })
-            return
-
-        request = spec.request_model.model_validate(
-            {
-                **sqs_msg.model_inputs,
-                "model": sqs_msg.model_name,
-            }
-        )
-
-        logger.info(
-            "[%s/%s] submitted %s",
-            user_id,
-            message_id,
-            json.dumps(request.model_dump()),
-        )
-
-        _write_results(sqs_msg, "submitted")
-
         try:
+            spec = _SPECS[sqs_msg.model_type]
+
+            request = spec.request_model.model_validate({**sqs_msg.model_inputs, "model": sqs_msg.model_name})
+
+            logger.info("[%s/%s] submitted %s", user_id, message_id, json.dumps(request.model_dump()))
+            _write_results(sqs_msg, "submitted")
+
             result = self.model.process(user_id, message_id, request)
 
             if sqs_msg.workflow_execution_id is not None:
@@ -329,38 +291,40 @@ class SQSWorker:
             _write_results(sqs_msg, "complete", result.model_dump())
             logger.info("[%s/%s] complete", user_id, message_id)
 
-        except ModelNotFoundError as e:
-            logger.error(
-                "[%s/%s] model not in cache: %s",
-                user_id, message_id, str(e),
-            )
+        except KeyError as e:
+            logger.exception("[%s/%s] unknown model %s [%s]", user_id, message_id, sqs_msg.model_name, sqs_msg.model_type)
             if sqs_msg.workflow_execution_id is not None:
-                _write_workflow_step_failed(
-                    sqs_msg=sqs_msg,
-                    error="model not found: %s" % str(e),
-                )
-            _write_results(sqs_msg, "error", {
-                "error": "model not found",
-                "model": str(e),
-            })
+                _write_workflow_step_failed(sqs_msg=sqs_msg, error=str(e))
+            _write_results(sqs_msg, "error", {"error": "unknown model", "model_name": sqs_msg.model_name, "model_type": sqs_msg.model_type})
+
+        except ValidationError as e:
+            logger.exception("[%s/%s] malformed message for %s", user_id, message_id, sqs_msg.model_type)
+            if sqs_msg.workflow_execution_id is not None:
+                _write_workflow_step_failed(sqs_msg=sqs_msg, error=str(e))
+            _write_results(sqs_msg, "error", {"error": "malformed message", "model_type": sqs_msg.model_type})
 
         except Exception as e:
-            logger.exception(
-                "[%s/%s] processing failed [%s]", user_id, message_id, str(e)
-            )
+            logger.exception("[%s/%s] processing failed [%s]", user_id, message_id, str(e))
             if sqs_msg.workflow_execution_id is not None:
-                _write_workflow_step_failed(
-                    sqs_msg=sqs_msg,
-                    error=str(e),
-                )
+                _write_workflow_step_failed(sqs_msg=sqs_msg, error=str(e))
             _write_results(sqs_msg, "error", {"error": str(e)})
-
         finally:
             stop_heartbeat.set()
             heartbeat.join(timeout=2)
-            self.client.delete_message(
-                QueueUrl=self.queue_url, ReceiptHandle=receipt_handle
-            )
+
+    def get_message(self) -> dict | None:
+        response = self.client.receive_message(
+            QueueUrl=self.queue_url,
+            MaxNumberOfMessages=1,
+            WaitTimeSeconds=_LONG_POLL_WAIT,
+            VisibilityTimeout=self.visibility_timeout,
+        )
+        messages = response.get("Messages", [])
+
+        if len(messages) > 1:
+            logger.critical("[%s] multiple messages found in queue", self.queue_url)
+
+        return messages[0] if messages else None
 
     def run(self):
         logger.info(
@@ -376,13 +340,17 @@ class SQSWorker:
             msg = self.get_message()
 
             if msg is None:
-                if time.monotonic() - last_message_at >= self.idle_timeout:
-                    logger.info(
-                        "idle for %.0fs, exiting",
-                        time.monotonic() - last_message_at,
-                    )
+                idle_s = time.monotonic() - last_message_at
+                if self.idle_timeout == 0 or idle_s >= self.idle_timeout:
+                    logger.info("idle for %.0fs, exiting", idle_s)
                     break
                 continue
 
+            try:
+                self.process_message(msg)
+            except Exception as e:
+                logger.exception("[%s] message failed [%s]", self.model.modelname, str(e))
+            finally:
+                self.client.delete_message(QueueUrl=self.queue_url, ReceiptHandle=msg["ReceiptHandle"])
+
             last_message_at = time.monotonic()
-            self.process_message(msg)

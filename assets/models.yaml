@@ -60,7 +60,6 @@ _templates:
     input: chat
     output: chat
     timeout: 600
-    idle_timeout: 3600
     requires_gpu: false
     gpu_tier: "none"
     gpu_units: 0
@@ -72,7 +71,6 @@ _templates:
     input: chat
     output: chat
     timeout: 600
-    idle_timeout: 3600
     requires_gpu: true
     gpu_tier: sm
     gpu_units: 1
@@ -86,7 +84,6 @@ _templates:
     input: chat
     output: chat
     timeout: 600
-    idle_timeout: 3600
     requires_gpu: true
     gpu_tier: lrg
     gpu_units: 1
@@ -101,21 +98,19 @@ _templates:
     provider: huggingface
     type: text-embedding
     input: text
-    timeout: 300
-    idle_timeout: 3600
     requires_gpu: false
     gpu_tier: "none"
     gpu_units: 0
+    memory_size: 4096
 
   huggingface_embedding_sm: &hf_embedding_sm
     provider: huggingface
     type: text-embedding
     input: text
-    timeout: 300
-    idle_timeout: 3600
     requires_gpu: true
     gpu_tier: sm
     gpu_units: 1
+    memory_size: 4096
 
   # ---------------------------------------------------------------------------
   # Image embedding
@@ -125,8 +120,6 @@ _templates:
     provider: huggingface
     type: image-embedding
     input: image
-    timeout: 300
-    idle_timeout: 3600
     requires_gpu: false
     gpu_tier: "none"
     gpu_units: 0
@@ -140,8 +133,6 @@ _templates:
     type: tts
     input: text
     output: speech
-    timeout: 300
-    idle_timeout: 3600
     requires_gpu: false
     gpu_tier: "none"
     gpu_units: 0
@@ -151,12 +142,9 @@ _templates:
     type: tts
     input: text
     output: speech
-    timeout: 300
-    idle_timeout: 3600
     requires_gpu: true
     gpu_tier: sm
     gpu_units: 1
-    memory_size: 4096
 
   # ---------------------------------------------------------------------------
   # Image generation (always GPU, always lrg)
@@ -168,7 +156,6 @@ _templates:
     input: text
     output: image
     timeout: 600
-    idle_timeout: 600
     requires_gpu: true
     gpu_tier: lrg
     gpu_units: 1
@@ -184,7 +171,6 @@ _templates:
     input: text
     output: audio
     timeout: 600
-    idle_timeout: 3600
     requires_gpu: false
     gpu_tier: "none"
     gpu_units: 0
@@ -199,8 +185,6 @@ _templates:
     type: text-eval
     input: text
     output: json
-    timeout: 300
-    idle_timeout: 3600
     requires_gpu: false
     gpu_tier: "none"
     gpu_units: 0
@@ -210,8 +194,6 @@ _templates:
     type: image-eval
     input: image
     output: json
-    timeout: 300
-    idle_timeout: 3600
     requires_gpu: false
     gpu_tier: "none"
     gpu_units: 0
@@ -222,16 +204,16 @@ models:
   # Text embedding
   # ---------------------------------------------------------------------------
 
-  - <<: *hf_embedding
-    name: sentence-transformers/paraphrase-multilingual-mpnet-base-v2
-    output: vector/768
-    description: >
-      Multilingual sentence embedding model supporting 50+ languages.
-      Strong performance on paraphrase detection, semantic similarity, and
-      cross-lingual retrieval. Good general-purpose embedding for multilingual
-      document search pipelines.
-    parameters:
-      vector_size: 768
+#  - <<: *hf_embedding
+#    name: sentence-transformers/paraphrase-multilingual-mpnet-base-v2
+#    output: vector/768
+#    description: >
+#      Multilingual sentence embedding model supporting 50+ languages.
+#      Strong performance on paraphrase detection, semantic similarity, and
+#      cross-lingual retrieval. Good general-purpose embedding for multilingual
+#      document search pipelines.
+#    parameters:
+#      vector_size: 768
 
   - <<: *hf_embedding
     name: sentence-transformers/sentence-t5-large
@@ -256,6 +238,7 @@ models:
   - <<: *hf_embedding
     name: baai/bge-m3
     output: vector/1024
+    memory_size: 6144
     description: >
       Dense and sparse text embedding model supporting 100+ languages.
       Strong on multilingual retrieval, semantic search, and cross-lingual
@@ -558,13 +541,13 @@ models:
   # All models run with LOAD_IN_4BIT=1 from the template default.
   # ---------------------------------------------------------------------------
 
-  - <<: *hf_instruct_lrg
-    name: mistralai/mistral-small-24b-instruct-2501
-    memory_size: 20480
-    description: >
-      Mistral Small 3 at 24B parameters. Apache 2.0 licence. Strong
-      function calling, instruction following, and knowledge density.
-      ~12GB weights at 4-bit on a single A10G.
+#  - <<: *hf_instruct_lrg
+#    name: mistralai/mistral-small-24b-instruct-2501
+#    memory_size: 20480
+#    description: >
+#      Mistral Small 3 at 24B parameters. Apache 2.0 licence. Strong
+#      function calling, instruction following, and knowledge density.
+#      ~12GB weights at 4-bit on a single A10G.
 
   - <<: *hf_instruct_lrg
     name: qwen/qwen3-30b-a3b
@@ -574,15 +557,21 @@ models:
       token. High total capacity at low inference cost per token.
       ~15GB weights at 4-bit on a single A10G. Apache 2.0 licence.
 
-#  - <<: *hf_instruct_lrg
-#    name: google/gemma-3-27b-it
-#    memory_size: 20480
-#    auth_required: true
-#    description: >
-#      Gemma 3 27B instruction model from Google. Near-frontier quality
-#      at 4-bit quantisation (~14GB weights). 128K context window,
-#      multimodal architecture, 140+ languages. Requires HuggingFace
-#      access approval.
+  - <<: *hf_instruct_lrg
+    name: google/gemma-3-27b-it
+    memory_size: 22528
+    auth_required: true
+    description: >
+      Gemma 3 27B instruction model from Google. Near-frontier quality
+      at 4-bit quantisation (~14GB weights). 128K context window,
+      multimodal architecture, 140+ languages. Requires HuggingFace
+      access approval.
+
+  - <<: *hf_instruct_lrg
+    name: qwen/qwen3-32b
+    memory_size: 28672
+    description: >
+      qwen 3 32b
 
   # ---------------------------------------------------------------------------
   # Image segmentation
@@ -597,7 +586,6 @@ models:
     gpu_tier: lrg
     gpu_units: 1
     timeout: 600
-    idle_timeout: 600
     description: >
       Segment Anything Model (SAM) ViT-Huge from Meta. Produces high-quality
       segmentation masks from image prompts (points, boxes, or automatic).
@@ -615,8 +603,6 @@ models:
     requires_gpu: false
     gpu_tier: "none"
     gpu_units: 0
-    timeout: 300
-    idle_timeout: 3600
     description: >
       Monocular depth estimation model from Meta. Estimates per-pixel
       depth from a single RGB image. Trained on KITTI driving data.
@@ -658,8 +644,6 @@ models:
     requires_gpu: false
     gpu_tier: "none"
     gpu_units: 0
-    timeout: 300
-    idle_timeout: 600
     description: >
       CLIP ViT-L/14 from OpenAI. Computes similarity scores between
       images and text descriptions. Used in quality-gated image generation
@@ -673,8 +657,6 @@ models:
     requires_gpu: false
     gpu_tier: "none"
     gpu_units: 0
-    timeout: 300
-    idle_timeout: 3600
     description: >
       CLIP ViT-B/32 image-text alignment model. Lightweight variant for
       computing image-text similarity scores. Used for prompt alignment
@@ -693,7 +675,6 @@ models:
     gpu_tier: "none"
     gpu_units: 0
     timeout: 30
-    idle_timeout: 0
     description: >
       HTTP tool worker. Executes outbound HTTP requests as workflow steps.
       Used for webhook delivery, external API calls, and URL fetching
@@ -747,21 +728,21 @@ models:
     description: >
       Dutch text-to-speech model from Meta MMS.
 
-  - <<: *hf_tts
-    name: parler-tts/parler-tts-mini-v1
-    description: >
-      Controllable text-to-speech model. Voice characteristics including
-      pitch, speed, and accent are specified in natural language alongside
-      the text to synthesise. Good for diverse voice generation without
-      per-voice fine-tuning. Apache 2.0 licence.
+#  - <<: *hf_tts
+#    name: parler-tts/parler-tts-mini-v1
+#    description: >
+#      Controllable text-to-speech model. Voice characteristics including
+#      pitch, speed, and accent are specified in natural language alongside
+#      the text to synthesise. Good for diverse voice generation without
+#      per-voice fine-tuning. Apache 2.0 licence.
 
-  - <<: *hf_tts
-    name: outeai/outetts-0.2-500m
-    description: >
-      500M parameter TTS model from OuteAI built on the Qwen-2.5
-      architecture. Natural-sounding English synthesis with good
-      prosody. Compact and fast for CPU-tier inference. Apache 2.0
-      licence.
+#  - <<: *hf_tts
+#    name: outeai/outetts-0.2-500m
+#    description: >
+#      500M parameter TTS model from OuteAI built on the Qwen-2.5
+#      architecture. Natural-sounding English synthesis with good
+#      prosody. Compact and fast for CPU-tier inference. Apache 2.0
+#      licence.
 
   # ---------------------------------------------------------------------------
   # Audio generation

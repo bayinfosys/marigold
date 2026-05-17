@@ -19,13 +19,12 @@ from time import perf_counter as clock
 
 import torch
 import torch.nn.functional as F
-
+from api.models import EvalResponse, EvalScore, ImageTextEvalRequest
+from models.image_embed import load_image_embedding
 from shared.enums import ModelMode, ModelType
 from shared.outputs import decode_image
 from shared.registry import BaseModelHandler, model_spec
 from shared.usage import record_usage
-from models.image_embed import load_image_embedding
-from api.models import EvalResponse, EvalScore, ImageTextEvalRequest
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -81,6 +80,8 @@ class ImageTextEvalModel(BaseModelHandler):
             modelname=self.modelname,
             duration=duration,
             inference=iduration,
+            load_time_ms=self.load_time_ms,
+            model_size_bytes=self.model_size_bytes,
         )
 
         return EvalResponse(

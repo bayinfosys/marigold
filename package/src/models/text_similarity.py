@@ -18,12 +18,11 @@ from time import perf_counter as clock
 
 import torch
 import torch.nn.functional as F
-
+from api.models import EvalResponse, TextSimilarityRequest
+from models.text_embed import load_text_embedding
 from shared.enums import ModelMode, ModelType
 from shared.registry import BaseModelHandler, model_spec
 from shared.usage import record_usage
-from models.text_embed import load_text_embedding
-from api.models import EvalResponse, TextSimilarityRequest
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -84,6 +83,8 @@ class TextSimilarityModel(BaseModelHandler):
             duration=duration,
             inference=iduration,
             input_tokens=input_tokens,
+            load_time_ms=self.load_time_ms,
+            model_size_bytes=self.model_size_bytes,
         )
 
         return EvalResponse(

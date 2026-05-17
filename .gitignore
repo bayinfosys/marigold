@@ -1,5 +1,7 @@
 .terraform*
+*.tfvars
 tf/*/builds
+__pycache__/
 
 cache/
 assets/*.json

@@ -34,6 +34,9 @@ class ModelUsageStats(BaseModel):
     input_tokens: int = Field(0,   description="number of input tokens")
     output_tokens: int = Field(0,   description="number of output tokens")
     memory_usage: int = Field(..., description="peak process memory in KB")
+    load_time_ms:     int = Field(0,   description="model load time in ms")
+    model_size_bytes: int = Field(0,   description="model size in bytes")
+    vram_usage_bytes: int = Field(0,   description="VRAM allocated during inference bytes")
 
 
 # ---------------------------------------------------------------------------

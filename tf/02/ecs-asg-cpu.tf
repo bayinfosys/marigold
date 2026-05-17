@@ -13,7 +13,7 @@ data "aws_ssm_parameter" "ecs_cpu_ami" {
 # ---------------------------------------------------------------------------
 
 resource "aws_launch_template" "big_cpu" {
-  name_prefix   = join("-", [var.org_name, var.project_name, var.env, "big-cpu-"])
+  name_prefix   = join("-", [var.org_name, var.project_name, var.env, "cpu-lrg-"])
   image_id      = data.aws_ssm_parameter.ecs_cpu_ami.value
   instance_type = var.big_cpu_instance_type
 
@@ -29,13 +29,13 @@ resource "aws_launch_template" "big_cpu" {
   )
   tag_specifications {
     resource_type = "instance"
-    tags          = merge(var.project_tags, { Name = join("-", [var.org_name, var.project_name, var.env, "big-cpu-worker"]) })
+    tags          = merge(var.project_tags, { Name = join("-", [var.org_name, var.project_name, var.env, "cpu-lrg-worker"]) })
   }
   lifecycle { create_before_destroy = true }
 }
 
 resource "aws_autoscaling_group" "big_cpu" {
-  name                = join("-", [var.org_name, var.project_name, var.env, "big-cpu-asg"])
+  name                = join("-", [var.org_name, var.project_name, var.env, "cpu-lrg-asg"])
   min_size            = 2
   desired_capacity    = 4
   max_size            = 40

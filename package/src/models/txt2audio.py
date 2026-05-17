@@ -36,13 +36,12 @@ from time import perf_counter as clock
 
 import numpy as np
 import torch
+from api.models import Txt2AudioRequest, Txt2AudioResponse
+from models.standard_loader import ModelLoaderResult
 from pydub import AudioSegment
-
 from shared.enums import ModelMode, ModelType, OutputMimeType
 from shared.registry import BaseModelHandler, OutputField, model_spec
 from shared.usage import record_usage
-from models.standard_loader import ModelLoaderResult
-from api.models import Txt2AudioRequest, Txt2AudioResponse
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -209,6 +208,8 @@ class Txt2AudioModel(BaseModelHandler):
             duration=duration,
             inference=iduration,
             input_tokens=inputs.input_ids.nelement(),
+            load_time_ms=self.load_time_ms,
+            model_size_bytes=self.model_size_bytes,
         )
 
         return Txt2AudioResponse(

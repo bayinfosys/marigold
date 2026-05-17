@@ -23,6 +23,7 @@ variable "region" {
 variable "git_tag" {
   description = "Git tag identifying the deployment."
   type        = string
+  default     = "unknown"
 }
 
 variable "hf_token" {
@@ -44,7 +45,6 @@ variable "models" {
     gpu_tier              = optional(string, "none")
     gpu_units             = optional(number, 0)
     timeout               = optional(number, 600)
-    idle_timeout          = optional(number, 600)
     auth_required         = optional(bool, false)
     provider              = optional(string, "huggingface")
     environment_variables = optional(map(string), {})

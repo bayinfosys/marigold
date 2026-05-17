@@ -14,14 +14,13 @@ import logging
 from time import perf_counter as clock
 
 import torch
-from transformers import set_seed
-
 from api.models import InstructMessage, InstructRequest, InstructResponse
 from models.standard_loader import ModelLoaderResult, standard_loader
 from shared.enums import ModelMode, ModelType
 from shared.models import InstructRole
 from shared.registry import BaseModelHandler, model_spec
 from shared.usage import record_usage
+from transformers import set_seed
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +61,7 @@ class InstructModel(BaseModelHandler):
         # FIXME: add chat_template fallbacks for models without a built-in template
         try:
             messages_as_dicts = [
-                {"role": m.role.value, "content": m.content}
+                {"role": m.role, "content": m.content}
                 for m in request.messages
             ]
             # apply chat template requires dicts, not our pydantic type
@@ -79,8 +78,8 @@ class InstructModel(BaseModelHandler):
             # Some models do not have a built-in chat template. Fall back to
             # a plain text merge of the message turns.
             prompt_chain = [
-                "{role}: {content}".format(role=message.role.value, content=message.content)
-                for message in request.messages
+                "{role}: {content}".format(role=m.role, content=m.content)
+                for m in request.messages
             ]
             inputs = "\n".join(prompt_chain)
             logger.warning("[%s/%s] apply_chat_template failed, fell back to manual merge", user_id, message_id)
@@ -156,6 +155,8 @@ class InstructModel(BaseModelHandler):
             inference=iduration,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            load_time_ms=self.load_time_ms,
+            model_size_bytes=self.model_size_bytes,
         )
 
         return InstructResponse(

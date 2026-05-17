@@ -56,6 +56,7 @@ def load_all():
 def sqs_handler():
     """Fixed ECS task entry point for all model types.
     NB: if model load fails, we exit, queues are per-model, so one model load fail means all model loads will fail
+    NB: we always exit cleanly (retval 0) to prevent ECS restarting the containers and getting stuck in a forever loop
     """
     load_all()
 
@@ -71,7 +72,7 @@ def sqs_handler():
             model_type,
             sorted(_SPECS),
         )
-        sys.exit(1)
+        sys.exit(0)
 
     spec = _SPECS[model_type]
     logger.info("loading '%s' for model '%s'", spec.handler_class.__name__, modelname)
@@ -85,7 +86,7 @@ def sqs_handler():
             modelname,
             e,
         )
-        sys.exit(1)
+        sys.exit(0)
 
     worker = SQSWorker(queue_url, model, visibility_timeout, idle_timeout)
     worker.run()

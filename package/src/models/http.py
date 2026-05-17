@@ -3,10 +3,10 @@
 Handles HTTP requests to APIs and whatnot
 """
 import httpx
-from shared.enums import ModelMode, ModelType
-from shared.registry import BaseModelHandler, model_spec
 from models.standard_loader import ModelLoaderResult
+from shared.enums import ModelMode, ModelType
 from shared.models import HttpRequest, HttpResponse
+from shared.registry import BaseModelHandler, model_spec
 
 
 def load_http(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
