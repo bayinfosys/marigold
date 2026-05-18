@@ -20,11 +20,14 @@ logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))
 s3 = boto3.client("s3")
 ecs = boto3.client("ecs")
 sns = boto3.client("sns")
+sqs = boto3.client("sqs")
 
 LIFECYCLE_TOPIC_ARN = os.environ.get("LIFECYCLE_TOPIC_ARN", "")
 CLUSTER_ARN = os.environ["ECS_CLUSTER_ARN"]
 SUBNETS = os.environ["ECS_SUBNETS"].split(",")
 SECURITY_GROUPS = os.environ["ECS_SECURITY_GROUPS"].split(",")
+SCALE_THRESHOLD = int(os.environ.get("WORKER_SCALE_THRESHOLD", "10"))
+MAX_WORKERS = int(os.environ.get("MAX_WORKERS_PER_MODEL",   "4"))
 
 _config: dict = {}
 
@@ -42,17 +45,31 @@ def load_model_config() -> dict:
     return _config
 
 
-def is_active(dispatch: ModelDispatch) -> bool:
-    for desired_status in ("RUNNING", "PENDING"):
+def get_active_count(dispatch: ModelDispatch) -> int:
+    """get the number of tasks running for this model"""
+    count = 0
+    for status in ("RUNNING", "PENDING"):
         resp = ecs.list_tasks(
             cluster=CLUSTER_ARN,
-            desiredStatus=desired_status,
+            desiredStatus=status,
             family=dispatch.family,
-            maxResults=5,
+            maxResults=100,
         )
-        if resp.get("taskArns"):
-            return True
-    return False
+        count += len(resp.get("taskArns", []))
+    return count
+
+
+def get_queue_depth(dispatch: ModelDispatch) -> int:
+    """get the number of requests waiting for this model"""
+    attrs = sqs.get_queue_attributes(
+        QueueUrl=dispatch.queue_url,
+        AttributeNames=["ApproximateNumberOfMessages"],
+    )["Attributes"]
+    return int(attrs.get("ApproximateNumberOfMessages", 0))
+
+
+def is_active(dispatch: ModelDispatch) -> bool:
+    return get_active_count(dispatch) > 0
 
 
 def get_capacity_provider(dispatch: ModelDispatch) -> str:
@@ -112,16 +129,21 @@ def handle_request_queued(evt: LifecycleEvent) -> None:
         logger.error("unknown model hash: %s", evt.model_hash)
         return
 
-    if is_active(dispatch):
-        logger.info("task already active for '%s' -- skipping launch", evt.model_name)
+    max_instances_per_model = 4
+    active = get_active_count(dispatch)
+    depth = get_queue_depth(dispatch)
+    estimated = min(max_instances_per_model, max(1, depth // dispatch.msg_per_instance))
+
+    logger.info("model='%s' queue_depth=%d active=%d, estimate=%d", evt.model_name, depth, active, estimated)
+
+    if active >= estimated:
+        logger.info(
+            "model='%s' active=%d >= estimated=%d -- skipping",
+            evt.model_name, active, estimated,
+        )
         return
 
-    try:
-        launch(dispatch)
-        logger.info("launched task for '%s'", evt.model_name)
-    except Exception as e:
-        logger.error("run_task failed for '%s': %s", evt.model_name, e)
-        return
+    launch(dispatch)
 
     publish(
         LifecycleEvent(

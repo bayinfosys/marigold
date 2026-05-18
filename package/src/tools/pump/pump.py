@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 import requests
+import fnmatch
 
 from tools.dashboard.config import API_BASE, API_HEADERS
 from tools.dashboard.history import write_entry
@@ -162,16 +163,24 @@ class Job:
     nonce: str
 
 
+def _model_matches(name: str, patterns: set) -> bool:
+    if not patterns:
+        return True
+    return any(fnmatch.fnmatch(name, p) for p in patterns)
+
+
 def _build_jobs(
-    models:            Dict[str, List[str]],
-    skip_types:        List[str],
-    only_types:        List[str],
+    models:             Dict[str, List[str]],
+    skip_types:         List[str],
+    only_types:         List[str],
+    only_models:        List[str],
     requests_per_model: int = 1,
 ) -> List[Job]:
-    skip = set(skip_types)
-    only = set(only_types)
-    jobs = []
+    skip        = set(skip_types)
+    only        = set(only_types)
+    only_models = set(only_models)
 
+    jobs = []
     for model_type, model_names in sorted(models.items()):
         if model_type in skip:
             continue
@@ -183,8 +192,10 @@ def _build_jobs(
             continue
         endpoint, _, _ = route
         for name in model_names:
+            if not _model_matches(name, only_models):
+                continue
             for _ in range(requests_per_model):
-                nonce = uuid.uuid4().hex[:8]    # unique nonce per request
+                nonce = uuid.uuid4().hex[:8]
                 jobs.append(Job(
                     model_name = name,
                     model_type = model_type,
@@ -313,6 +324,7 @@ def cmd_pump(args) -> None:
             models,
             skip_types = [t.strip() for t in args.skip_types.split(",") if t.strip()],
             only_types = [t.strip() for t in args.types.split(",") if t.strip()],
+            only_models = [m.strip() for m in args.models.split(",") if m.strip()],
             requests_per_model = args.requests,
         )
 

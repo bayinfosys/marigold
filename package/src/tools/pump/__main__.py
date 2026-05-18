@@ -34,6 +34,7 @@ def main():
     pp.add_argument("--skip-types", type=str, default="")
     pp.add_argument("--rounds", type=int, default=0, help="number of rounds to run (default: 0 = unlimited, --once overrides)")
     pp.add_argument("--requests", type=int, default=1, help="number of requests per model per round (default: 1)")
+    pp.add_argument("--models", default="", help="comma-separated model names to include")
 
     ap = sub.add_parser("audit", help="poll and report results from history")
     ap.add_argument("--date",   type=str, default="")

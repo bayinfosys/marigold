@@ -73,6 +73,12 @@ module "task_runner_lambda" {
       actions   = ["sns:Publish"]
       resources = [aws_sns_topic.lifecycle.arn]
     }
+
+    sqs_stats = {
+      effect    = "Allow"
+      actions   = ["sqs:GetQueueAttributes"]
+      resources = ["arn:aws:sqs:${var.region}:${data.aws_caller_identity.current.account_id}:${var.org_name}-${var.project_name}-${var.env}-*"]
+    }
   }
 
   attach_policy_statements = true

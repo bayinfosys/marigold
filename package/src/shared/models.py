@@ -49,6 +49,7 @@ class ModelDispatch(BaseModel):
     family: str
     model_type: str
     gpu_tier: str = "none"  # "none", "sm", "lrg"
+    msg_per_instance: int = 10  # default number of messages each instance can handle
 
 
 ModelDispatchRoutes = Dict[str, ModelDispatch]
