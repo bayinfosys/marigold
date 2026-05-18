@@ -20,56 +20,48 @@ container image.
 
 ```mermaid
 flowchart LR
-    C([Client])
+    REQ([Request])
 
-    subgraph APIGW[API Gateway]
-        POST[POST /$model/$task]
-        GET[GET /$model/$task/$message_id]
+    subgraph SM[State machine]
+        RR[request_receiver\nvalidate, write SQS, publish SNS]
+        TR[task_runner\nis_active check, run_task]
+        SL[state_listener\nwrites request state]
+        DB[(DynamoDB results\nqueued, provisioning, complete)]
+
+        RR -->|SNS| TR
+        TR -->|SNS| SL
+        SL --> DB
     end
 
-    LFN[Dispatch]
-
-    subgraph SQS[SQS queues]
-        Q1[instruct]
-        Q2[tts]
-        Q3[txt2img]
-        Q4[text-embed]
-        Q5[image-eval]
-        Q6[text-eval]
+    subgraph DS[Demand state]
+        QA[[SQS model A]]
+        QB[[SQS model B]]
+        QN[[SQS model N]]
     end
 
-    subgraph HANDLERS[ECS]
-        H1[instruct]
-        H2[tts]
-        H3[txt2img]
-        H4[text-embed]
-        H5[image-eval]
-        H6[text-eval]
+    subgraph ES[Execution state]
+        EA[ECS model A]
+        EB[ECS model B]
+        EN[ECS model N]
     end
 
-    subgraph PERSIST[Persistence]
-        D[(DynamoDB)]
-        S[(S3)]
-    end
+    REQ --> RR
 
-    C --> POST --> LFN --> Q1 & Q2 & Q3 & Q4 & Q5 & Q6
+    RR --> QA
+    RR --> QB
+    RR --> QN
 
-    Q1 --> H1
-    Q2 --> H2
-    Q3 --> H3
-    Q4 --> H4
-    Q5 --> H5
-    Q6 --> H6
+    TR -.->|run_task| EA
+    TR -.->|run_task| EB
+    TR -.->|run_task| EN
 
-    H1 -->|text| D
-    H4 -->|vector| S
-    H2 -->|audio| S
-    H3 -->|image| S
-    H5 -->|score| D
-    H6 -->|score| D
+    QA -->|polls| EA
+    QB -->|polls| EB
+    QN -->|polls| EN
 
-    C --> GET --> PERSIST
+    REQ -.->|GET /output/id| DB
 ```
+
 
 Three Terraform layers build on each other:
 ```

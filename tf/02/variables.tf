@@ -1,3 +1,5 @@
+data "aws_caller_identity" "current" {}
+
 variable "org_name" {
   type = string
 }

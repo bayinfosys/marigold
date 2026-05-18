@@ -55,7 +55,7 @@ resource "aws_iam_role_policy" "apigateway_lambda_policy" {
         Action = "lambda:InvokeFunction",
         Effect = "Allow",
         Resource = [
-          data.aws_lambda_function.polling_start_lambda_arn.arn,
+          data.aws_lambda_function.request_receiver.arn,
           # data.aws_lambda_function.usage_stats.arn,
           data.aws_lambda_function.workflow_api_lambda.arn,
         ]
@@ -168,8 +168,8 @@ resource "aws_api_gateway_rest_api" "default" {
     # cognito_authorizer_name = "cognito_auth"  # FIXME
     # cognito_user_pool_arn = "cognito_user_pool_arn"  # FIXME
 
-    polling_start_lambda_arn = data.aws_lambda_function.polling_start_lambda_arn.invoke_arn
-    polling_start_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
+    request_receiver_lambda_arn = data.aws_lambda_function.request_receiver.invoke_arn
+    request_receiver_lambda_iam_role_arn = aws_iam_role.apigateway_lambda.arn
 
     # usage
     #usage_stats_lambda_arn = "xxx" # data.aws_lambda_function.usage_stats.invoke_arn

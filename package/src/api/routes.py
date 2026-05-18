@@ -37,6 +37,7 @@ from .models import (
     Txt2AudioRequest,
     Txt2ImgRequest,
     UsageResponse,
+    ChatRequest,
 )
 from .workflow.routes import router as workflow_router
 
@@ -61,8 +62,8 @@ router.include_router(workflow_router, prefix="/workflows", tags=["workflow"])
     "/embed/text",
     description="embed text into a feature vector",
     response_model=SubmissionResponse,
-    aws_lambda_arn="${polling_start_lambda_arn}",
-    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
+    aws_lambda_arn="${request_receiver_lambda_arn}",
+    aws_iam_arn="${request_receiver_lambda_iam_role_arn}",
     tags=["embed"],
 )
 async def embed_text(body: EmbedTextRequest, user=Security(apikey_auth)):
@@ -73,8 +74,8 @@ async def embed_text(body: EmbedTextRequest, user=Security(apikey_auth)):
     "/embed/image",
     description="embed an image into a feature vector",
     response_model=SubmissionResponse,
-    aws_lambda_arn="${polling_start_lambda_arn}",
-    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
+    aws_lambda_arn="${request_receiver_lambda_arn}",
+    aws_iam_arn="${request_receiver_lambda_iam_role_arn}",
     tags=["embed"],
 )
 async def embed_image(body: EmbedImageRequest, user=Security(apikey_auth)):
@@ -90,8 +91,8 @@ async def embed_image(body: EmbedImageRequest, user=Security(apikey_auth)):
     "/eval/text",
     description="score a text against model-specific metrics",
     response_model=SubmissionResponse,
-    aws_lambda_arn="${polling_start_lambda_arn}",
-    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
+    aws_lambda_arn="${request_receiver_lambda_arn}",
+    aws_iam_arn="${request_receiver_lambda_iam_role_arn}",
     tags=["eval"],
 )
 async def eval_text(body: EvalTextRequest, user=Security(apikey_auth)):
@@ -102,8 +103,8 @@ async def eval_text(body: EvalTextRequest, user=Security(apikey_auth)):
     "/eval/text-similarity",
     description="score the semantic similarity between two texts",
     response_model=SubmissionResponse,
-    aws_lambda_arn="${polling_start_lambda_arn}",
-    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
+    aws_lambda_arn="${request_receiver_lambda_arn}",
+    aws_iam_arn="${request_receiver_lambda_iam_role_arn}",
     tags=["eval"],
 )
 async def eval_text_similarity(body: TextSimilarityRequest, user=Security(apikey_auth)):
@@ -114,8 +115,8 @@ async def eval_text_similarity(body: TextSimilarityRequest, user=Security(apikey
     "/eval/image",
     description="score an image against model-specific metrics",
     response_model=SubmissionResponse,
-    aws_lambda_arn="${polling_start_lambda_arn}",
-    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
+    aws_lambda_arn="${request_receiver_lambda_arn}",
+    aws_iam_arn="${request_receiver_lambda_iam_role_arn}",
     tags=["eval"],
 )
 async def eval_image(body: EvalImageRequest, user=Security(apikey_auth)):
@@ -126,8 +127,8 @@ async def eval_image(body: EvalImageRequest, user=Security(apikey_auth)):
     "/eval/image-text",
     description="score the alignment between an image and a text description",
     response_model=SubmissionResponse,
-    aws_lambda_arn="${polling_start_lambda_arn}",
-    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
+    aws_lambda_arn="${request_receiver_lambda_arn}",
+    aws_iam_arn="${request_receiver_lambda_iam_role_arn}",
     tags=["eval"],
 )
 async def eval_image_text(body: ImageTextEvalRequest, user=Security(apikey_auth)):
@@ -143,8 +144,8 @@ async def eval_image_text(body: ImageTextEvalRequest, user=Security(apikey_auth)
     "/gen/instruct",
     description="submit a chat or instruction-following request",
     response_model=SubmissionResponse,
-    aws_lambda_arn="${polling_start_lambda_arn}",
-    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
+    aws_lambda_arn="${request_receiver_lambda_arn}",
+    aws_iam_arn="${request_receiver_lambda_iam_role_arn}",
     tags=["gen"],
 )
 async def gen_instruct(body: InstructRequest, user=Security(apikey_auth)):
@@ -155,8 +156,8 @@ async def gen_instruct(body: InstructRequest, user=Security(apikey_auth)):
     "/gen/tts",
     description="submit a text-to-speech synthesis request",
     response_model=SubmissionResponse,
-    aws_lambda_arn="${polling_start_lambda_arn}",
-    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
+    aws_lambda_arn="${request_receiver_lambda_arn}",
+    aws_iam_arn="${request_receiver_lambda_iam_role_arn}",
     tags=["gen"],
 )
 async def gen_tts(body: TTSRequest, user=Security(apikey_auth)):
@@ -167,8 +168,8 @@ async def gen_tts(body: TTSRequest, user=Security(apikey_auth)):
     "/gen/txt2audio",
     description="submit a text-to-audio generation request (music or sound effects)",
     response_model=SubmissionResponse,
-    aws_lambda_arn="${polling_start_lambda_arn}",
-    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
+    aws_lambda_arn="${request_receiver_lambda_arn}",
+    aws_iam_arn="${request_receiver_lambda_iam_role_arn}",
     tags=["gen"],
 )
 async def gen_txt2audio(body: Txt2AudioRequest, user=Security(apikey_auth)):
@@ -179,8 +180,8 @@ async def gen_txt2audio(body: Txt2AudioRequest, user=Security(apikey_auth)):
     "/gen/txt2img",
     description="submit a text-to-image generation request",
     response_model=SubmissionResponse,
-    aws_lambda_arn="${polling_start_lambda_arn}",
-    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
+    aws_lambda_arn="${request_receiver_lambda_arn}",
+    aws_iam_arn="${request_receiver_lambda_iam_role_arn}",
     tags=["gen"],
 )
 async def gen_txt2img(body: Txt2ImgRequest, user=Security(apikey_auth)):
@@ -191,8 +192,8 @@ async def gen_txt2img(body: Txt2ImgRequest, user=Security(apikey_auth)):
     "/gen/img2txt",
     description="submit an image captioning or visual question answering request",
     response_model=SubmissionResponse,
-    aws_lambda_arn="${polling_start_lambda_arn}",
-    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
+    aws_lambda_arn="${request_receiver_lambda_arn}",
+    aws_iam_arn="${request_receiver_lambda_iam_role_arn}",
     tags=["gen"],
 )
 async def gen_img2txt(body: Img2TxtRequest, user=Security(apikey_auth)):
@@ -203,8 +204,8 @@ async def gen_img2txt(body: Img2TxtRequest, user=Security(apikey_auth)):
     "/gen/depth",
     description="submit a monocular depth estimation request",
     response_model=SubmissionResponse,
-    aws_lambda_arn="${polling_start_lambda_arn}",
-    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
+    aws_lambda_arn="${request_receiver_lambda_arn}",
+    aws_iam_arn="${request_receiver_lambda_iam_role_arn}",
     tags=["gen"],
 )
 async def gen_depth(body: DepthRequest, user=Security(apikey_auth)):
@@ -215,8 +216,8 @@ async def gen_depth(body: DepthRequest, user=Security(apikey_auth)):
     "/gen/img2mask",
     description="submit an image segmentation request",
     response_model=SubmissionResponse,
-    aws_lambda_arn="${polling_start_lambda_arn}",
-    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
+    aws_lambda_arn="${request_receiver_lambda_arn}",
+    aws_iam_arn="${request_receiver_lambda_iam_role_arn}",
     tags=["gen"],
 )
 async def gen_img2mask(body: Img2MaskRequest, user=Security(apikey_auth)):
@@ -237,8 +238,8 @@ async def gen_img2mask(body: Img2MaskRequest, user=Security(apikey_auth)):
     "/output/{mode}/{task}/{message_id}",
     description="poll for the status and result of a submitted job",
     response_model=PollResponse,
-    aws_lambda_arn="${polling_start_lambda_arn}",
-    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
+    aws_lambda_arn="${request_receiver_lambda_arn}",
+    aws_iam_arn="${request_receiver_lambda_iam_role_arn}",
     tags=["polling"],
 )
 async def poll_result(user=Security(apikey_auth)):
@@ -249,8 +250,8 @@ async def poll_result(user=Security(apikey_auth)):
     "/output/{mode}/{task}/{message_id}",
     description="delete a cached job result",
     response_model=DeleteCacheResponse,
-    aws_lambda_arn="${polling_start_lambda_arn}",
-    aws_iam_arn="${polling_start_lambda_iam_role_arn}",
+    aws_lambda_arn="${request_receiver_lambda_arn}",
+    aws_iam_arn="${request_receiver_lambda_iam_role_arn}",
     tags=["polling"],
 )
 async def delete_result(user=Security(apikey_auth)):

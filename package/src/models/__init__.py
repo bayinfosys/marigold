@@ -64,7 +64,6 @@ def sqs_handler():
     modelname = os.environ["MODELNAME"]
     queue_url = os.environ["AWS_SQS_MODEL_QUEUE"]
     visibility_timeout = int(os.getenv("SQS_VISIBILITY_TIMEOUT", "300"))
-    idle_timeout = int(os.getenv("IDLE_TIMEOUT", "0"))
 
     if model_type not in _SPECS:
         logger.error(
@@ -88,5 +87,5 @@ def sqs_handler():
         )
         sys.exit(0)
 
-    worker = SQSWorker(queue_url, model, visibility_timeout, idle_timeout)
+    worker = SQSWorker(queue_url, model, visibility_timeout)
     worker.run()

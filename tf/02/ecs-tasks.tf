@@ -37,7 +37,6 @@ locals {
       { name = "WORKFLOW_STEPS_TABLE",   value = aws_dynamodb_table.workflow_steps.id },
       { name = "OUTPUT_BUCKET",          value = aws_s3_bucket.model_outputs.id },
       { name = "SQS_VISIBILITY_TIMEOUT", value = tostring(v.timeout) },
-      { name = "SQS_POLL_WAIT_TIME",     value = "45" },
     ],
     v.provider == "huggingface" ? [
       { name = "CACHE_DIR",                    value = var.efs_model_cache_path },

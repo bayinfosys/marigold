@@ -46,7 +46,7 @@ _LONG_POLL_WAIT = 20  # seconds; SQS maximum
 _HEARTBEAT_BUFFER = 5  # seconds before timeout to extend visibility
 
 DYNAMODB_TABLE = os.environ.get("DYNAMODB_RESULTS_TABLE", "")
-DEFAULT_SQS_POLL_WAIT_TIME = 60
+DEFAULT_SQS_POLL_WAIT_TIME = 20
 SQS_POLL_WAIT_TIME = int(os.getenv("SQS_POLL_WAIT_TIME") or DEFAULT_SQS_POLL_WAIT_TIME)
 
 
@@ -224,7 +224,6 @@ class SQSWorker:
         queue_url: str,
         model: BaseModelHandler,
         visibility_timeout: int,
-        idle_timeout: int,
     ):
         self.queue_url = queue_url
         self.model = model

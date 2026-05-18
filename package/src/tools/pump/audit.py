@@ -199,10 +199,10 @@ def print_report(date_str: str) -> None:
         by_type.setdefault(t, []).append(e)
 
     if by_type:
-        print("  %-20s %6s %8s %8s %8s %8s" % (
-            "Type", "n", "p50_ms", "p95_ms", "min_ms", "max_ms"
+        print("  %-20s %6s %8s %8s %8s %8s %10s" % (
+            "Type", "n", "p50_ms", "p95_ms", "min_ms", "max_ms", "tok/s_p50"
         ))
-        print("  " + "-" * 64)
+        print("  " + "-" * 76)
 
         for model_type in sorted(by_type):
             durs = sorted(
@@ -214,8 +214,21 @@ def print_report(date_str: str) -> None:
             n   = len(durs)
             p50 = durs[n // 2]
             p95 = durs[min(int(n * 0.95), n - 1)]
-            print("  %-20s %6d %8d %8d %8d %8d" % (
-                model_type[:20], n, p50, p95, durs[0], durs[-1]
+
+            # tokens/s at p50 -- only meaningful for generative types
+            toks_per_s = ""
+            if model_type in ("instruct", "tts"):
+                group_toks = [
+                    e.get("output_tokens", 0)
+                    for e in by_type[model_type]
+                    if e.get("duration_ms") and e.get("output_tokens")
+                ]
+                if group_toks and p50 > 0:
+                    avg_out = sum(group_toks) / len(group_toks)
+                    toks_per_s = "%.1f" % (avg_out / (p50 / 1000))
+
+            print("  %-20s %6d %8d %8d %8d %8d %10s" % (
+                model_type[:20], n, p50, p95, durs[0], durs[-1], toks_per_s
             ))
 
         print()
@@ -227,27 +240,37 @@ def print_report(date_str: str) -> None:
         by_model.setdefault(k, []).append(e)
 
     if by_model:
-        print("  %-45s %-16s %6s %8s %8s %8s" % (
-            "Model", "Type", "n", "p50_ms", "p95_ms", "tok_out"
+        print("  %-45s %-16s %6s %8s %8s %8s %8s" % (
+            "Model", "Type", "n", "p50_ms", "p95_ms", "tok_out", "tok/s"
         ))
-        print("  " + "-" * 100)
+        print("  " + "-" * 108)
 
         for (model_type, model) in sorted(by_model):
             group = by_model[(model_type, model)]
             durs  = sorted(e["duration_ms"] for e in group if e.get("duration_ms"))
             if not durs:
                 continue
-            n      = len(durs)
-            p50    = durs[n // 2]
-            p95    = durs[min(int(n * 0.95), n - 1)]
-            tok    = sum(e.get("output_tokens", 0) for e in group)
-            print("  %-45s %-16s %6d %8d %8d %8d" % (
-                model[:45], model_type[:16], n, p50, p95, tok
+            n   = len(durs)
+            p50 = durs[n // 2]
+            p95 = durs[min(int(n * 0.95), n - 1)]
+            tok = sum(e.get("output_tokens", 0) for e in group)
+
+            toks_per_s = ""
+            if model_type in ("instruct", "tts") and p50 > 0 and n > 0:
+                avg_out = tok / n
+                toks_per_s = "%.1f" % (avg_out / (p50 / 1000))
+
+            print("  %-45s %-16s %6d %8d %8d %8d %8s" % (
+                model[:45], model_type[:16], n, p50, p95, tok, toks_per_s
             ))
 
         print()
 
-    # Summary
+    # Summary line
+    total_in  = sum(e.get("input_tokens",  0) for e in complete)
+    total_out = sum(e.get("output_tokens", 0) for e in complete)
+    total_tok = total_in + total_out
+
     print("  complete=%d  error=%d  pending=%d  total=%d" % (
         len(complete), len(errors), len(pending), len(entries)
     ))
@@ -258,11 +281,38 @@ def print_report(date_str: str) -> None:
             n   = len(all_durs)
             p50 = all_durs[n // 2]
             p95 = all_durs[min(int(n * 0.95), n - 1)]
-            tok = sum(e.get("input_tokens", 0) + e.get("output_tokens", 0)
-                      for e in complete)
-            print("  overall p50=%dms  p95=%dms  total_tokens=%d" % (
-                p50, p95, tok
+            print("  overall p50=%dms  p95=%dms" % (p50, p95))
+
+        print("  tokens  input=%d  output=%d  total=%d" % (
+            total_in, total_out, total_tok
+        ))
+
+        # Wall clock time -- time from first submission to last completion
+        submitted_times = [
+            e["submitted_at"] for e in entries
+            if e.get("submitted_at")
+        ]
+        if submitted_times:
+            first_submission = min(submitted_times)
+            print("  first submission: %s" % first_submission)
+
+        # Cost estimate -- T4 is gpu-sm, A10G is gpu-lrg
+        # g4dn.2xlarge OD: ~$0.752/hr, g5.4xlarge OD: ~$1.624/hr
+        # Rough blended estimate at $1.00/hr across the fleet
+        # User should substitute their actual EC2 costs
+        gpu_inference_s = sum(
+            e.get("inference_ms", 0) for e in complete
+            if e.get("model_type") in ("instruct", "tts")
+        ) / 1000
+        if gpu_inference_s > 0 and total_tok > 0:
+            # $1.00/hr = $0.000278/s -- blended estimate
+            est_cost_usd = gpu_inference_s * 0.000278
+            cost_per_1k  = (est_cost_usd / total_tok) * 1000
+            print("  gpu inference time: %.0fs  est cost: $%.4f  cost/1k tokens: $%.6f" % (
+                gpu_inference_s, est_cost_usd, cost_per_1k
             ))
+            print("  (cost estimate uses $1.00/hr blended GPU rate -- adjust to your EC2 pricing)")
+
     print()
 
 #

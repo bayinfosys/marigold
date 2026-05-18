@@ -15,6 +15,8 @@ transformer classes and delegate to standard_loader.
 
 import logging
 import os
+import torch
+
 from dataclasses import dataclass
 from time import perf_counter as clock
 from typing import Any
@@ -41,7 +43,7 @@ def check_model_vram(modelname: str, model):
         if param.device.type == "cpu"
     ]
 
-    if cpu_params:
+    if not cpu_params:
         return
 
     # Calculate how much VRAM the model is actually using
@@ -59,7 +61,6 @@ def check_model_vram(modelname: str, model):
 
     # Available VRAM
     try:
-        import torch
         free_vram, total_vram = torch.cuda.mem_get_info(0)
     except Exception:
         free_vram, total_vram = 0, 0

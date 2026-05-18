@@ -1,0 +1,16 @@
+# event types which must match the python names for message filtering
+locals {
+  sns_event_types = {
+    REQUEST_QUEUED     = "REQUEST_QUEUED"
+    WORKER_LAUNCHING   = "WORKER_LAUNCHING"
+    WORKER_STARTED     = "WORKER_STARTED"
+    MODEL_LOADING      = "MODEL_LOADING"
+    MODEL_LOADED       = "MODEL_LOADED"
+    MODEL_LOAD_FAILED  = "MODEL_LOAD_FAILED"
+    REQUEST_PROCESSING = "REQUEST_PROCESSING"
+    REQUEST_COMPLETE   = "REQUEST_COMPLETE"
+    REQUEST_ERROR      = "REQUEST_ERROR"
+    WORKER_IDLE        = "WORKER_IDLE"
+    WORKER_EXITING     = "WORKER_EXITING"
+  }
+}

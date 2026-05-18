@@ -1,6 +1,5 @@
-# FIXME: pull these from the remote state outputs, rather than reference by name
-data "aws_lambda_function" "polling_start_lambda_arn" {
-  function_name = data.terraform_remote_state.pipelines.outputs["polling_lambda"]
+data "aws_lambda_function" "request_receiver" {
+  function_name = data.terraform_remote_state.pipelines.outputs["request_receiver_lambda"]
 }
 
 #data "aws_lambda_function" "usage_stats" {
