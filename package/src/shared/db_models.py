@@ -10,14 +10,14 @@ Never use boto3.resource or Table objects with these items.
 """
 
 import json
-from typing import Optional
-from pydantic import BaseModel
-from dynawrap import DBItem
-
 import time
-from typing import ClassVar
-
 from hashlib import md5 as _md5
+from typing import ClassVar, Optional
+
+from dynawrap import DBItem
+from pydantic import BaseModel
+
+from .sns_models import LifecycleEvent
 
 _DEFAULT_TTL_OFFSET = 86400 * 30  # 30 days
 
@@ -35,11 +35,11 @@ class ResultsItem(DBItem, BaseModel):
 
     default_ttl_offset: ClassVar[int] = _DEFAULT_TTL_OFFSET
 
-    user_id:  str
-    job_id:   str
-    status:   str
+    user_id: str
+    job_id: str
+    status: str
     response: Optional[str] = None
-    ttl:      Optional[int] = None
+    ttl: Optional[int] = None
 
     @classmethod
     def make_ttl(cls, offset_seconds: int = None) -> int:
@@ -127,3 +127,57 @@ class WorkflowStep(DBItem, BaseModel):
     @staticmethod
     def make_step_id(op: str) -> str:
         return _md5(op.encode()).hexdigest()
+
+
+class WorkerEvent(DBItem, BaseModel):
+    """model worker events show when models start, stop, error etc"""
+
+    pk_pattern: ClassVar[str] = "WORKER#{model_hash}"
+    sk_pattern: ClassVar[str] = "EVENT#{event_type}#{timestamp}"
+
+    model_hash: str
+    model_name: str
+    model_type: str
+    event_type: str
+    timestamp: str
+    payload: dict = {}
+    ttl: Optional[int] = None
+
+    @classmethod
+    def from_lifecycle_event(cls, evt: LifecycleEvent) -> "WorkerEvent":
+        return cls(
+            model_hash=evt.model_hash,
+            model_name=evt.model_name,
+            model_type=evt.payload.get("model_type", ""),
+            event_type=evt.event_type,
+            timestamp=evt.timestamp,
+            payload=evt.payload,
+            ttl=ResultsItem.make_ttl(),
+        )
+
+
+class InstanceEvent(DBItem, BaseModel):
+    """instance events show cpu/gpu machines starting and stopping"""
+
+    pk_pattern: ClassVar[str] = "INSTANCE#{instance_id}"
+    sk_pattern: ClassVar[str] = "EVENT#{event_type}#{timestamp}"
+
+    instance_id: str
+    instance_type: str
+    event_type: str
+    timestamp: str
+    spot: bool = False
+    payload: dict = {}
+    ttl: Optional[int] = None
+
+    @classmethod
+    def from_lifecycle_event(cls, evt: LifecycleEvent) -> "InstanceEvent":
+        return cls(
+            instance_id=evt.payload.get("instance_id", ""),
+            instance_type=evt.payload.get("instance_type", ""),
+            event_type=evt.event_type,
+            timestamp=evt.timestamp,
+            spot=evt.payload.get("spot", False),
+            payload=evt.payload,
+            ttl=ResultsItem.make_ttl(),
+        )

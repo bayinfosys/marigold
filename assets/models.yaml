@@ -536,13 +536,13 @@ models:
 #      function calling, instruction following, and knowledge density.
 #      ~12GB weights at 4-bit on a single A10G.
 
-  - <<: *hf_instruct_lrg
-    name: qwen/qwen3-30b-a3b
-    memory_size: 22528
-    description: >
-      Qwen3 30B mixture-of-experts model with 3B active parameters per
-      token. High total capacity at low inference cost per token.
-      ~15GB weights at 4-bit on a single A10G. Apache 2.0 licence.
+#  - <<: *hf_instruct_lrg
+#    name: qwen/qwen3-30b-a3b
+#    memory_size: 22528
+#    description: >
+#      Qwen3 30B mixture-of-experts model with 3B active parameters per
+#      token. High total capacity at low inference cost per token.
+#      ~15GB weights at 4-bit on a single A10G. Apache 2.0 licence.
 
   - <<: *hf_instruct_lrg
     name: google/gemma-3-27b-it
@@ -554,11 +554,11 @@ models:
       multimodal architecture, 140+ languages. Requires HuggingFace
       access approval.
 
-  - <<: *hf_instruct_lrg
-    name: qwen/qwen3-32b
-    memory_size: 28672
-    description: >
-      qwen 3 32b
+#  - <<: *hf_instruct_lrg
+#    name: qwen/qwen3-32b
+#    memory_size: 28672
+#    description: >
+#      qwen 3 32b
 
   # ---------------------------------------------------------------------------
   # Image segmentation

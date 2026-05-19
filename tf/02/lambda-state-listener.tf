@@ -17,7 +17,9 @@ module "state_listener_lambda" {
   handler = "tools.state_machine.state_listener.handler"
 
   environment_variables = {
-    DYNAMODB_TABLE = aws_dynamodb_table.results_cache.id
+    RESULTS_TABLE = aws_dynamodb_table.results_cache.id
+    WORKER_EVENTS_TABLE = aws_dynamodb_table.events.id
+    INSTANCE_EVENTS_TABLE = aws_dynamodb_table.events.id
     BUILD_VERSION  = var.git_tag
   }
 
@@ -28,7 +30,10 @@ module "state_listener_lambda" {
         "dynamodb:PutItem",
         "dynamodb:UpdateItem",
       ]
-      resources = [aws_dynamodb_table.results_cache.arn]
+      resources = [
+        aws_dynamodb_table.results_cache.arn,
+        aws_dynamodb_table.events.arn,
+      ]
     }
 
     db_read = {
@@ -36,7 +41,10 @@ module "state_listener_lambda" {
       actions = [
         "dynamodb:GetItem"
       ]
-      resources = [aws_dynamodb_table.results_cache.arn]
+      resources = [
+        aws_dynamodb_table.results_cache.arn,
+        aws_dynamodb_table.events.arn,
+      ]
     }
   }
 

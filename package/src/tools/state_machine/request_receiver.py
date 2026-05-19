@@ -85,7 +85,7 @@ def handler(event, context):
     logger.debug("event: %s", str(event))
 
     method = event["httpMethod"]
-    userid = get_userid_from_event(event)
+    user_id = get_userid_from_event(event)
 
     dispatch_map = {
         "POST": handle_submission,
@@ -95,7 +95,7 @@ def handler(event, context):
     }
 
     try:
-        return dispatch_map[method](userid, event)
+        return dispatch_map[method](user_id, event)
     except KeyError as e:
         logger.warning("method not found: %s", e)
         return mk_resp(405, {"status": "error", "message": "method not allowed"})
@@ -104,7 +104,7 @@ def handler(event, context):
         return mk_resp(500, {"status": "error", "message": "internal error"})
 
 
-def handle_submission(userid, event):
+def handle_submission(user_id, event):
     body = event["body"]
     request_id = event.get("requestContext", {}).get("requestId", "unknown")
     body_md5 = md5(body.encode("utf-8")).hexdigest()
@@ -112,9 +112,9 @@ def handle_submission(userid, event):
     path = event.get("path", "")
 
     if path.startswith("/demo/chat"):
-        return handle_chat_submission(userid, event)
+        return handle_chat_submission(user_id, event)
 
-    logger.info("[%s/%s] request_id=%s", userid, message_id, request_id)
+    logger.info("[%s/%s] request_id=%s", user_id, message_id, request_id)
 
     message_content = json.loads(body)
     model_name = message_content.get("model")
@@ -126,9 +126,9 @@ def handle_submission(userid, event):
     model_name_md5 = md5(model_name.encode()).hexdigest()
 
     # Deduplication
-    existing_status = get_status(userid, message_id)
+    existing_status = get_status(user_id, message_id)
     if existing_status:
-        logger.info("[%s/%s] cache hit status=%s", userid, message_id, existing_status)
+        logger.info("[%s/%s] cache hit status=%s", user_id, message_id, existing_status)
         return mk_resp(200, {"message_id": body_md5, "status": existing_status})
 
     # Model config lookup
@@ -136,18 +136,18 @@ def handle_submission(userid, event):
     try:
         dispatch = models[model_name_md5]
     except KeyError:
-        logger.warning("[%s] unknown model: '%s'", userid, model_name)
+        logger.warning("[%s] unknown model: '%s'", user_id, model_name)
         return mk_resp(400, {"status": "error", "message": "unknown model"})
 
     # Cache state check
     cache_state = load_cache_state()
     if not cache_state:
-        logger.critical("[%s] cache state unavailable", userid)
+        logger.critical("[%s] cache state unavailable", user_id)
         return mk_resp(503, {"status": "error", "message": "service_unavailable"})
 
     model_cache = cache_state.get(model_name)
     if not model_cache:
-        logger.critical("[%s] model not in cache state: '%s'", userid, model_name)
+        logger.critical("[%s] model not in cache state: '%s'", user_id, model_name)
         return mk_resp(
             400,
             {"status": "error", "message": "model_not_available", "model": model_name},
@@ -156,7 +156,7 @@ def handle_submission(userid, event):
     if model_cache.get("status") != "ok":
         logger.critical(
             "[%s] model cache status not ok: '%s' status=%s",
-            userid,
+            user_id,
             model_name,
             model_cache.get("status"),
         )
@@ -171,12 +171,12 @@ def handle_submission(userid, event):
         )
 
     # Write queued status
-    create_status(userid, message_id, status="queued")
-    logger.info("[%s/%s] queued for model '%s'", userid, message_id, model_name)
+    create_status(user_id, message_id, status="queued")
+    logger.info("[%s/%s] queued for model '%s'", user_id, message_id, model_name)
 
     # Write to SQS
     msg = MarigoldSQSMessage(
-        user_id=userid,
+        user_id=user_id,
         message_id=message_id,
         model_type=dispatch.model_type,
         model_name=model_name,
@@ -188,12 +188,12 @@ def handle_submission(userid, event):
             MessageBody=msg.model_dump_json(),
         )
     except sqs.exceptions.QueueDoesNotExist as e:
-        logger.critical("[%s/%s] queue does not exist: %s", userid, message_id, e)
-        update_status(userid, message_id, status="error")
+        logger.critical("[%s/%s] queue does not exist: %s", user_id, message_id, e)
+        update_status(user_id, message_id, status="error")
         return mk_resp(500, {"status": "error", "message": "internal routing error"})
     except Exception as e:
-        logger.exception("[%s/%s] SQS send failed: %s", userid, message_id, e)
-        update_status(userid, message_id, status="error")
+        logger.exception("[%s/%s] SQS send failed: %s", user_id, message_id, e)
+        update_status(user_id, message_id, status="error")
         return mk_resp(500, {"status": "error", "message": "internal error"})
 
     # Publish lifecycle event -- task_runner decides whether to launch
@@ -203,22 +203,26 @@ def handle_submission(userid, event):
             model_name=model_name,
             model_hash=model_name_md5,
             message_id=message_id,
+            payload={
+                "user_id": user_id,
+                "model_type": dispatch.model_type,
+            },
         )
         sns.publish(**evt.to_sns_kwargs(LIFECYCLE_TOPIC_ARN))
     except Exception as e:
         # TODO: should we return a 500 error here?
-        logger.critical("[%s/%s] SNS publish failed: %s", userid, message_id, e)
+        logger.critical("[%s/%s] SNS publish failed: %s", user_id, message_id, e)
 
     return mk_resp(200, {"message_id": body_md5})
 
 
-def handle_status(userid, event):
+def handle_status(user_id, event):
     raw_id = event["pathParameters"]["message_id"]
     message_id = "API#" + raw_id
-    status = get_status(userid, message_id)
+    status = get_status(user_id, message_id)
 
     if status in ("complete", "error"):
-        result = get_response(userid, message_id)
+        result = get_response(user_id, message_id)
         return mk_resp(200, {"status": status, "message_id": raw_id, "result": result})
     elif status:
         return mk_resp(202, {"status": status, "message_id": raw_id})
@@ -226,8 +230,8 @@ def handle_status(userid, event):
         return mk_resp(404, {"status": "not found", "message_id": raw_id})
 
 
-def delete_status(userid, event):
+def delete_status(user_id, event):
     raw_id = event["pathParameters"]["message_id"]
     message_id = "API#" + raw_id
-    delete_cache(userid, message_id)
+    delete_cache(user_id, message_id)
     return mk_resp(200, {"status": "ok", "message": "deleted", "message_id": raw_id})

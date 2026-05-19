@@ -108,6 +108,14 @@ module "vpc_endpoints" {
       subnet_ids          = module.vpc.private_subnets
       tags                = { Name = "sqs" }
     }
+    sns = {
+      service             = "sns"
+      service_type        = "Interface"
+      private_dns_enabled = true
+      subnet_ids          = module.vpc.private_subnets
+      security_group_ids  = [module.vpc.default_security_group_id]
+      tags                = { Name = "sns" }
+    }
     ssm = {
       service             = "ssm"
       service_type        = "Interface"
