@@ -18,50 +18,85 @@ container image.
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    REQ([Request])
+# line 138 -- wrong
+enqueue_launch(dispatch, model_name, model_hash, message_id, estimated)
 
-    subgraph SM[State machine]
-        RR[request_receiver\nvalidate, write SQS, publish SNS]
-        TR[task_runner\nis_active check, run_task]
-        SL[state_listener\nwrites request state]
-        DB[(DynamoDB results\nqueued, provisioning, complete)]
-
-        RR -->|SNS| TR
-        TR -->|SNS| SL
-        SL --> DB
-    end
-
-    subgraph DS[Demand state]
-        QA[[SQS model A]]
-        QB[[SQS model B]]
-        QN[[SQS model N]]
-    end
-
-    subgraph ES[Execution state]
-        EA[ECS model A]
-        EB[ECS model B]
-        EN[ECS model N]
-    end
-
-    REQ --> RR
-
-    RR --> QA
-    RR --> QB
-    RR --> QN
-
-    TR -.->|run_task| EA
-    TR -.->|run_task| EB
-    TR -.->|run_task| EN
-
-    QA -->|polls| EA
-    QB -->|polls| EB
-    QN -->|polls| EN
-
-    REQ -.->|GET /output/id| DB
+# correct
+enqueue_launch(model_name, model_hash, message_id, estimated)
 ```
 
+One character fix. The `dispatch` object was removed from `enqueue_launch`'s parameters when the slot loop was added but the call site was not updated.
+
+**launcher:** Working perfectly. Sequential launches, ~300-600ms per task, `active_before=0` throughout. The serialisation is doing its job.
+
+---
+
+Mermaid diagram as markdown:
+
+```
+```mermaid
+flowchart TD
+    classDef lam fill:#CECBF6,stroke:#534AB7,color:#26215C,stroke-width:1.5px
+    classDef q   fill:#9FE1CB,stroke:#0F6E56,color:#04342C,stroke-width:1.5px
+    classDef svc fill:#B5D4F4,stroke:#185FA5,color:#042C53,stroke-width:1.5px
+    classDef cp  fill:#FAC775,stroke:#854F0B,color:#412402,stroke-width:1.5px
+    classDef cli fill:#D3D1C7,stroke:#5F5E5A,color:#2C2C2A,stroke-width:1.5px
+
+    CLI([Client]):::cli
+
+    subgraph ING [Ingress]
+        APIGW[API Gateway]:::svc
+        RR[request_receiver Lambda]:::lam
+    end
+
+    SNS(["SNS Lifecycle Topic"]):::svc
+
+    subgraph QGP ["Model queues -- 1 per model, ~55 total"]
+        direction LR
+        QA[queue A]:::q
+        QB[queue B]:::q
+        QN["queue N ..."]:::q
+    end
+
+    subgraph DSP [Task dispatch]
+        TQ["task_queuer Lambda"]:::lam
+        LFIFO[("launch-queue.fifo")]:::q
+        LA[launcher Lambda]:::lam
+    end
+
+    subgraph CMP [ECS Cluster + ASG]
+        ASG["ASG\ngpu-sm  gpu-lrg  cpu-lrg"]:::svc
+        subgraph WKS ["Worker tasks -- N per model"]
+            direction LR
+            WA["workers-A\nx N tasks"]:::cp
+            WB["workers-B\nx N tasks"]:::cp
+            WN["workers-N ...\nx N tasks"]:::cp
+        end
+    end
+
+    DDB[("DynamoDB\nResults Cache")]:::svc
+
+    CLI -->|POST request| APIGW
+    APIGW --> RR
+    RR -->|"publish\nmodel_name attr"| SNS
+
+    SNS -->|"1 : N\nfiltered by model_name"| QA
+    SNS -->|"1 : N"| QB
+    SNS -.->|"1 : N"| QN
+
+    SNS -->|"REQUEST_QUEUED\nevent"| TQ
+    TQ -->|"1 : estimated slots\ndepth / msg_per_instance"| LFIFO
+    LFIFO -->|"serial\nconcurrency = 1"| LA
+    LA -->|"run_task x slots"| ASG
+    ASG -->|"provision\n0 to N EC2"| WKS
+
+    QA -->|"N : 1 pull"| WA
+    QB -->|"N : 1 pull"| WB
+    QN -.->|"N : 1 pull"| WN
+
+    WA & WB & WN -->|write result| DDB
+    DDB -->|GET poll| CLI
+```
 
 Three Terraform layers build on each other:
 ```

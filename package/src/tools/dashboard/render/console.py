@@ -9,7 +9,11 @@ import sys
 from datetime import datetime, timezone
 from typing import Dict
 
-from ..transform import AsgInfo, DashboardData, InstanceInfo, ModelStatus
+from ..transform import (
+    AsgInfo, DashboardData, InstanceInfo, ModelStatus,
+    HEALTH_OK, HEALTH_DEGRADED, HEALTH_CRITICAL,
+    SLO_WARN_S, SLO_BREACH_S,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -32,7 +36,7 @@ def cyan(s):   return _c("36", s)
 
 
 # ---------------------------------------------------------------------------
-# Infrastructure section
+# Formatting helpers
 # ---------------------------------------------------------------------------
 
 def _fmt_uptime(minutes: int) -> str:
@@ -42,6 +46,68 @@ def _fmt_uptime(minutes: int) -> str:
         return "%dh"  % (minutes // 60)
     return "%dd" % (minutes // 1440)
 
+
+def _fmt_age(seconds: int) -> str:
+    if seconds < 60:
+        return "%ds" % seconds
+    if seconds < 3600:
+        return "%dm%ds" % (seconds // 60, seconds % 60)
+    return "%dh%dm" % (seconds // 3600, (seconds % 3600) // 60)
+
+
+# ---------------------------------------------------------------------------
+# Health section
+# ---------------------------------------------------------------------------
+
+def section_health(data: DashboardData) -> None:
+    h  = data.health
+    lq = h.launch_queue
+
+    status_colour = {
+        HEALTH_OK:       green,
+        HEALTH_DEGRADED: yellow,
+        HEALTH_CRITICAL: red,
+    }.get(h.status, bold)
+
+    print(bold("--- Health ---"))
+    print("  status         %s" % status_colour(h.status))
+
+    if h.oldest_job_s > 0:
+        age_colour = (
+            red    if h.oldest_job_s >= SLO_BREACH_S else
+            yellow if h.oldest_job_s >= SLO_WARN_S   else
+            green
+        )
+        print("  oldest job     %s  (%s)" % (
+            age_colour(_fmt_age(h.oldest_job_s)),
+            h.oldest_job_model,
+        ))
+    else:
+        print("  oldest job     %s" % green("none"))
+
+    backlog_colour = (
+        red    if h.total_backlog > 500 else
+        yellow if h.total_backlog > 100 else
+        dim
+    )
+    print("  total backlog  %s" % backlog_colour("%d" % h.total_backlog))
+
+    lq_s = "depth=%-4d in_flight=%-4d oldest=%s" % (
+        lq.visible, lq.in_flight, _fmt_age(lq.oldest_msg_s),
+    )
+    print("  launch queue   %s" % (yellow(lq_s) if lq.visible > 0 else dim(lq_s)))
+
+    if lq.dlq_depth > 0:
+        print("  launch DLQ     %s" % red("%d failed launch(es)" % lq.dlq_depth))
+    else:
+        print("  launch DLQ     %s" % dim("clean"))
+
+    print()
+
+
+# ---------------------------------------------------------------------------
+# Infrastructure section
+# ---------------------------------------------------------------------------
 
 def _print_asg_header(a: AsgInfo) -> None:
     line = "  %s  (des=%d min=%d max=%d  in-service=%d pending=%d terminating=%d)" % (
@@ -101,21 +167,24 @@ def _print_instance_row(
 
 def _print_model_row(ms: ModelStatus, indent: int = 6) -> None:
     pad   = " " * indent
-    svc   = ms.service
     q     = ms.queue
     dlq_s = str(q.dlq) if q.dlq is not None else "-"
+    age_s = ("  age=%s" % _fmt_age(q.oldest_msg_s)) if q.oldest_msg_s > 0 else ""
 
-    row = "%s+ %-45s  des=%-2d run=%-2d pnd=%-2d  |  q=%-4d fl=%-4d dlq=%s" % (
+    row = "%s+ %-45s  run=%-2d  |  q=%-4d fl=%-4d dlq=%s%s" % (
         pad, ms.name,
-        svc.desired, svc.running, svc.pending,
+        ms.service.running,
         q.visible, q.in_flight, dlq_s,
+        age_s,
     )
 
-    if svc.running > 0 and q.total == 0:
+    if ms.service.running > 0 and q.total == 0:
         print(green(row))
-    elif svc.running > 0 and q.total > 0:
-        print(cyan(row))     # running but queue building up
-    elif svc.pending > 0:
+    elif ms.service.running > 0 and q.total > 0:
+        print(cyan(row))
+    elif q.oldest_msg_s >= SLO_BREACH_S:
+        print(red(row))
+    elif q.oldest_msg_s >= SLO_WARN_S:
         print(yellow(row))
     else:
         print(row)
@@ -151,22 +220,30 @@ def section_backlog(data: DashboardData) -> None:
         return
 
     print(bold("--- Backlog (queued, no running task) ---"))
-    print("  %-45s %-18s %8s %8s %6s" % (
-        "Model", "Type", "Visible", "InFlight", "DLQ",
+    print("  %-45s %-18s %8s %8s %9s %13s %6s" % (
+        "Model", "Type", "Visible", "InFlight", "OldestMsg", "TaskState", "DLQ",
     ))
-    print("  " + "-" * 92)
+    print("  " + "-" * 113)
 
     for ms in data.backlog:
-        q     = ms.queue
-        dlq_s = str(q.dlq) if q.dlq is not None else "-"
-        row   = "  %-45s %-18s %8d %8d %6s" % (
+        q       = ms.queue
+        dlq_s   = str(q.dlq) if q.dlq is not None else "-"
+        age_s   = _fmt_age(q.oldest_msg_s) if q.oldest_msg_s > 0 else "-"
+        state_s = ms.task_state or "-"
+
+        row = "  %-45s %-18s %8d %8d %9s %13s %6s" % (
             ms.name, ms.model_type,
-            q.visible, q.in_flight, dlq_s,
+            q.visible, q.in_flight, age_s, state_s, dlq_s,
         )
-        print(yellow(row))
 
-    print()
-
+        if ms.task_state in ("PROVISIONING", "PENDING"):
+            print(cyan(row))
+        elif q.oldest_msg_s >= SLO_BREACH_S:
+            print(red(row))
+        elif q.oldest_msg_s >= SLO_WARN_S:
+            print(yellow(row))
+        else:
+            print(yellow(row))
 
 # ---------------------------------------------------------------------------
 # Unused section (compact)
@@ -203,9 +280,7 @@ def section_dynamodb(data: DashboardData) -> None:
     for table, metrics in sorted(data.dynamodb_metrics.items()):
         writes    = metrics.get("writes",    0)
         throttles = metrics.get("throttles", 0)
-        # Strip prefix from table name for display
-        short = table.split("-")[-1] if "-" in table else table
-        row   = "  %-48s %8d %12d" % (table, writes, throttles)
+        row       = "  %-48s %8d %12d" % (table, writes, throttles)
         if throttles > 0:
             print(red(row))
         elif writes > 0:
@@ -215,8 +290,9 @@ def section_dynamodb(data: DashboardData) -> None:
 
     print()
 
+
 # ---------------------------------------------------------------------------
-# EFS
+# EFS section
 # ---------------------------------------------------------------------------
 
 def section_efs(data: DashboardData) -> None:
@@ -229,26 +305,25 @@ def section_efs(data: DashboardData) -> None:
     ))
 
     for fs_id, m in sorted(data.efs_metrics.items()):
-        name     = data.efs_names.get(fs_id, fs_id)
-        burst    = m.get("burst_credits_gb")
-        tput     = m.get("permitted_throughput_mbs")
-        reads    = m.get("read_bytes")
-        conns    = m.get("client_connections")
+        name    = data.efs_names.get(fs_id, fs_id)
+        burst   = m.get("burst_credits_gb")
+        tput    = m.get("permitted_throughput_mbs")
+        reads   = m.get("read_bytes")
+        conns   = m.get("client_connections")
 
-        burst_s  = "%.1f" % burst if burst is not None else "--"
-        tput_s   = "%.1f" % tput  if tput  is not None else "--"
-        reads_s  = "%d"   % reads if reads is not None else "--"
-        conns_s  = "%d"   % conns if conns is not None else "--"
+        burst_s = "%.1f" % burst if burst is not None else "--"
+        tput_s  = "%.1f" % tput  if tput  is not None else "--"
+        reads_s = "%d"   % reads if reads is not None else "--"
+        conns_s = "%d"   % conns if conns is not None else "--"
 
         row = "  %-30s %12s %16s %12s %14s" % (
             name[:30], burst_s, tput_s, reads_s, conns_s,
         )
 
-        # Burst credits below 1GB is a warning -- throughput will be throttled
         if burst is not None and burst < 1.0:
             print(red(row))
         elif reads is not None and reads > 100 * 1024**2:
-            print(yellow(row))   # significant read activity
+            print(yellow(row))
         else:
             print(row)
 
@@ -273,13 +348,11 @@ def section_errors(data: DashboardData) -> None:
 # ---------------------------------------------------------------------------
 
 def section_summary(data: DashboardData) -> None:
-    total   = len(data.models)
-    running = sum(1 for m in data.models.values() if m.service.running > 0)
-    backlog = len(data.backlog)
-    unused  = len(data.unused)
-    active_q = sum(
-        m.queue.total for m in data.models.values()
-    )
+    total    = len(data.models)
+    running  = sum(1 for m in data.models.values() if m.service.running > 0)
+    backlog  = len(data.backlog)
+    unused   = len(data.unused)
+    active_q = sum(m.queue.total for m in data.models.values())
     print(dim(
         "  models=%d  running=%d  backlog=%d  unused=%d  queue_total=%d"
         % (total, running, backlog, unused, active_q)
@@ -296,6 +369,7 @@ def render(data: DashboardData) -> None:
     print()
     print(bold("Marigold Dashboard  bayis-vecmdl-dev  %s" % ts))
     print()
+    section_health(data)
     section_infrastructure(data)
     section_backlog(data)
     section_unused(data)

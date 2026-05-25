@@ -1,0 +1,50 @@
+---
+layout: default
+title: "The Build Log -- Marigold"
+description: "Benchmarks, architecture notes, and technical writing from the team building Marigold, a private open-weight AI inference platform on UK AWS infrastructure."
+canonical: "https://marigold.run/blog/"
+og_title: "The Build Log -- Marigold"
+og_description: "Benchmarks, architecture notes, and technical writing from the team building Marigold."
+permalink: /blog/
+nav_links:
+  - text: Developers
+    href: /developers.html
+  - text: Models
+    href: /open-weights.html
+  - text: Join waitlist
+    href: "#waitlist"
+    cta: true
+---
+
+<main>
+
+<section class="hero hero--compact">
+  <div class="wrap">
+    <p class="hero-eyebrow">Engineering</p>
+    <h1 class="slogan">The build log.</h1>
+    <p class="hero-sub">Benchmarks, architecture notes, and technical writing.</p>
+  </div>
+</section>
+
+<section class="blog-list">
+  <div class="wrap">
+    {% for post in site.posts %}
+    <div class="faq-item">
+      <p class="section-label">
+        <time datetime="{{ post.date | date_to_xmlschema }}">
+          {{ post.date | date: "%-d %B %Y" }}
+        </time>
+        {% if post.category %}&nbsp;&mdash;&nbsp;{{ post.category }}{% endif %}
+      </p>
+      <p class="faq-q"><a href="{{ post.url }}" style="color:inherit;text-decoration:none;">{{ post.title }}</a></p>
+      {% if post.description %}<p class="faq-a">{{ post.description }}</p>{% endif %}
+      <p class="faq-a"><a href="{{ post.url }}" style="color:var(--amber);font-family:'Junction','Trebuchet MS',sans-serif;font-size:0.82rem;letter-spacing:0.06em;text-transform:uppercase;text-decoration:none;">Read &rarr;</a></p>
+    </div>
+    {% endfor %}
+    {% if site.posts.size == 0 %}
+    <p class="faq-a">No posts yet.</p>
+    {% endif %}
+  </div>
+</section>
+
+</main>

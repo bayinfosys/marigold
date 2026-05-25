@@ -17,37 +17,26 @@ Environment:
     MARIGOLD_PROJECT           Project tag value for ASG filter
     MARIGOLD_PREFIX            Resource name prefix
     MARIGOLD_ORG               Organisation prefix
-    MARIGOLD_PUMP_HISTORY      Directory for pump history JSONL files
     MARIGOLD_DYNAMODB_TABLES   Comma-separated table names to monitor
     MARIGOLD_LOG_GROUP_PREFIX  CloudWatch log group prefix for error scan
     AWS_REGION                 AWS region (default: eu-west-2)
 """
+
 import argparse
 import json
 import logging
 import os
 import time
 
-from .config import (
-    CLUSTER, PREFIX, ORG,
-    DYNAMODB_TABLES, LOG_GROUP_PREFIX,
-)
+from .config import DYNAMODB_TABLES, LOG_GROUP_PREFIX, ORG, PREFIX
 from .fetch_api import fetch_models_json
-from .fetch_aws import (
-    fetch_efs_filesystems,
-    fetch_efs_metrics,
-    fetch_asgs,
-    fetch_ec2_instances,
-    fetch_ecs_container_instances,
-    fetch_running_tasks,
-    fetch_ecs_services,
-    fetch_all_queue_urls,
-    fetch_sqs_queue_stats,
-    fetch_dynamodb_write_metrics,
-    fetch_recent_error_count,
-)
-from .transform import build_model_catalogue, build_dashboard, DashboardData
+from .fetch_aws import (fetch_all_queue_stats, fetch_asgs,
+                        fetch_dynamodb_write_metrics, fetch_ec2_instances,
+                        fetch_ecs_container_instances, fetch_ecs_services,
+                        fetch_efs_filesystems, fetch_efs_metrics,
+                        fetch_recent_error_count, fetch_running_tasks)
 from .render.console import render as console_render
+from .transform import DashboardData, build_dashboard, build_model_catalogue
 
 log = logging.getLogger("dashboard")
 log.setLevel(os.getenv("LOG_LEVEL", "INFO"))
@@ -57,110 +46,111 @@ log.setLevel(os.getenv("LOG_LEVEL", "INFO"))
 # Data collection
 # ---------------------------------------------------------------------------
 
+
 def collect() -> DashboardData:
     """Fetch all data sources and build a DashboardData snapshot."""
 
-    # API -- model catalogue (hash -> ModelInfo)
+    # Model catalogue
     raw_models = fetch_models_json()
-    catalogue  = build_model_catalogue(raw_models)
+    catalogue = build_model_catalogue(raw_models)
 
     # AWS infrastructure
-    raw_asgs   = fetch_asgs()
-    all_ids    = [
-        i["InstanceId"]
-        for g in raw_asgs
-        for i in g.get("Instances", [])
-    ]
-    ec2_map    = fetch_ec2_instances(all_ids)
+    raw_asgs = fetch_asgs()
+    all_ids = [i["InstanceId"] for g in raw_asgs for i in g.get("Instances", [])]
+    ec2_map = fetch_ec2_instances(all_ids)
     ecs_ci_map = fetch_ecs_container_instances()
-    raw_tasks  = fetch_running_tasks()
-    raw_svcs   = fetch_ecs_services()
+    raw_tasks = fetch_running_tasks()
+    raw_svcs = fetch_ecs_services()
 
-    # SQS queues
-    queue_urls  = fetch_all_queue_urls()
-    queue_stats = fetch_sqs_queue_stats(queue_urls)
+    # SQS queues -- model queues + system queues (task-queuer-events etc.)
+    all_queue_stats = fetch_all_queue_stats()
+    model_queue_stats = all_queue_stats["model"]
+    system_queue_stats = all_queue_stats["system"]
 
-    # System health
+    # Observability
     ddb_metrics = fetch_dynamodb_write_metrics(DYNAMODB_TABLES)
     error_count = fetch_recent_error_count(LOG_GROUP_PREFIX)
 
+    # EFS
     efs_filesystems = fetch_efs_filesystems()
-    fs_ids          = [f["FileSystemId"] for f in efs_filesystems]
-    efs_metrics     = fetch_efs_metrics(fs_ids)
+    efs_metrics = fetch_efs_metrics([f["FileSystemId"] for f in efs_filesystems])
 
     return build_dashboard(
-        raw_asgs         = raw_asgs,
-        ec2_map          = ec2_map,
-        ecs_ci_map       = ecs_ci_map,
-        raw_tasks        = raw_tasks,
-        raw_services     = raw_svcs,
-        queue_stats      = queue_stats,
-        catalogue        = catalogue,
-        dynamodb_metrics = ddb_metrics,
-        error_count      = error_count,
-        prefix           = PREFIX,
-        org              = ORG,
-        efs_filesystems  = efs_filesystems,
-        efs_metrics      = efs_metrics,
+        raw_asgs=raw_asgs,
+        ec2_map=ec2_map,
+        ecs_ci_map=ecs_ci_map,
+        raw_tasks=raw_tasks,
+        raw_services=raw_svcs,
+        model_queue_stats=model_queue_stats,
+        system_queue_stats=system_queue_stats,
+        catalogue=catalogue,
+        dynamodb_metrics=ddb_metrics,
+        error_count=error_count,
+        prefix=PREFIX,
+        org=ORG,
+        efs_filesystems=efs_filesystems,
+        efs_metrics=efs_metrics,
     )
 
 
 # ---------------------------------------------------------------------------
-# JSON renderer (stub for future use)
+# JSON renderer
 # ---------------------------------------------------------------------------
 
+
 def json_render(data: DashboardData) -> None:
-    print(json.dumps({
-        "ts":      data.ts,
-        "models":  {
-            name: {
-                "type":    ms.model_type,
-                "running": ms.service.running,
-                "desired": ms.service.desired,
-                "pending": ms.service.pending,
-                "queue":   ms.queue.visible,
-                "placed":  ms.instance_id,
-            }
-            for name, ms in data.models.items()
-        },
-        "placed":  len(data.placed),
-        "backlog": len(data.backlog),
-        "unused":  len(data.unused),
-        "errors":  data.error_count,
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "ts": data.ts,
+                "health": {
+                    "status": data.health.status,
+                    "oldest_job_s": data.health.oldest_job_s,
+                    "oldest_model": data.health.oldest_job_model,
+                    "total_backlog": data.health.total_backlog,
+                },
+                "models": {
+                    name: {
+                        "type": ms.model_type,
+                        "running": ms.service.running,
+                        "desired": ms.service.desired,
+                        "pending": ms.service.pending,
+                        "queue": ms.queue.visible,
+                        "placed": ms.instance_id,
+                    }
+                    for name, ms in data.models.items()
+                },
+                "placed": len(data.placed),
+                "backlog": len(data.backlog),
+                "unused": len(data.unused),
+            },
+            indent=2,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
 
-def main(fmt: str) -> None:
+
+def run(args: argparse.Namespace) -> None:
     renderers = {
         "console": console_render,
-        "json":    json_render,
+        "json": json_render,
     }
-    renderer = renderers.get(fmt, console_render)
+    render = renderers.get(args.format, console_render)
 
-    start = time.time()
-    try:
-        data = collect()
-        renderer(data)
-    except KeyboardInterrupt:
-        log.info("exiting...")
-    except Exception as e:
-        log.error("collect failed: %s", e)
+    data = collect()
+    render(data)
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description="Marigold dashboard")
+    p.add_argument("--once", action="store_true", help="render once and exit")
+    p.add_argument("--format", choices=["console", "json"], default="console")
+    run(p.parse_args())
 
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser(
-        description="Marigold infrastructure dashboard",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
-    )
-    p.add_argument(
-        "--format", choices=["console", "json"], default="console",
-        help="output format (default: console)",
-    )
-
-    args = p.parse_args()
-    main(args.format)
+    main()

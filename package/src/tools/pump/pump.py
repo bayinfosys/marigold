@@ -2,31 +2,31 @@
 Marigold pump.
 
 Usage:
-    python3 -m tools.pump pump   [--once] [--interval N] [--workers N]
+    python3 -m tools.pump pump   [--once] [--interval N] [--concurrency N]
                                  [--types a,b] [--skip-types a,b]
+                                 [--order grouped|random|interleaved]
+                                 [--requests N] [--jitter N]
 
     python3 -m tools.pump audit  [--date YYYY-MM-DD] [--days N] [--force]
                                  [--poll] [--report]
-
-    # default (no subcommand) runs pump for backwards compatibility
-    python3 -m tools.pump --once
 """
 
+import asyncio
 import logging
 import random
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Dict, List, Optional
-
-import requests
 import fnmatch
+
+import httpx
 
 from tools.dashboard.config import API_BASE, API_HEADERS
 from tools.dashboard.history import write_entry
 
 log = logging.getLogger("pump")
+logging.getLogger("httpx").setLevel("WARNING")
 
 logging.basicConfig(
     format="%(asctime)s  %(levelname)-8s  %(message)s",
@@ -34,14 +34,12 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
-POLL_INTERVAL_S = 3
-POLL_MAX_RETRIES = 120
-MAX_WORKERS = 16
-JOB_INTERVAL_S = 30
+JOB_INTERVAL_S  = 30
+DEFAULT_CONCURRENCY = 64
 
 
 # ---------------------------------------------------------------------------
-# Sample inputs
+# Sample inputs  (unchanged)
 # ---------------------------------------------------------------------------
 
 INSTRUCT_PROMPTS = [
@@ -80,19 +78,14 @@ EVAL_TEXTS = [
 
 SIMILARITY_PAIRS = [
     ("The cat sat on the mat.", "A cat was resting on a rug."),
-    (
-        "Inflation rose sharply in Q3.",
-        "Consumer prices increased between July and September.",
-    ),
+    ("Inflation rose sharply in Q3.", "Consumer prices increased between July and September."),
     ("The model failed to converge.", "Training did not complete successfully."),
 ]
 
 
 # ---------------------------------------------------------------------------
 # Route map
-# Inferred from model type: (endpoint, mode, task, payload_factory)
 # ---------------------------------------------------------------------------
-
 
 def _make_instruct(model: str, nonce: str) -> dict:
     return {
@@ -103,7 +96,6 @@ def _make_instruct(model: str, nonce: str) -> dict:
         "nonce": nonce,
     }
 
-
 def _make_embedding(model: str, nonce: str) -> dict:
     return {
         "model": model,
@@ -113,7 +105,6 @@ def _make_embedding(model: str, nonce: str) -> dict:
         "nonce": nonce,
     }
 
-
 def _make_tts(model: str, nonce: str) -> dict:
     return {
         "model": model,
@@ -122,31 +113,19 @@ def _make_tts(model: str, nonce: str) -> dict:
         "nonce": nonce,
     }
 
-
 def _make_text_eval(model: str, nonce: str) -> dict:
-    return {
-        "model": model,
-        "text": random.choice(EVAL_TEXTS),
-        "nonce": nonce,
-    }
-
+    return {"model": model, "text": random.choice(EVAL_TEXTS), "nonce": nonce}
 
 def _make_similarity(model: str, nonce: str) -> dict:
     pair = random.choice(SIMILARITY_PAIRS)
-    return {
-        "model": model,
-        "text_a": pair[0],
-        "text_b": pair[1],
-        "nonce": nonce,
-    }
-
+    return {"model": model, "text_a": pair[0], "text_b": pair[1], "nonce": nonce}
 
 ROUTE_MAP: Dict[str, tuple] = {
-    "instruct": ("/gen/instruct", "instruct", _make_instruct),
-    "text-embedding": ("/embed/text", "text-embedding", _make_embedding),
-    "tts": ("/gen/tts", "tts", _make_tts),
-    "text-eval": ("/eval/text", "text-eval", _make_text_eval),
-    "text-similarity": ("/eval/text-similarity", "text-similarity", _make_similarity),
+    "instruct":         ("/gen/instruct",          "instruct",         _make_instruct),
+    "text-embedding":   ("/embed/text",             "text-embedding",   _make_embedding),
+    "tts":              ("/gen/tts",                "tts",              _make_tts),
+    "text-eval":        ("/eval/text",              "text-eval",        _make_text_eval),
+    "text-similarity":  ("/eval/text-similarity",   "text-similarity",  _make_similarity),
 }
 
 
@@ -154,13 +133,12 @@ ROUTE_MAP: Dict[str, tuple] = {
 # Job
 # ---------------------------------------------------------------------------
 
-
 @dataclass
 class Job:
     model_name: str
     model_type: str
-    endpoint: str
-    nonce: str
+    endpoint:   str
+    nonce:      str
 
 
 def _model_matches(name: str, patterns: set) -> bool:
@@ -174,13 +152,31 @@ def _build_jobs(
     skip_types:         List[str],
     only_types:         List[str],
     only_models:        List[str],
-    requests_per_model: int = 1,
+    requests_per_model: int  = 1,
+    order:              str  = "grouped",
 ) -> List[Job]:
+    """
+    Build the job list with ordering control.
+
+    grouped:     all jobs for model A, then model B, etc.
+                 Produces deep per-model queue bursts; task_runner scales
+                 each model to its estimated worker count immediately.
+
+    random:      jobs shuffled uniformly.
+                 All models get triggered roughly simultaneously; good
+                 for realistic mixed-load testing.
+
+    interleaved: round-robin across models.
+                 Each model gets one request before any model gets a second;
+                 maximises the number of distinct task_runner launches in
+                 the first pass.
+    """
     skip        = set(skip_types)
     only        = set(only_types)
     only_models = set(only_models)
 
-    jobs = []
+    # Build per-model buckets
+    buckets: Dict[str, List[Job]] = {}
     for model_type, model_names in sorted(models.items()):
         if model_type in skip:
             continue
@@ -194,14 +190,40 @@ def _build_jobs(
         for name in model_names:
             if not _model_matches(name, only_models):
                 continue
+            key = f"{model_type}/{name}"
             for _ in range(requests_per_model):
                 nonce = uuid.uuid4().hex[:8]
-                jobs.append(Job(
+                buckets.setdefault(key, []).append(Job(
                     model_name = name,
                     model_type = model_type,
                     endpoint   = endpoint,
                     nonce      = nonce,
                 ))
+
+    if order == "grouped":
+        jobs = [job for bucket in buckets.values() for job in bucket]
+
+    elif order == "random":
+        jobs = [job for bucket in buckets.values() for job in bucket]
+        random.shuffle(jobs)
+
+    elif order == "interleaved":
+        # Round-robin: one job from each model per pass until all buckets empty
+        lists   = list(buckets.values())
+        indices = [0] * len(lists)
+        jobs    = []
+        while True:
+            added = False
+            for i, lst in enumerate(lists):
+                if indices[i] < len(lst):
+                    jobs.append(lst[indices[i]])
+                    indices[i] += 1
+                    added = True
+            if not added:
+                break
+
+    else:
+        raise ValueError(f"unknown order '{order}': use grouped, random, or interleaved")
 
     return jobs
 
@@ -210,10 +232,10 @@ def _build_jobs(
 # Model discovery
 # ---------------------------------------------------------------------------
 
-
 def fetch_models() -> Dict[str, List[str]]:
     try:
-        r = requests.get("%s/models.json" % API_BASE, headers=API_HEADERS, timeout=10)
+        import requests as _requests
+        r = _requests.get(f"{API_BASE}/models.json", headers=API_HEADERS, timeout=10)
         if r.status_code != 200:
             log.warning("GET /models.json: %s [%s]", r.status_code, r.text)
             return {}
@@ -232,85 +254,93 @@ def fetch_models() -> Dict[str, List[str]]:
 
 
 # ---------------------------------------------------------------------------
-# Submit + history
+# Async submission
 # ---------------------------------------------------------------------------
 
-
-def submit_job(job: Job, pump_id: str = "") -> Optional[str]:
+async def _submit_one(
+    client:  httpx.AsyncClient,
+    sem:     asyncio.Semaphore,
+    job:     Job,
+    pump_id: str,
+) -> Optional[tuple]:
     route = ROUTE_MAP.get(job.model_type)
     if not route:
         return None
     _, _, factory = route
     payload = factory(job.model_name, job.nonce)
 
-    try:
-        r = requests.post(
-            "%s%s" % (API_BASE, job.endpoint),
-            json=payload,
-            headers=API_HEADERS,
-            timeout=15,
-        )
-    except requests.exceptions.RequestException as e:
-        log.error("[%s/%s] submit error: %s", job.model_type, job.model_name, e)
-        return None
+    async with sem:
+        try:
+            r = await client.post(
+                f"{API_BASE}{job.endpoint}",
+                json=payload,
+                timeout=15.0,
+            )
+        except httpx.RequestError as e:
+            log.error("[%s/%s] submit error: %s", job.model_type, job.model_name, e)
+            return None
 
     if r.status_code != 200:
         log.error(
             "[%s/%s] submit failed: %s %s",
-            job.model_type,
-            job.model_name,
-            r.status_code,
-            r.text[:120],
+            job.model_type, job.model_name,
+            r.status_code, r.text[:120],
         )
         return None
 
     message_id = r.json().get("message_id")
-    if message_id:
-        log.info(
-            "[%s/%s] submitted  id=%s",
-            job.model_type,
-            job.model_name,
-            message_id,
-        )
-        write_entry(
-            message_id=message_id,
-            model_name=job.model_name,
-            model_type=job.model_type,
-            nonce=job.nonce,
-            pump_id=pump_id
-        )
+    if not message_id:
+        return None
 
-    return message_id
+    return message_id, job.model_name, job.model_type, job.nonce, pump_id
 
 
-def _run_job(job: Job, jitter: int = 0, pump_id: str = "") -> None:
-    """Submit a job. Fire and forget -- poll via dashboard or job_audit."""
-    if jitter > 0:
-        time.sleep(random.uniform(0, jitter))
-    submit_job(job, pump_id=pump_id)
+async def _dispatch_async(jobs: List[Job], concurrency: int, pump_id: str) -> None:
+    log.info("dispatching %d job(s) concurrency=%d", len(jobs), concurrency)
+    sem = asyncio.Semaphore(concurrency)
+
+    limits = httpx.Limits(
+        max_connections           = concurrency,
+        max_keepalive_connections = concurrency,
+    )
+
+    async with httpx.AsyncClient(headers=API_HEADERS, limits=limits) as client:
+        raw = await asyncio.gather(*[
+            _submit_one(client, sem, job, pump_id)
+            for job in jobs
+        ])
+
+    results = [r for r in raw if r is not None]
+    failed  = len(jobs) - len(results)
+
+    log.info(
+        "submitted %d/%d  failed=%d",
+        len(results), len(jobs), failed,
+    )
+
+    loop = asyncio.get_running_loop()
+    await asyncio.gather(*[
+        loop.run_in_executor(None, write_entry, mid, mn, mt, n, pid)
+        for mid, mn, mt, n, pid in results
+    ])
 
 
-def dispatch(jobs: List[Job], workers: int, jitter: int = 0, pump_id: str = "") -> None:
-    log.info("dispatching %d job(s) with up to %d workers", len(jobs), workers)
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(_run_job, job, jitter, pump_id): job for job in jobs}
-        for future in as_completed(futures):
-            exc = future.exception()
-            if exc:
-                log.error("[%s] unhandled: %s", futures[future].model_name, exc)
+def dispatch(jobs: List[Job], concurrency: int = DEFAULT_CONCURRENCY, pump_id: str = "") -> None:
+    asyncio.run(_dispatch_async(jobs, concurrency, pump_id))
 
 
 # ---------------------------------------------------------------------------
-# Subcommand handlers
+# Subcommand handler
 # ---------------------------------------------------------------------------
-
 
 def cmd_pump(args) -> None:
     pump_id = uuid.uuid4().hex[:8]
 
-    log.info("pump id=%s  API=%s  interval=%ds  workers=%d  rounds=%s",
-             pump_id, API_BASE, args.interval, args.workers,
-             args.rounds if args.rounds else "unlimited")
+    log.info(
+        "pump id=%s  API=%s  interval=%ds  concurrency=%d  order=%s  rounds=%s",
+        pump_id, API_BASE, args.interval, args.concurrency, args.order,
+        args.rounds if args.rounds else "unlimited",
+    )
 
     models        = {}
     refresh_every = 10
@@ -322,10 +352,11 @@ def cmd_pump(args) -> None:
 
         jobs = _build_jobs(
             models,
-            skip_types = [t.strip() for t in args.skip_types.split(",") if t.strip()],
-            only_types = [t.strip() for t in args.types.split(",") if t.strip()],
-            only_models = [m.strip() for m in args.models.split(",") if m.strip()],
+            skip_types         = [t.strip() for t in args.skip_types.split(",") if t.strip()],
+            only_types         = [t.strip() for t in args.types.split(",")      if t.strip()],
+            only_models        = [m.strip() for m in args.models.split(",")     if m.strip()],
             requests_per_model = args.requests,
+            order              = args.order,
         )
 
         if not jobs:
@@ -333,9 +364,8 @@ def cmd_pump(args) -> None:
             break
 
         t0 = time.time()
-        dispatch(jobs, args.workers, jitter=args.jitter, pump_id=pump_id)
-        log.info("round %d: %d job(s) in %.1fs",
-                 round_num + 1, len(jobs), time.time() - t0)
+        dispatch(jobs, concurrency=args.concurrency, pump_id=pump_id)
+        log.info("round %d: %d job(s) in %.1fs", round_num + 1, len(jobs), time.time() - t0)
 
         round_num += 1
 
@@ -343,8 +373,3 @@ def cmd_pump(args) -> None:
             break
 
         time.sleep(args.interval)
-
-
-        if not jobs:
-            log.warning("no jobs -- check API and ROUTE_MAP")
-            break

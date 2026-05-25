@@ -48,8 +48,10 @@ class ModelDispatch(BaseModel):
     task_definition: str
     family: str
     model_type: str
+    service_name: str
     gpu_tier: str = "none"  # "none", "sm", "lrg"
     msg_per_instance: int = 10  # default number of messages each instance can handle
+    max_workers: int = 100  # default is large!
 
 
 ModelDispatchRoutes = Dict[str, ModelDispatch]

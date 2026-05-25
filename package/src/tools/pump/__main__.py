@@ -2,7 +2,7 @@
 Marigold pump.
 
 Usage:
-    python3 -m tools.pump pump  [--once] [--interval N] [--workers N]
+    python3 -m tools.pump pump  [--once] [--interval N] [--concurrency N]
                                 [--types a,b] [--skip-types a,b]
 
     python3 -m tools.pump audit [--date YYYY-MM-DD] [--days N]
@@ -28,13 +28,14 @@ def main():
     pp = sub.add_parser("pump",  help="submit jobs to the inference API")
     pp.add_argument("--interval",   type=int, default=30)
     pp.add_argument("--jitter",     type=int, default=2)
-    pp.add_argument("--workers",    type=int, default=16)
+    pp.add_argument("--concurrency",    type=int, default=64)
     pp.add_argument("--once",       action="store_true")
     pp.add_argument("--types",      type=str, default="")
     pp.add_argument("--skip-types", type=str, default="")
     pp.add_argument("--rounds", type=int, default=0, help="number of rounds to run (default: 0 = unlimited, --once overrides)")
     pp.add_argument("--requests", type=int, default=1, help="number of requests per model per round (default: 1)")
     pp.add_argument("--models", default="", help="comma-separated model names to include")
+    pp.add_argument("--order", default="grouped", choices=["grouped", "random", "interleaved"], help="job submission order")
 
     ap = sub.add_parser("audit", help="poll and report results from history")
     ap.add_argument("--date",   type=str, default="")
@@ -42,13 +43,6 @@ def main():
     ap.add_argument("--force",  action="store_true")
     ap.add_argument("--poll",   action="store_true", default=True)
     ap.add_argument("--report", action="store_true", default=True)
-
-    # top-level flags for backwards compatibility (no subcommand)
-    p.add_argument("--interval",   type=int, default=30)
-    p.add_argument("--workers",    type=int, default=16)
-    p.add_argument("--once",       action="store_true")
-    p.add_argument("--types",      type=str, default="")
-    p.add_argument("--skip-types", type=str, default="")
 
     args = p.parse_args()
 

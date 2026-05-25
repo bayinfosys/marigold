@@ -1,7 +1,11 @@
 """Request receiver -- API Gateway entry point.
 
-Validates requests, writes to SQS, publishes lifecycle event to SNS.
-No ECS calls. No task management.
+Validates the request, writes PENDING status to results cache,
+publishes REQUEST_QUEUED to the lifecycle SNS topic.
+
+SNS fan-out delivers to:
+  - the per-model SQS queue (SNS->SQS subscription, filtered on model_name)
+  - task_runner Lambda  (SNS->Lambda subscription, filtered on event_type)
 """
 
 import json
@@ -11,27 +15,20 @@ from hashlib import md5
 
 import boto3
 from shared.lambda_proxy import get_userid_from_event, mk_resp
-from shared.models import ModelDispatch, ModelDispatchRoutes
-from shared.sns_models import EventType, LifecycleEvent
+from shared.models import ModelDispatch
+from shared.sns_models import EventType
 from shared.sqs_models import MarigoldSQSMessage
 from tools.polling.cache import (create_status, delete_cache, get_response,
-                                 get_status, update_status)
+                                 get_status)
 from tools.polling.chathack import handle_chat_submission
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))
 
 s3 = boto3.client("s3")
-sqs = boto3.client("sqs")
 sns = boto3.client("sns")
-dynamodb = boto3.client("dynamodb")
 
 LIFECYCLE_TOPIC_ARN = os.environ.get("LIFECYCLE_TOPIC_ARN", "")
-
-
-# ---------------------------------------------------------------------------
-# Config loaders (same as polling/ecs.py)
-# ---------------------------------------------------------------------------
 
 _config: dict = {}
 _cache_state: dict = {}
@@ -75,11 +72,6 @@ load_cache_state()
 assert _config, "unable to load MODELS_CONFIG"
 
 
-# ---------------------------------------------------------------------------
-# Handler
-# ---------------------------------------------------------------------------
-
-
 def handler(event, context):
     logger.info("request_receiver version=%s", os.getenv("BUILD_VERSION", "unknown"))
     logger.debug("event: %s", str(event))
@@ -106,7 +98,6 @@ def handler(event, context):
 
 def handle_submission(user_id, event):
     body = event["body"]
-    request_id = event.get("requestContext", {}).get("requestId", "unknown")
     body_md5 = md5(body.encode("utf-8")).hexdigest()
     message_id = "API#" + body_md5
     path = event.get("path", "")
@@ -114,7 +105,7 @@ def handle_submission(user_id, event):
     if path.startswith("/demo/chat"):
         return handle_chat_submission(user_id, event)
 
-    logger.info("[%s/%s] request_id=%s", user_id, message_id, request_id)
+    logger.info("[%s/%s]", user_id, message_id)
 
     message_content = json.loads(body)
     model_name = message_content.get("model")
@@ -182,36 +173,29 @@ def handle_submission(user_id, event):
         model_name=model_name,
         model_inputs=message_content,
     )
-    try:
-        sqs.send_message(
-            QueueUrl=dispatch.queue_url,
-            MessageBody=msg.model_dump_json(),
-        )
-    except sqs.exceptions.QueueDoesNotExist as e:
-        logger.critical("[%s/%s] queue does not exist: %s", user_id, message_id, e)
-        update_status(user_id, message_id, status="error")
-        return mk_resp(500, {"status": "error", "message": "internal routing error"})
-    except Exception as e:
-        logger.exception("[%s/%s] SQS send failed: %s", user_id, message_id, e)
-        update_status(user_id, message_id, status="error")
-        return mk_resp(500, {"status": "error", "message": "internal error"})
 
-    # Publish lifecycle event -- task_runner decides whether to launch
     try:
-        evt = LifecycleEvent(
-            event_type=EventType.REQUEST_QUEUED,
-            model_name=model_name,
-            model_hash=model_name_md5,
-            message_id=message_id,
-            payload={
-                "user_id": user_id,
-                "model_type": dispatch.model_type,
+        sns.publish(
+            TopicArn=LIFECYCLE_TOPIC_ARN,
+            Message=msg.model_dump_json(),
+            MessageAttributes={
+                "event_type": {
+                    "DataType": "String",
+                    "StringValue": EventType.REQUEST_QUEUED,
+                },
+                "model_name": {
+                    "DataType": "String",
+                    "StringValue": model_name,
+                },
+                "model_hash": {
+                    "DataType": "String",
+                    "StringValue": model_name_md5,
+                },
             },
         )
-        sns.publish(**evt.to_sns_kwargs(LIFECYCLE_TOPIC_ARN))
     except Exception as e:
-        # TODO: should we return a 500 error here?
         logger.critical("[%s/%s] SNS publish failed: %s", user_id, message_id, e)
+        return mk_resp(500, {"status": "error", "message": "internal error"})
 
     return mk_resp(200, {"message_id": body_md5})
 

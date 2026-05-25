@@ -54,15 +54,6 @@ module "request_receiver_lambda" {
       ]
     }
 
-    sqs_send = {
-      effect  = "Allow"
-      actions = ["sqs:SendMessage"]
-      resources = concat(
-        [for x in aws_sqs_queue.model_queues : x.arn],
-        [aws_sqs_queue.anonchat_queue.arn],
-      )
-    }
-
     sns_publish = {
       effect    = "Allow"
       actions   = ["sns:Publish"]

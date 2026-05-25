@@ -120,11 +120,13 @@ resource "aws_autoscaling_group" "gpu_sm" {
   desired_capacity    = 3
   max_size            = 20
   vpc_zone_identifier = [for s in data.aws_subnet.private_subnets : s.id]
+  capacity_rebalance  = true
 
   mixed_instances_policy {
     instances_distribution {
+      on_demand_allocation_strategy            = "lowest-price"
       on_demand_base_capacity                  = 1
-      on_demand_percentage_above_base_capacity = 0
+      on_demand_percentage_above_base_capacity = 20
       spot_allocation_strategy                 = "price-capacity-optimized"
     }
 
@@ -134,22 +136,22 @@ resource "aws_autoscaling_group" "gpu_sm" {
         version            = "$Latest"
       }
 
-      # Fallback instance types within the T4 family
-#      override {
-#        instance_type = "g4dn.xlarge"
-#      }
       override {
-        instance_type = "g4dn.2xlarge"
+        instance_requirements {
+          accelerator_count { min = 1 }
+          accelerator_names         = ["t4"]
+          accelerator_manufacturers = ["nvidia"]
+          accelerator_types         = ["gpu"]
+          vcpu_count {
+            min = 8
+            max = 32
+          }
+          memory_mib {
+            min = 28000
+            max = 70000
+          }
+        }
       }
-      override {
-        instance_type = "g4dn.4xlarge"
-      }
-      override {
-        instance_type = "g4dn.8xlarge"
-      }
-#      override {
-#        instance_type = "g4dn.12xlarge"
-#      }
     }
   }
 

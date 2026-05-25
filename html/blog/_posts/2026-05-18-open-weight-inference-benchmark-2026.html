@@ -1,0 +1,371 @@
+---
+layout: post
+title: "Open-weight model inference on dedicated UK hardware: benchmark results"
+description: "Throughput and latency measurements across 23 instruct models, 8 embedding models, 3 text-eval models, and 7 TTS models. 738 completed jobs, zero errors, on private AWS infrastructure in eu-west-2."
+date: 2026-05-18
+author: Marigold
+category: Engineering
+reading_time: 8
+canonical: "https://marigold.run/blog/open-weight-inference-benchmark-2026/"
+og_title: "Open-weight model inference benchmark -- Marigold"
+og_description: "Throughput and latency data across 41 models on dedicated UK AWS infrastructure. 738 completed jobs, zero errors."
+schema: |
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    "headline": "Open-weight model inference on dedicated UK hardware: benchmark results",
+    "datePublished": "2026-05-18",
+    "dateModified": "2026-05-18",
+    "author": { "@type": "Organization", "name": "Marigold" },
+    "publisher": { "@type": "Organization", "name": "Marigold", "url": "https://marigold.run" },
+    "mainEntityOfPage": { "@type": "WebPage", "@id": "https://marigold.run/blog/open-weight-inference-benchmark-2026/" }
+  }
+  </script>
+---
+
+<style>
+.post-stat-row {
+  display: flex; gap: 2rem; flex-wrap: wrap;
+  margin: 1.5rem 0 2.5rem; padding: 1.5rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+}
+.post-stat        { display: flex; flex-direction: column; gap: 0.25rem; }
+.post-stat-value  { font-size: 2rem; font-family: 'Knewave','Trebuchet MS',sans-serif; color: var(--ink); line-height: 1; }
+.post-stat-label  { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-mid); }
+
+.chart-wrap       { margin: 1.5rem 0 0.5rem; padding: 1.25rem; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; }
+.chart-wrap canvas { display: block; width: 100% !important; }
+.chart-caption    { font-size: 0.78rem; color: var(--ink-mid); margin: 0.5rem 0 1.5rem; font-style: italic; }
+
+.bm-table         { width: 100%; border-collapse: collapse; margin: 1rem 0 1.5rem; font-size: 0.85rem; }
+.bm-table th      { text-align: left; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-mid); border-bottom: 1px solid var(--border); padding: 0.4rem 0.75rem; white-space: nowrap; }
+.bm-table th.sort-asc::after  { content: " \25B2"; font-size: 0.6rem; }
+.bm-table th.sort-desc::after { content: " \25BC"; font-size: 0.6rem; }
+.bm-table td      { padding: 0.4rem 0.75rem; border-bottom: 1px solid rgba(0,0,0,0.05); color: var(--ink-mid); font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem; }
+.bm-table td:first-child { font-family: 'Junction','Trebuchet MS',sans-serif; font-size: 0.85rem; }
+.bm-table tr:last-child td { border-bottom: none; }
+.bm-table tr:hover td { background: var(--surface); }
+</style>
+
+<!-- -----------------------------------------------------------------------
+   Benchmark data -- crawlable inline JSON, consumed by benchmark-charts.js
+----------------------------------------------------------------------- -->
+
+<script type="application/json" id="data-run-summary">
+{
+  "submitted": 774,
+  "complete": 738,
+  "errors": 0,
+  "total_tokens": 101879,
+  "output_tokens": 73902,
+  "gpu_inference_seconds": 6973,
+  "run_date": "2026-05-17",
+  "first_submission": "2026-05-17T20:46:33Z"
+}
+</script>
+
+<script type="application/json" id="data-instruct">
+[
+  {"model":"llama-3.2-1b-instruct","params":1.0,"toks":31.1,"tier":"gpu-sm","variance":false},
+  {"model":"qwen2-0.5b-instruct","params":0.5,"toks":17.1,"tier":"gpu-sm","variance":false},
+  {"model":"falcon3-7b-instruct","params":7.0,"toks":16.1,"tier":"gpu-sm","variance":true},
+  {"model":"qwen3.5-0.8b","params":0.8,"toks":15.7,"tier":"gpu-sm","variance":false},
+  {"model":"qwen2-1.5b-instruct","params":1.5,"toks":15.4,"tier":"gpu-sm","variance":false},
+  {"model":"hammer2.1-3b","params":3.0,"toks":14.6,"tier":"gpu-sm","variance":true},
+  {"model":"mistral-7b-instruct-v0.3","params":7.0,"toks":12.8,"tier":"gpu-sm","variance":false},
+  {"model":"deepseek-r1-distill-qwen-7b","params":7.0,"toks":12.4,"tier":"gpu-sm","variance":false},
+  {"model":"qwen3-4b","params":4.0,"toks":12.3,"tier":"gpu-sm","variance":false},
+  {"model":"qwen3-4b-thinking-2507","params":4.0,"toks":12.1,"tier":"gpu-sm","variance":false},
+  {"model":"deepseek-r1-distill-llama-8b","params":8.0,"toks":11.8,"tier":"gpu-sm","variance":false},
+  {"model":"qwen3-8b","params":8.0,"toks":11.4,"tier":"gpu-sm","variance":false},
+  {"model":"qwen2.5-7b-instruct","params":7.0,"toks":11.3,"tier":"gpu-sm","variance":false},
+  {"model":"gemma-3-4b-it","params":4.0,"toks":11.0,"tier":"gpu-sm","variance":false},
+  {"model":"qwen3.5-9b","params":9.0,"toks":10.7,"tier":"gpu-sm","variance":false},
+  {"model":"qwen2.5-coder-7b-instruct","params":7.0,"toks":10.8,"tier":"gpu-sm","variance":false},
+  {"model":"granite-3.3-8b-instruct","params":8.0,"toks":10.0,"tier":"gpu-sm","variance":false},
+  {"model":"llama-3.1-8b-instruct","params":8.0,"toks":9.9,"tier":"gpu-sm","variance":false},
+  {"model":"glm-4-9b-0414","params":9.0,"toks":9.2,"tier":"gpu-sm","variance":false},
+  {"model":"gemma-3-12b-it","params":12.0,"toks":6.0,"tier":"gpu-sm","variance":false},
+  {"model":"qwen3-14b","params":14.0,"toks":6.5,"tier":"gpu-sm","variance":false},
+  {"model":"phi-4","params":14.0,"toks":6.3,"tier":"gpu-sm","variance":false},
+  {"model":"gemma-3-27b-it","params":27.0,"toks":7.3,"tier":"gpu-lrg","variance":false}
+]
+</script>
+
+<script type="application/json" id="data-instruct-latency">
+[
+  {"band":"Sub-7B","p50_ms":8500},
+  {"band":"7B-9B","p50_ms":17500},
+  {"band":"12B-14B","p50_ms":29000},
+  {"band":"27B (A10G)","p50_ms":26300}
+]
+</script>
+
+<script type="application/json" id="data-embedding">
+[
+  {"model":"all-minilm-l6-v2","p50_ms":12},
+  {"model":"bge-small-en-v1.5","p50_ms":38},
+  {"model":"nomic-embed-text-v1.5","p50_ms":85},
+  {"model":"bge-m3","p50_ms":243},
+  {"model":"gte-large","p50_ms":409},
+  {"model":"sentence-t5-large","p50_ms":412},
+  {"model":"multilingual-e5-large-instruct","p50_ms":854},
+  {"model":"harrier-oss-v1-0.6b","p50_ms":1052}
+]
+</script>
+
+<script type="application/json" id="data-tts">
+[
+  {"model":"mms-tts-cym","language":"Welsh","p50_ms":1641},
+  {"model":"mms-tts-fra","language":"French","p50_ms":1755},
+  {"model":"mms-tts-spa","language":"Spanish","p50_ms":2685},
+  {"model":"mms-tts-deu","language":"German","p50_ms":3054},
+  {"model":"mms-tts-eng","language":"English","p50_ms":3204},
+  {"model":"mms-tts-nld","language":"Dutch","p50_ms":3981},
+  {"model":"mms-tts-fin","language":"Finnish","p50_ms":4167}
+]
+</script>
+
+<script type="application/json" id="data-texteval">
+[
+  {"model":"bert-base-ner","p50_ms":71},
+  {"model":"privacy-filter","p50_ms":178},
+  {"model":"bert-large-ner","p50_ms":243}
+]
+</script>
+
+<script type="application/json" id="chart-config">
+[
+{
+  "data": "data-instruct",
+  "canvas": "chart-throughput",
+  "table": "table-instruct",
+  "chart": {
+    "type": "scatter",
+    "x": "params",
+    "y": "toks",
+    "colour": "#378ADD",
+    "x_label": "Parameters (billions)", "x_min": 0, "x_max": 30, "x_unit": "B",
+    "y_label": "tok/s", "y_min": 0, "y_max": 35, "y_unit": "tok/s"
+  },
+  "columns": [
+    {"key": "model",  "label": "Model"},
+    {"key": "params", "label": "Params", "suffix": "B"},
+    {"key": "toks",   "label": "Tok/s"},
+    {"key": "tier",   "label": "Tier"}
+  ],
+  "sort_default": "toks", "sort_dir": "desc"
+},
+  {
+    "data": "data-instruct-latency",
+    "canvas": "chart-latency",
+    "table": "table-latency",
+    "chart": {
+      "type": "bar",
+      "label_key": "band", "value_key": "p50_ms",
+      "colour": "#378ADD", "y_label": "p50 latency (ms)"
+    },
+    "columns": [
+      {"key": "band",   "label": "Size band"},
+      {"key": "p50_ms", "label": "p50 (ms)", "format": "number"}
+    ],
+    "sort_default": "p50_ms", "sort_dir": "asc"
+  },
+  {
+    "data": "data-embedding",
+    "canvas": "chart-embedding",
+    "table": "table-embedding",
+    "chart": {
+      "type": "hbar",
+      "label_key": "model", "value_key": "p50_ms",
+      "colour": "#1D9E75", "x_label": "p50 latency (ms)"
+    },
+    "columns": [
+      {"key": "model",  "label": "Model"},
+      {"key": "p50_ms", "label": "p50 (ms)", "format": "number"}
+    ],
+    "sort_default": "p50_ms", "sort_dir": "asc"
+  },
+  {
+    "data": "data-tts",
+    "canvas": "chart-tts",
+    "table": "table-tts",
+    "chart": {
+      "type": "hbar",
+      "label_key": "language", "value_key": "p50_ms",
+      "colour": "#7F77DD", "x_label": "p50 latency (ms)"
+    },
+    "columns": [
+      {"key": "language", "label": "Language"},
+      {"key": "model",    "label": "Model"},
+      {"key": "p50_ms",   "label": "p50 (ms)", "format": "number"}
+    ],
+    "sort_default": "p50_ms", "sort_dir": "asc"
+  },
+  {
+    "data": "data-texteval",
+    "table": "table-texteval",
+    "columns": [
+      {"key": "model",  "label": "Model"},
+      {"key": "p50_ms", "label": "p50 (ms)", "format": "number"}
+    ],
+    "sort_default": "p50_ms", "sort_dir": "asc"
+  }
+]
+</script>
+
+<!-- -----------------------------------------------------------------------
+   Page content
+----------------------------------------------------------------------- -->
+
+<main>
+<article class="post-article" itemscope itemtype="https://schema.org/BlogPosting">
+
+<div class="post-body wrap" itemprop="articleBody">
+
+<div class="post-stat-row">
+  <div class="post-stat"><span class="post-stat-value">738</span><span class="post-stat-label">Completed jobs</span></div>
+  <div class="post-stat"><span class="post-stat-value">23</span><span class="post-stat-label">Instruct models</span></div>
+  <div class="post-stat"><span class="post-stat-value">41</span><span class="post-stat-label">Total models</span></div>
+  <div class="post-stat"><span class="post-stat-value">0</span><span class="post-stat-label">Errors</span></div>
+</div>
+
+<h2>Setup</h2>
+
+<p>Marigold is a private AI inference platform running on dedicated AWS hardware
+in London. All inference runs inside a private VPC; data does not leave the
+account. This is the first published benchmark of the full platform.</p>
+
+<p>Three hardware tiers handle different workload classes:</p>
+
+<table class="bm-table">
+  <thead><tr>
+    <th>Tier</th><th>Instance</th><th>GPU</th><th>VRAM</th><th>Workloads</th>
+  </tr></thead>
+  <tbody>
+    <tr><td>gpu-sm</td><td>g4dn.2xlarge</td><td>NVIDIA T4</td><td>16GB</td><td>Instruct up to ~14B</td></tr>
+    <tr><td>gpu-lrg</td><td>g5.4xlarge</td><td>NVIDIA A10G</td><td>24GB</td><td>Instruct 27B</td></tr>
+    <tr><td>cpu</td><td>r5.xlarge</td><td>--</td><td>--</td><td>Embeddings, TTS, text-eval</td></tr>
+  </tbody>
+</table>
+
+<p>Methodology: 8 rounds of 5 sequential requests per model at
+<code>max_tokens=200</code>. Throughput is mean output tokens per second.
+Latency is wall-clock time from job submission to result available on a warm
+worker, including queue wait time.</p>
+
+<h2>Instruct models: throughput</h2>
+
+<p>All models on the T4 gpu-sm tier unless noted. Click any column header to sort.</p>
+
+<div class="chart-wrap">
+  <canvas id="chart-throughput" height="380"></canvas>
+</div>
+<p class="chart-caption">Output tok/s vs parameter count, coloured by model family.
+Square = A10G gpu-lrg tier. Hollow circle = high variance across rounds.</p>
+
+<table class="bm-table" id="table-instruct">
+  <thead><tr></tr></thead>
+  <tbody></tbody>
+</table>
+
+<p>Throughput decreases with parameter count within a hardware tier. The 7B-9B
+band sits between 9 and 13 tok/s on the T4. The 12B-14B band drops to 6-7 tok/s.
+The 27B model on the A10G returns 7.3 tok/s -- faster than the 14B models on the T4,
+because it sits on appropriately-sized hardware.</p>
+
+<h2>Instruct models: latency</h2>
+
+<p>Wall-clock p50 from job submission to result available, by parameter band,
+on a warm worker at <code>max_tokens=200</code>. Values shown are band midpoints;
+see the table for the full ranges.</p>
+
+<div class="chart-wrap">
+  <canvas id="chart-latency" height="240"></canvas>
+</div>
+<p class="chart-caption">p50 latency by size band. Cold start (EC2 launch + EFS model
+load) adds 90-180 seconds on first request after idle; warm-worker numbers shown here.</p>
+
+<table class="bm-table" id="table-latency">
+  <thead><tr></tr></thead>
+  <tbody></tbody>
+</table>
+
+<p>The API is async: a submission returns a <code>message_id</code> and the result
+is retrieved from DynamoDB once processing completes. Queue wait time is included in
+the figures above. For workloads that submit many jobs at once, the async model is an
+advantage rather than a constraint.</p>
+
+<h2>Embedding models</h2>
+
+<p>All on the CPU tier (r5.xlarge). Latency is p50 at the API. Click to sort.</p>
+
+<div class="chart-wrap">
+  <canvas id="chart-embedding" height="280"></canvas>
+</div>
+<p class="chart-caption">p50 latency in milliseconds, CPU tier.</p>
+
+<table class="bm-table" id="table-embedding">
+  <thead><tr></tr></thead>
+  <tbody></tbody>
+</table>
+
+<h2>Text-to-speech models</h2>
+
+<p>Seven languages, all CPU tier, all Facebook MMS family.</p>
+
+<div class="chart-wrap">
+  <canvas id="chart-tts" height="260"></canvas>
+</div>
+<p class="chart-caption">p50 latency by language. Variation reflects phoneme complexity
+and average word length across languages.</p>
+
+<table class="bm-table" id="table-tts">
+  <thead><tr></tr></thead>
+  <tbody></tbody>
+</table>
+
+<h2>Text-eval models</h2>
+
+<table class="bm-table" id="table-texteval">
+  <thead><tr></tr></thead>
+  <tbody></tbody>
+</table>
+
+<h2>Hardware ceiling</h2>
+
+<p>The practical single-GPU ceiling on the A10G (24GB) is approximately 27B
+parameters at 4-bit quantisation. Models in the 30B-32B range exceed available
+VRAM after CUDA context overhead. Support for 30B+ models on a multi-GPU tier
+is in development; results will follow as a separate post.</p>
+
+<h2>Methodology notes</h2>
+
+<p>This run used <code>max_tokens=200</code> with sequential requests (5 per round,
+8 rounds). Throughput at short generation lengths understates sustained decode rate;
+a follow-up run at <code>max_tokens=512</code> with concurrent burst testing is planned.</p>
+
+<h2>Implementation notes</h2>
+
+<p>All inference runs on HuggingFace <code>transformers</code> with PyTorch
+and CUDA for GPU-accelerated models. Embedding, TTS, and text-eval models run
+on the same stack on CPU. The unified runtime means a single worker image and
+weight cache covers all model types.</p>
+
+<p>vLLM was not used. vLLM offers better throughput for text generation workloads --
+particularly continuous batching under concurrent load -- but is limited to that
+use case. Embedding models, TTS, image generation, and text classification are
+outside its scope. A platform serving all of these from a single API cannot adopt
+vLLM as a universal runtime. The throughput numbers in this benchmark reflect
+<code>transformers</code> sequential inference; vLLM integration for the instruct
+tier specifically is on the roadmap and would materially improve the tok/s figures
+for that model class.</p>
+
+</div>
+</article>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="/assets/js/benchmark-charts.js" defer></script>

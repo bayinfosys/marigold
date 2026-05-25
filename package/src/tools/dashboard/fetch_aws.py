@@ -234,46 +234,138 @@ def fetch_ecs_services() -> List[dict]:
 # SQS
 # ---------------------------------------------------------------------------
 
-def fetch_all_queue_urls() -> List[str]:
+_SQS_ATTRS = [
+    "ApproximateNumberOfMessages",
+    "ApproximateNumberOfMessagesNotVisible",
+    "ApproximateNumberOfMessagesDelayed",
+]
+
+
+def fetch_queue_stats(queue_urls: List[str]) -> Dict[str, dict]:
     """
-    List all SQS queues matching the deployment prefix.
-    Excludes DLQs. Returns list of queue URLs.
+    Fetch stats for a list of queue URLs.
+    Returns {queue_url: {visible, in_flight, delayed, oldest_msg_s}}.
+    """
+    result = {}
+    for url in queue_urls:
+        try:
+            r = sqs_client.get_queue_attributes(QueueUrl=url, AttributeNames=_SQS_ATTRS)
+            a = r.get("Attributes", {})
+            result[url] = {
+                "visible":      int(a.get("ApproximateNumberOfMessages",          0)),
+                "in_flight":    int(a.get("ApproximateNumberOfMessagesNotVisible", 0)),
+                "delayed":      int(a.get("ApproximateNumberOfMessagesDelayed",    0)),
+                "oldest_msg_s": 0,  # populated separately via fetch_queue_age_metrics
+            }
+        except Exception as e:
+            log.warning("fetch_queue_stats %s: %s", url, e)
+            result[url] = {"visible": 0, "in_flight": 0, "delayed": 0, "oldest_msg_s": 0}
+    return result
+
+
+def fetch_queue_age_metrics(queue_names: List[str]) -> Dict[str, int]:
+    """
+    Fetch ApproximateAgeOfOldestMessage from CloudWatch for a list of
+    queue names (not URLs). Returns {queue_name: age_seconds}.
+    Uses a single GetMetricData call for all queues.
+    """
+    if not queue_names:
+        return {}
+
+    import time
+    end   = int(time.time())
+    start = end - 120  # last 2 minutes -- 1 minute resolution on this metric
+
+    queries = [
+        {
+            "Id":         "age_%d" % i,
+            "MetricStat": {
+                "Metric": {
+                    "Namespace":  "AWS/SQS",
+                    "MetricName": "ApproximateAgeOfOldestMessage",
+                    "Dimensions": [{"Name": "QueueName", "Value": name}],
+                },
+                "Period": 60,
+                "Stat":   "Maximum",
+            },
+            "ReturnData": True,
+        }
+        for i, name in enumerate(queue_names)
+    ]
+
+    result = {}
+    try:
+        r = cw_client.get_metric_data(
+            MetricDataQueries = queries,
+            StartTime         = start,
+            EndTime           = end,
+        )
+        for i, name in enumerate(queue_names):
+            values = r.get("MetricDataResults", [])[i].get("Values", [])
+            result[name] = int(max(values)) if values else 0
+    except Exception as e:
+        log.warning("fetch_queue_age_metrics: %s", e)
+
+    return result
+
+
+def fetch_model_queue_urls() -> List[str]:
+    """
+    List all model work queues for this deployment.
+    These are the per-model SQS queues that hold inference jobs.
+    Excludes DLQs, the anonchat queue, and system queues.
     """
     try:
         r = sqs_client.list_queues(QueueNamePrefix=PREFIX)
         return [
             url for url in r.get("QueueUrls", [])
-            if "-queue" in url and "-dlq" not in url
+            if "-queue"         in url
+            and "-dlq"          not in url
+            and "-anonchat"     not in url
+            and "-launch-queue" not in url
         ]
     except Exception as e:
-        log.warning("fetch_all_queue_urls: %s", e)
+        log.warning("fetch_model_queue_urls: %s", e)
         return []
 
 
-def fetch_sqs_queue_stats(queue_urls: List[str]) -> Dict[str, dict]:
-    """
-    Fetch approximate message counts for a list of queue URLs.
-    Returns {queue_url: {visible, in_flight, delayed}}.
-    """
-    attrs  = [
-        "ApproximateNumberOfMessages",
-        "ApproximateNumberOfMessagesNotVisible",
-        "ApproximateNumberOfMessagesDelayed",
+def fetch_system_queue_urls() -> List[str]:
+    names = [
+        "%s-launch-queue.fifo" % PREFIX,
+        "%s-launch-dlq.fifo"   % PREFIX,
+        "%s-task-queuer-events" % PREFIX,
+        "%s-task-queuer-events-dlq" % PREFIX,
     ]
-    result = {}
-    for url in queue_urls:
+    urls = []
+    for name in names:
         try:
-            r = sqs_client.get_queue_attributes(QueueUrl=url, AttributeNames=attrs)
-            a = r.get("Attributes", {})
-            result[url] = {
-                "visible":   int(a.get("ApproximateNumberOfMessages",          0)),
-                "in_flight": int(a.get("ApproximateNumberOfMessagesNotVisible", 0)),
-                "delayed":   int(a.get("ApproximateNumberOfMessagesDelayed",    0)),
-            }
+            url = sqs_client.get_queue_url(QueueName=name)["QueueUrl"]
+            urls.append(url)
         except Exception as e:
-            log.debug("fetch_sqs_queue_stats %s: %s", url, e)
-            result[url] = {"visible": 0, "in_flight": 0, "delayed": 0}
-    return result
+            log.debug("fetch_system_queue_urls %s: %s", name, e)
+    return urls
+
+
+def fetch_all_queue_stats() -> Dict[str, Dict[str, dict]]:
+    model_urls  = fetch_model_queue_urls()
+    system_urls = fetch_system_queue_urls()
+
+    model_stats  = fetch_queue_stats(model_urls)
+    system_stats = fetch_queue_stats(system_urls)
+
+    # Patch in CloudWatch age metrics for model queues
+    # Queue name is the last path segment of the URL
+    model_names = [url.split("/")[-1] for url in model_urls]
+    age_map     = fetch_queue_age_metrics(model_names)
+    for url in model_urls:
+        name = url.split("/")[-1]
+        if name in age_map:
+            model_stats[url]["oldest_msg_s"] = age_map[name]
+
+    return {
+        "model":  model_stats,
+        "system": system_stats,
+    }
 
 
 def fetch_dlq_depth(dlq_url: str) -> Optional[int]:

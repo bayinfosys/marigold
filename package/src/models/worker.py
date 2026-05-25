@@ -48,8 +48,7 @@ _LONG_POLL_WAIT = 20  # seconds; SQS maximum
 _HEARTBEAT_BUFFER = 5  # seconds before timeout to extend visibility
 
 DYNAMODB_TABLE = os.environ.get("DYNAMODB_RESULTS_TABLE", "")
-DEFAULT_SQS_POLL_WAIT_TIME = 20
-SQS_POLL_WAIT_TIME = int(os.getenv("SQS_POLL_WAIT_TIME") or DEFAULT_SQS_POLL_WAIT_TIME)
+IDLE_TIMEOUT = int(os.getenv("IDLE_TIMEOUT", "180"))  # 3 minutes
 
 
 _ddb = boto3.client("dynamodb")
@@ -200,7 +199,7 @@ class SQSWorker:
         self.queue_url = queue_url
         self.model = model
         self.visibility_timeout = visibility_timeout
-        self.idle_timeout = SQS_POLL_WAIT_TIME
+        self.idle_timeout = IDLE_TIMEOUT
         self.model_hash = model_hash
         self.model_type = os.environ.get("MODEL_TYPE", "UNSET")
         self.client = boto3.client("sqs")

@@ -35,23 +35,3 @@ module "acm_us_east" {
   validation_method = "DNS"
   tags              = var.project_tags
 }
-
-# Marigold cert (us-east-1 only - CloudFront requirement)
-module "acm_marigold_us_east" {
-  source  = "terraform-aws-modules/acm/aws"
-  version = "~> 5.0"
-
-  providers = {
-    aws = aws.us_east
-  }
-
-  domain_name = "marigold.run"
-  zone_id     = data.aws_route53_zone.marigold.zone_id
-
-  subject_alternative_names = [
-    "www.marigold.run"
-  ]
-
-  validation_method = "DNS"
-  tags              = var.project_tags
-}

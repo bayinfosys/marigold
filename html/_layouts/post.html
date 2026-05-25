@@ -1,0 +1,240 @@
+---
+layout: default
+---
+<style>
+/* -----------------------------------------------------------------------
+   Blog post layout
+   Move to style.css once the blog collection is established.
+----------------------------------------------------------------------- */
+.post-header {
+  padding: 4rem 0 2.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.post-header .wrap {
+  max-width: 72ch;
+}
+
+.post-title {
+  font-size: clamp(1.75rem, 3.5vw, 2.6rem);
+  line-height: 1.2;
+  font-family: 'Knewave', 'Trebuchet MS', sans-serif;
+  color: var(--ink);
+  margin: 0.5rem 0 1rem;
+}
+
+.post-meta {
+  font-size: 0.8rem;
+  color: var(--ink-mid);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 1.25rem;
+}
+
+.post-lede {
+  font-size: 1.15rem;
+  color: var(--ink);
+  line-height: 1.7;
+  max-width: 64ch;
+  font-family: 'Junction', 'Trebuchet MS', 'Gill Sans', sans-serif;
+  margin: 0;
+}
+
+.post-body {
+  padding: 3rem 0 4rem;
+  max-width: 72ch;
+  margin: 0 auto;
+}
+
+.post-body h2 {
+  font-size: 1.4rem;
+  font-family: 'Knewave', 'Trebuchet MS', sans-serif;
+  color: var(--ink);
+  margin: 3rem 0 0.75rem;
+  letter-spacing: 0.01em;
+}
+
+.post-body h3 {
+  font-size: 1.05rem;
+  font-family: 'Junction', 'Trebuchet MS', 'Gill Sans', sans-serif;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 2rem 0 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.post-body p {
+  font-size: 0.975rem;
+  line-height: 1.75;
+  color: var(--ink-mid);
+  margin: 0 0 1.25rem;
+}
+
+.post-body p strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.post-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.post-body ul, .post-body ol {
+  padding-left: 1.5rem;
+  margin: 0 0 1.25rem;
+}
+
+.post-body li {
+  font-size: 0.975rem;
+  line-height: 1.75;
+  color: var(--ink-mid);
+  margin-bottom: 0.4rem;
+}
+
+.post-body pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1rem 1.25rem;
+  overflow-x: auto;
+  margin: 1.5rem 0;
+}
+
+.post-body code {
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  font-size: 0.82rem;
+  color: var(--ink);
+  line-height: 1.6;
+}
+
+.post-body p code {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.post-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0 2rem;
+  font-size: 0.85rem;
+}
+
+.post-body table th {
+  text-align: left;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-mid);
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem 0.75rem;
+}
+
+.post-body table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-dim);
+  color: var(--ink-mid);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.82rem;
+}
+
+.post-body table td:first-child {
+  font-family: 'Junction', 'Trebuchet MS', sans-serif;
+  font-size: 0.85rem;
+}
+
+.post-body table tr:last-child td {
+  border-bottom: none;
+}
+
+.post-stat-row {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+  margin: 1.5rem 0 2rem;
+  padding: 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.post-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.post-stat-value {
+  font-size: 2rem;
+  font-family: 'Knewave', 'Trebuchet MS', sans-serif;
+  color: var(--ink);
+  line-height: 1;
+}
+
+.post-stat-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-mid);
+}
+
+.post-pending {
+  background: var(--surface);
+  border-left: 3px solid var(--accent-dim);
+  padding: 0.6rem 1rem;
+  margin: 1rem 0;
+  font-size: 0.82rem;
+  color: var(--ink-mid);
+  font-style: italic;
+}
+
+@media (max-width: 640px) {
+  .post-body {
+    padding: 2rem 1rem 3rem;
+  }
+  .post-stat-row {
+    gap: 1.25rem;
+  }
+}
+</style>
+
+<main>
+
+  <article itemscope itemtype="https://schema.org/BlogPosting">
+
+    <header class="post-header">
+      <div class="wrap">
+        {% if page.category %}<p class="hero-eyebrow">{{ page.category }}</p>{% endif %}
+        <h1 class="post-title" itemprop="headline">{{ page.title }}</h1>
+        <p class="post-meta">
+          <time datetime="{{ page.date | date_to_xmlschema }}" itemprop="datePublished">
+            {{ page.date | date: "%-d %B %Y" }}
+          </time>
+          {% if page.author %}&nbsp;&mdash;&nbsp;<span itemprop="author">{{ page.author }}</span>{% endif %}
+          {% if page.reading_time %}&nbsp;&mdash;&nbsp;{{ page.reading_time }} min read{% endif %}
+        </p>
+        {% if page.description %}
+        <p class="post-lede" itemprop="description">{{ page.description }}</p>
+        {% endif %}
+      </div>
+    </header>
+
+    <div class="post-body wrap" itemprop="articleBody">
+      {{ content }}
+    </div>
+
+  </article>
+
+  <section class="tagline-break">
+    <div class="wrap">
+      <h2 class="slogan">Private UK inference. Available now.</h2>
+      <p>Marigold is in limited release. Register for early access below.</p>
+      {% include waitlist_form.html source="blog" %}
+    </div>
+  </section>
+
+</main>

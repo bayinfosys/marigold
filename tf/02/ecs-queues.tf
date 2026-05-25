@@ -36,3 +36,53 @@ resource "aws_cloudwatch_log_group" "ecs_model_logs" {
 
   tags = var.project_tags
 }
+
+# ---------------------------------------------------------------------------
+# SNS -> SQS subscriptions, one per model.
+#
+# Each queue receives REQUEST_QUEUED events for its model only.
+# raw_message_delivery = true: the worker receives the MarigoldSQSMessage
+# JSON body directly with no SNS envelope, matching the existing
+# worker.py get_message parser without modification.
+#
+# filter_policy_scope = "MessageAttributes" is required when filtering
+# on message attributes rather than the message body.
+# ---------------------------------------------------------------------------
+
+resource "aws_sns_topic_subscription" "model_queue_feed" {
+  for_each = var.models
+
+  topic_arn = aws_sns_topic.lifecycle.arn
+  protocol  = "sqs"
+  endpoint  = aws_sqs_queue.model_queues[each.key].arn
+
+  raw_message_delivery = true
+
+  filter_policy_scope = "MessageAttributes"
+  filter_policy = jsonencode({
+    event_type = [local.sns_event_types.REQUEST_QUEUED]
+    model_name = [each.value.environment_variables["MODELNAME"]]
+  })
+}
+
+# Allow SNS to write to each model queue.
+resource "aws_sqs_queue_policy" "model_queue_sns" {
+  for_each  = var.models
+  queue_url = aws_sqs_queue.model_queues[each.key].url
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "AllowSNSPublish"
+      Effect    = "Allow"
+      Principal = { Service = "sns.amazonaws.com" }
+      Action    = "sqs:SendMessage"
+      Resource  = aws_sqs_queue.model_queues[each.key].arn
+      Condition = {
+        ArnEquals = {
+          "aws:SourceArn" = aws_sns_topic.lifecycle.arn
+        }
+      }
+    }]
+  })
+}

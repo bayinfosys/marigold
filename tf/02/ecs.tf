@@ -33,10 +33,10 @@ module "ecs" {
         managed_termination_protection = "DISABLED"
         managed_scaling = {
           status                    = "ENABLED"
-          target_capacity           = 80
+          target_capacity           = 60
           minimum_scaling_step_size = 1
-          maximum_scaling_step_size = 2
-          instance_warmup_period    = 300
+          maximum_scaling_step_size = 4
+          instance_warmup_period    = 180
         }
       }
     }
@@ -46,9 +46,9 @@ module "ecs" {
         managed_termination_protection = "DISABLED"
         managed_scaling = {
           status                    = "ENABLED"
-          target_capacity           = 80
+          target_capacity           = 60
           minimum_scaling_step_size = 1
-          maximum_scaling_step_size = 1
+          maximum_scaling_step_size = 2
           instance_warmup_period    = 420
         }
       }
@@ -62,7 +62,7 @@ module "ecs" {
           target_capacity           = 80
           minimum_scaling_step_size = 1
           maximum_scaling_step_size = 1
-          instance_warmup_period    = 300
+          instance_warmup_period    = 180
         }
       }
     }
@@ -74,8 +74,8 @@ module "ecs" {
           status                    = "ENABLED"
           target_capacity           = 80
           minimum_scaling_step_size = 1
-          maximum_scaling_step_size = 2
-          instance_warmup_period    = 120
+          maximum_scaling_step_size = 4
+          instance_warmup_period    = 180
         }
       }
     }

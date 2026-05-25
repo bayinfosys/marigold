@@ -1,27 +1,5 @@
 # ---------------------------------------------------------------------------
-# ECS task definitions -- one per model declared in models.yaml.
-#
-# Split into three resources by compute tier:
-#
-#   aws_ecs_task_definition.cpu      -- CPU-only image, gpu_tier=none
-#   aws_ecs_task_definition.gpu_sm   -- EC2 gpu-sm capacity provider, T4
-#   aws_ecs_task_definition.gpu_lrg  -- EC2 gpu-lrg capacity provider, A10G
-#
-# gpu_tier in models.yaml drives the split:
-#   none  -> cpu
-#   sm    -> gpu_sm
-#   lrg   -> gpu_lrg
-# ---------------------------------------------------------------------------
-
-locals {
-  cpu_models     = { for k, v in var.models : k => v if v.gpu_tier == "none" }
-  gpu_sm_models  = { for k, v in var.models : k => v if v.gpu_tier == "sm"   }
-  gpu_lrg_models = { for k, v in var.models : k => v if v.gpu_tier == "lrg"  }
-  gpu_models     = merge(local.gpu_sm_models, local.gpu_lrg_models)
-}
-
-# ---------------------------------------------------------------------------
-# Shared environment builder function (local helper)
+# ECS task definitions -- one per model, tier-parameterised.
 # ---------------------------------------------------------------------------
 
 # Builds the environment list for a container definition.
@@ -55,25 +33,51 @@ locals {
       { name = "HF_TOKEN", value = var.hf_token }
     ] : []
   )}
+
+  # Tier configuration -- all tier-specific values in one place.
+  task_tiers = {
+    none = {
+      image             = data.aws_ecr_image.environment_image.image_uri
+      memory_mode       = "hard"   # cpu uses memory, gpu uses memoryReservation
+      gpu_required      = false
+      family_suffix     = "cpu"
+    }
+    sm = {
+      image             = data.aws_ecr_image.environment_image_gpu.image_uri
+      memory_mode       = "soft"
+      gpu_required      = true
+      family_suffix     = "gpu"
+    }
+    lrg = {
+      image             = data.aws_ecr_image.environment_image_gpu.image_uri
+      memory_mode       = "soft"
+      gpu_required      = true
+      family_suffix     = "gpu"
+    }
+  }
 }
 
-# ---------------------------------------------------------------------------
-# CPU task definitions (Fargate, gpu_tier=none)
-# ---------------------------------------------------------------------------
+resource "aws_ecs_task_definition" "model" {
+  for_each = var.models
 
-resource "aws_ecs_task_definition" "cpu" {
-  for_each = local.cpu_models
-
-  family                   = join("-", [var.project_name, var.env, each.key, "cpu"])
+  family                   = join("-", [var.project_name, var.env, each.key, local.task_tiers[each.value.gpu_tier].family_suffix])
   network_mode             = "awsvpc"
   requires_compatibilities = ["EC2"]
   execution_role_arn       = module.ecs.task_exec_iam_role_arn
   task_role_arn            = aws_iam_role.model_task.arn
 
   container_definitions = jsonencode([{
-    name   = each.key
-    image  = data.aws_ecr_image.environment_image.image_uri
-    memory = each.value.memory_res
+    name  = each.key
+    image = local.task_tiers[each.value.gpu_tier].image
+
+    # Hard memory limit for CPU tasks, soft reservation for GPU tasks
+    # (GPU tasks share host memory more flexibly).
+    memory            = local.task_tiers[each.value.gpu_tier].memory_mode == "hard" ? each.value.memory_res : null
+    memoryReservation = local.task_tiers[each.value.gpu_tier].memory_mode == "soft" ? each.value.memory_res : null
+
+    resourceRequirements = (
+      local.task_tiers[each.value.gpu_tier].gpu_required && each.value.gpu_units > 0
+    ) ? [{ type = "GPU", value = tostring(each.value.gpu_units) }] : []
 
     command = ["python3", "-c", "from models import sqs_handler; sqs_handler()"]
 
@@ -120,253 +124,4 @@ resource "aws_ecs_task_definition" "cpu" {
   }
 
   tags = var.project_tags
-}
-
-# ---------------------------------------------------------------------------
-# GPU sm task definitions (EC2, gpu_tier=sm, T4 16GB)
-# ---------------------------------------------------------------------------
-
-resource "aws_ecs_task_definition" "gpu_sm" {
-  for_each = local.gpu_sm_models
-
-  family                   = join("-", [var.project_name, var.env, each.key, "gpu"])
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["EC2"]
-  execution_role_arn       = module.ecs.task_exec_iam_role_arn
-  task_role_arn            = aws_iam_role.model_task.arn
-
-  container_definitions = jsonencode([{
-    name   = each.key
-    image  = data.aws_ecr_image.environment_image_gpu.image_uri
-    memoryReservation = each.value.memory_res
-
-    resourceRequirements = each.value.gpu_units > 0 ? [{
-      type  = "GPU"
-      value = tostring(each.value.gpu_units)
-    }] : []
-
-    command = ["python3", "-c", "from models import sqs_handler; sqs_handler()"]
-
-    environment = local.def_env[each.key]
-
-    mountPoints = each.value.provider == "huggingface" ? [{
-      sourceVolume  = "efs-cache"
-      containerPath = var.efs_mount_point
-      readOnly      = true
-    }] : []
-
-    logConfiguration = {
-      logDriver = "awslogs"
-      options = {
-        awslogs-group         = aws_cloudwatch_log_group.ecs_model_logs[each.key].name
-        awslogs-region        = var.region
-        awslogs-stream-prefix = each.value.environment_variables["MODELNAME"]
-      }
-    }
-
-    healthCheck = {
-      command     = ["CMD-SHELL", "python3 -c 'exit(0)'"]
-      interval    = 30
-      retries     = 3
-      startPeriod = 20
-      timeout     = 5
-    }
-  }])
-
-  dynamic "volume" {
-    for_each = each.value.provider == "huggingface" ? [1] : []
-    content {
-      name = "efs-cache"
-      efs_volume_configuration {
-        file_system_id     = data.aws_efs_file_system.efs.id
-        root_directory     = "/"
-        transit_encryption = "ENABLED"
-        authorization_config {
-          access_point_id = data.aws_efs_access_point.efs_assets_ro.id
-          iam             = "ENABLED"
-        }
-      }
-    }
-  }
-
-  tags = var.project_tags
-}
-
-# ---------------------------------------------------------------------------
-# GPU lrg task definitions (EC2, gpu_tier=lrg, A10G 24GB+)
-# ---------------------------------------------------------------------------
-
-resource "aws_ecs_task_definition" "gpu_lrg" {
-  for_each = local.gpu_lrg_models
-
-  family                   = join("-", [var.project_name, var.env, each.key, "gpu"])
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["EC2"]
-  execution_role_arn       = module.ecs.task_exec_iam_role_arn
-  task_role_arn            = aws_iam_role.model_task.arn
-
-  container_definitions = jsonencode([{
-    name   = each.key
-    image  = data.aws_ecr_image.environment_image_gpu.image_uri
-    memoryReservation = each.value.memory_res
-
-    resourceRequirements = each.value.gpu_units > 0 ? [{
-      type  = "GPU"
-      value = tostring(each.value.gpu_units)
-    }] : []
-
-    command = ["python3", "-c", "from models import sqs_handler; sqs_handler()"]
-
-    environment = local.def_env[each.key]
-
-    mountPoints = each.value.provider == "huggingface" ? [{
-      sourceVolume  = "efs-cache"
-      containerPath = var.efs_mount_point
-      readOnly      = true
-    }] : []
-
-    logConfiguration = {
-      logDriver = "awslogs"
-      options = {
-        awslogs-group         = aws_cloudwatch_log_group.ecs_model_logs[each.key].name
-        awslogs-region        = var.region
-        awslogs-stream-prefix = each.value.environment_variables["MODELNAME"]
-      }
-    }
-
-    healthCheck = {
-      command     = ["CMD-SHELL", "python3 -c 'exit(0)'"]
-      interval    = 30
-      retries     = 3
-      startPeriod = 20
-      timeout     = 5
-    }
-  }])
-
-  dynamic "volume" {
-    for_each = each.value.provider == "huggingface" ? [1] : []
-    content {
-      name = "efs-cache"
-      efs_volume_configuration {
-        file_system_id     = data.aws_efs_file_system.efs.id
-        root_directory     = "/"
-        transit_encryption = "ENABLED"
-        authorization_config {
-          access_point_id = data.aws_efs_access_point.efs_assets_ro.id
-          iam             = "ENABLED"
-        }
-      }
-    }
-  }
-
-  tags = var.project_tags
-}
-
-# ---------------------------------------------------------------------------
-# Task IAM role
-# This is the role assumed by running containers (not the execution role).
-# ---------------------------------------------------------------------------
-
-data "aws_iam_policy_document" "model_task_assume_role" {
-  statement {
-    sid     = "ECSServiceAssumeRole"
-    actions = ["sts:AssumeRole"]
-
-    principals {
-      type        = "Service"
-      identifiers = ["ecs.amazonaws.com", "ecs-tasks.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_iam_role" "model_task" {
-  name                  = join("-", [var.project_name, var.env, "ecs-model-task"])
-  assume_role_policy    = data.aws_iam_policy_document.model_task_assume_role.json
-  force_detach_policies = true
-  tags                  = var.project_tags
-}
-
-data "aws_iam_policy_document" "model_task" {
-  statement {
-    sid     = "WorkQueuePermissions"
-    effect  = "Allow"
-    actions = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes", "sqs:ChangeMessageVisibility"]
-    resources = [
-      "arn:aws:sqs:${var.region}:${data.aws_caller_identity.current.account_id}:${var.org_name}-${var.project_name}-${var.env}-*",
-      aws_sqs_queue.anonchat_queue.arn,
-    ]
-  }
-
-  statement {
-    sid       = "UsageTablePermissions"
-    effect    = "Allow"
-    actions   = ["dynamodb:PutItem", "dynamodb:GetItem"]
-    resources = [module.usage_table.dynamodb_table_arn]
-  }
-
-  statement {
-    sid    = "ResultsCachePermissions"
-    effect = "Allow"
-    actions = [
-      "dynamodb:PutItem",
-      "dynamodb:UpdateItem",
-      "dynamodb:GetItem",
-    ]
-    resources = [aws_dynamodb_table.results_cache.arn]
-  }
-
-  statement {
-    sid       = "WorkflowStepsPermissions"
-    effect    = "Allow"
-    actions   = ["dynamodb:PutItem"]
-    resources = [aws_dynamodb_table.workflow_steps.arn]
-  }
-
-  statement {
-    sid       = "EFSPermissions"
-    effect    = "Allow"
-    actions   = ["elasticfilesystem:ClientMount", "elasticfilesystem:ClientRead"]
-    resources = [data.aws_efs_access_point.efs_assets_ro.arn]
-  }
-
-  statement {
-    sid       = "CloudWatchLogs"
-    effect    = "Allow"
-    actions   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
-    resources = ["*"]
-  }
-
-  statement {
-    sid       = "ModelOutputsWrite"
-    effect    = "Allow"
-    actions   = ["s3:PutObject"]
-    resources = ["${aws_s3_bucket.model_outputs.arn}/outputs/*"]
-  }
-
-  statement {
-    sid       = "LifecyclePublish"
-    effect    = "Allow"
-    actions   = ["sns:Publish"]
-    resources = [aws_sns_topic.lifecycle.arn]
-  }
-}
-
-resource "aws_iam_role_policy" "model_task" {
-  name   = join("-", [var.project_name, var.env, "ecs-task-policy"])
-  role   = aws_iam_role.model_task.id
-  policy = data.aws_iam_policy_document.model_task.json
-}
-
-# ---------------------------------------------------------------------------
-# Outputs
-# ---------------------------------------------------------------------------
-
-output "efs_mount_point" {
-  description = "location to mount the efs disk for correct path access"
-  value       = var.efs_mount_point
-}
-
-output "efs_model_cache_path" {
-  description = "Container-relative path where HuggingFace model weights are cached on EFS."
-  value       = var.efs_model_cache_path
 }
