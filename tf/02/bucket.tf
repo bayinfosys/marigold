@@ -5,6 +5,7 @@ resource "aws_s3_bucket" "data" {
   bucket_prefix = join("-", [var.org_name, var.project_name, var.env, "assets"])
 
   tags = var.project_tags
+  force_destroy = true
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "data" {
@@ -31,6 +32,7 @@ output "asset_bucket_name" {
 resource "aws_s3_bucket" "model_outputs" {
   bucket_prefix = join("-", [var.org_name, var.project_name, var.env, "model-outputs"])
   tags          = var.project_tags
+  force_destroy  = true
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "model_outputs" {
