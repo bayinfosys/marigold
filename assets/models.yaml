@@ -185,6 +185,76 @@ _templates:
     gpu_tier: "none"
     gpu_units: 0
 
+  huggingface_asr: &hf_asr
+    provider: huggingface
+    type: asr
+    input: audio
+    output: text
+    timeout: 300
+    gpu_tier: "none"
+    gpu_units: 0
+    memory_size: 4096
+
+  huggingface_asr_sm: &hf_asr_sm
+    provider: huggingface
+    type: asr
+    input: audio
+    output: text
+    timeout: 300
+    gpu_tier: sm
+    gpu_units: 1
+    memory_size: 8192
+
+  huggingface_txt2vid_lrg: &hf_txt2vid_lrg
+    provider: huggingface
+    type: txt2vid
+    input: text
+    output: video
+    timeout: 1800
+    gpu_tier: lrg
+    gpu_units: 1
+    memory_size: 24576
+
+  huggingface_img2vid_lrg: &hf_img2vid_lrg
+    provider: huggingface
+    type: img2vid
+    input: image
+    output: video
+    timeout: 1800
+    gpu_tier: lrg
+    gpu_units: 1
+    memory_size: 24576
+
+#  huggingface_vid2vid_lrg: &hf_vid2vid_lrg
+#    provider: huggingface
+#    type: vid2vid
+#    input: video
+#    output: video
+#    timeout: 1800
+#    gpu_tier: lrg
+#    gpu_units: 1
+#    memory_size: 24576
+
+  huggingface_vid2txt_sm: &hf_vid2txt_sm
+    provider: huggingface
+    type: vid2txt
+    input: video
+    output: text
+    timeout: 600
+    gpu_tier: sm
+    gpu_units: 1
+    memory_size: 16384
+
+  huggingface_obs2act_lrg: &hf_obs2act_lrg
+    provider: huggingface
+    type: obs2act
+    input: image
+    output: text
+    timeout: 120
+    gpu_tier: lrg
+    gpu_units: 1
+    memory_size: 16384
+
 models:
 
   # ---------------------------------------------------------------------------
@@ -790,3 +860,144 @@ models:
       Aesthetic quality scoring model for images. Rates visual appeal
       on a continuous scale. Used in quality-gated image generation
       pipelines to filter low-aesthetic outputs.
+
+
+# ---------------------------------------------------------------------------
+  # ASR
+  # ---------------------------------------------------------------------------
+
+  - <<: *hf_asr
+    name: openai/whisper-tiny
+    description: >
+      Whisper Tiny from OpenAI. 39M parameter multilingual speech recognition
+      model. Fastest and smallest Whisper variant. Good for high-throughput
+      transcription where accuracy is secondary, and for local development
+      and testing without GPU.
+
+  - <<: *hf_asr
+    name: openai/whisper-small
+    description: >
+      Whisper Small from OpenAI. 244M parameter multilingual speech recognition
+      model. Good balance of speed and accuracy for CPU-tier inference across
+      a broad range of languages.
+
+  - <<: *hf_asr_sm
+    name: openai/whisper-large-v3
+    description: >
+      Whisper Large v3 from OpenAI. 1.5B parameter multilingual model.
+      State-of-the-art accuracy across 99 languages. Best choice for
+      production transcription where accuracy matters.
+
+  - <<: *hf_asr_sm
+    name: distil-whisper/distil-large-v3
+    description: >
+      Distilled version of Whisper Large v3. 756M parameters. Approximately
+      twice the throughput of the full model with minimal accuracy loss on
+      English. Good production choice for English-primary workloads.
+
+  # ---------------------------------------------------------------------------
+  # Text to video
+  # ---------------------------------------------------------------------------
+
+  - <<: *hf_txt2vid_lrg
+    name: thudm/cogvideox-2b
+    description: >
+      CogVideoX 2B from Tsinghua/Zhipu AI. Text-to-video generation at
+      480x720 resolution, 49 frames at 8fps. Fits comfortably on a single
+      A10G 24GB. Good quality for the parameter count. Practical starting
+      point for video generation without multi-GPU requirements.
+    extra_env:
+      NUM_STEPS: "50"
+
+  - <<: *hf_txt2vid_lrg
+    name: wan-ai/wan2.1-t2v-1.3b
+    description: >
+      Wan 2.1 T2V 1.3B from Alibaba. Smallest practical text-to-video
+      model in the Wan family. Lower VRAM requirement than CogVideoX-2b.
+      Good for testing the txt2vid handler locally or on smaller GPU instances.
+    extra_env:
+      NUM_STEPS: "50"
+
+  # ---------------------------------------------------------------------------
+  # Image to video
+  # ---------------------------------------------------------------------------
+
+  - <<: *hf_img2vid_lrg
+    name: stabilityai/stable-video-diffusion-img2vid-xt
+    description: >
+      Stable Video Diffusion Image-to-Video XT from Stability AI. Generates
+      25 frames at 576x1024 from a single conditioning image. Strong motion
+      quality for product shots, character animation, and scene transitions.
+      KEYFRAME_MODE=single.
+    extra_env:
+      KEYFRAME_MODE: "single"
+      NUM_STEPS: "25"
+
+  - <<: *hf_img2vid_lrg
+    name: thudm/cogvideox-5b-i2v
+    description: >
+      CogVideoX 5B Image-to-Video from Tsinghua/Zhipu AI. High-quality
+      image-conditioned video generation with optional text conditioning.
+      Produces 49 frames at 480x720. KEYFRAME_MODE=single.
+    extra_env:
+      KEYFRAME_MODE: "single"
+      NUM_STEPS: "50"
+
+  # ---------------------------------------------------------------------------
+  # Video to text
+  # ---------------------------------------------------------------------------
+
+  - <<: *hf_vid2txt_sm
+    name: llava-hf/llava-onevision-qwen2-7b-ov-hf
+    description: >
+      LLaVA OneVision 7B from HuggingFace. Vision-language model with strong
+      video understanding. Accepts multiple frames as image tokens. Good for
+      video captioning, temporal event description, and visual QA over short
+      clips. INPUT_MODE=image_frames.
+    extra_env:
+      INPUT_MODE: "image_frames"
+      MAX_FRAMES: "16"
+
+  - <<: *hf_vid2txt_sm
+    name: opengvlab/internvl2-8b
+    description: >
+      InternVL2 8B from Shanghai AI Lab. Strong general vision-language model
+      with multi-image support used for video frame understanding. Good
+      performance on video QA and temporal reasoning tasks.
+      INPUT_MODE=image_frames.
+    extra_env:
+      INPUT_MODE: "image_frames"
+      MAX_FRAMES: "8"
+      TRUST_REMOTE_CODE: "true"
+
+  # ---------------------------------------------------------------------------
+  # Video to video
+  # ---------------------------------------------------------------------------
+
+#  - <<: *hf_vid2vid_lrg
+#    name: cerspense/zeroscope_v2_576w
+#    description: >
+#      ZeroScope v2 576w. Compact text-guided video transformation model.
+#      Accepts video frames and a text prompt, outputs transformed video.
+#      Lower resolution variant (576px wide) with faster inference than XL.
+#      Good starting point for vid2vid testing.
+#    extra_env:
+#      NUM_STEPS: "40"
+#      MAX_INPUT_FRAMES: "24"
+
+  # ---------------------------------------------------------------------------
+  # Observation to action
+  # ---------------------------------------------------------------------------
+
+  - <<: *hf_obs2act_lrg
+    name: openvla/openvla-7b
+    description: >
+      OpenVLA 7B. Open vision-language-action model for robot manipulation
+      policy inference. Accepts an RGB observation image and a natural
+      language task instruction and returns raw action tokens. Trained on
+      the Open X-Embodiment dataset covering diverse robot embodiments and
+      tasks. Action decoding and unnormalisation are client responsibilities.
+      Requires ACTION_DIM=7 for standard end-effector control.
+    extra_env:
+      ACTION_DIM: "7"
+      TRUST_REMOTE_CODE: "true"

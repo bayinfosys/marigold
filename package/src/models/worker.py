@@ -35,6 +35,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import boto3
+from botocore.exceptions import ClientError, NoRegionError
 from dynawrap.backends.dynamodb import DynamoDBBackend
 from pydantic import ValidationError
 from shared.db_models import ResultsItem, WorkflowStep
@@ -51,8 +52,15 @@ DYNAMODB_TABLE = os.environ.get("DYNAMODB_RESULTS_TABLE", "")
 IDLE_TIMEOUT = int(os.getenv("IDLE_TIMEOUT", "180"))  # 3 minutes
 
 
-_ddb = boto3.client("dynamodb")
-_dynawrap = DynamoDBBackend(_ddb)
+try:
+    _s3 = boto3.client("s3")
+    _ddb = boto3.client("dynamodb")
+    _dynawrap = DynamoDBBackend(_ddb)
+except NoRegionError:
+    logger.warning("no AWS region configured; S3 and DynamoDB unavailable")
+    _s3 = None
+    _ddb = None
+    _dynawrap = None
 
 
 # ---------------------------------------------------------------------------
