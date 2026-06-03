@@ -96,10 +96,9 @@ module "vpc_endpoints" {
     }
     s3 = {
       service             = "s3"
-      private_dns_enabled = true
-      security_group_ids  = [module.vpc.default_security_group_id]
-      subnet_ids          = module.vpc.private_subnets
-      tags                = { Name = "s3" }
+      service_type        = "Interface"
+      route_table_ids = module.vpc.private_route_table_ids
+      tags            = { Name = "s3" }
     },
     sqs = {
       service             = "sqs"
