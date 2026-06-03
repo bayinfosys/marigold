@@ -36,8 +36,8 @@ resource "aws_launch_template" "big_cpu" {
 
 resource "aws_autoscaling_group" "big_cpu" {
   name                = join("-", [var.org_name, var.project_name, var.env, "cpu-lrg-asg"])
-  min_size            = 2
-  desired_capacity    = 4
+  min_size            = 0
+  desired_capacity    = 0
   max_size            = 40
   vpc_zone_identifier = [for s in data.aws_subnet.private_subnets : s.id]
 
@@ -59,9 +59,5 @@ resource "aws_autoscaling_group" "big_cpu" {
       value               = tag.value
       propagate_at_launch = true
     }
-  }
-
-  lifecycle {
-    ignore_changes = [desired_capacity]
   }
 }

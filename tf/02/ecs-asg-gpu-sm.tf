@@ -116,8 +116,8 @@ resource "aws_launch_template" "gpu_sm" {
 
 resource "aws_autoscaling_group" "gpu_sm" {
   name                = join("-", [var.org_name, var.project_name, var.env, "gpu-sm-asg"])
-  min_size            = 1
-  desired_capacity    = 3
+  min_size            = 0
+  desired_capacity    = 0
   max_size            = 20
   vpc_zone_identifier = [for s in data.aws_subnet.private_subnets : s.id]
   capacity_rebalance  = true
@@ -168,9 +168,5 @@ resource "aws_autoscaling_group" "gpu_sm" {
       value               = tag.value
       propagate_at_launch = true
     }
-  }
-
-  lifecycle {
-    ignore_changes = [desired_capacity]
   }
 }
