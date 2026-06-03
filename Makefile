@@ -113,6 +113,9 @@ cli/download-weights:
 	  -e HF_HUB_OFFLINE=0 \
 	  -e HF_HUB_CACHE=/models \
 	  -e HF_TOKEN=$(HF_TOKEN) \
+	  -e MODEL_NAME=test \
+	  -e MODEL_HASH=test \
+	  -e MODEL_TYPE=test \
 	  -v $(shell pwd)/$(MODELS_YAML):/app/assets/models.yaml:ro \
 	  -v $(LOCAL_CACHE_DIR):/models \
 	  $(PROJECT_NAME)/environment:$(TAG) \
@@ -314,6 +317,13 @@ init: check-layer
 validate: check-layer
 	terraform -chdir=tf/$(LAYER) validate
 
+refresh:
+	terraform -chdir=tf/$(LAYER) refresh \
+	  -var-file=../common.tfvars \
+	  -var-file=../$(ENV).tfvars \
+	  -var-file=../../assets/models.tfvars \
+	  -var="git_tag=$(TAG)"
+
 plan: # models/generate validate
 	terraform -chdir=tf/$(LAYER) plan \
 	  -var-file=../common.tfvars \
@@ -330,6 +340,7 @@ destroy: check-layer
 	terraform -chdir=tf/$(LAYER) destroy \
 	  -var-file=../common.tfvars \
 	  -var-file=../$(ENV).tfvars \
+	  -var-file=../../assets/models.tfvars \
 	  -var="git_tag=$(TAG)" \
 	  -auto-approve
 
