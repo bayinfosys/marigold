@@ -39,6 +39,29 @@ class ModelUsageStats(BaseModel):
     vram_usage_bytes: int = Field(0,   description="VRAM allocated during inference bytes")
 
 
+class ModelResponse(BaseModel):
+    """Root base for all model responses.
+
+    Every response carries the model identifier and usage statistics.
+    Subclasses add fields appropriate to their output category.
+    """
+    model: str
+    usage: ModelUsageStats
+
+
+class GenerativeResponse(ModelResponse):
+    """Base for responses from generative and transformative models.
+
+    Adds a creation timestamp and a finish reason. All models that
+    produce content (text, audio, image, video, actions) use this base.
+    Embedding and evaluation responses use ModelResponse directly.
+    """
+    created: str = Field(
+        default_factory=lambda: str(int(datetime.now().timestamp()))
+    )
+    finish_reason: str = "stop"
+
+
 # ---------------------------------------------------------------------------
 # Submission and polling envelope types
 # ---------------------------------------------------------------------------
@@ -140,10 +163,8 @@ class EmbedImageRequest(EmbedRequest):
     """Image embedding request. input must be base64-encoded."""
 
 
-class EmbeddingResponse(BaseModel):
-    model: str
+class EmbeddingResponse(ModelResponse):
     embedding: Embedding
-    usage: ModelUsageStats
 
 
 EmbedTextResponse = EmbeddingResponse
@@ -165,12 +186,8 @@ class InstructRequest(ModelRequest):
     no_repeat_ngram_size: Optional[int] = Field(None)
 
 
-class InstructResponse(BaseModel):
-    created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
-    finish_reason: str = "stop"
-    model: str
+class InstructResponse(GenerativeResponse):
     choices: List[InstructMessage]
-    usage: ModelUsageStats
 
 
 # ---------------------------------------------------------------------------
@@ -183,11 +200,7 @@ class TTSRequest(ModelRequest):
     text: str = Field(..., description="text to synthesise")
 
 
-class TTSResponse(BaseModel):
-    created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
-    finish_reason: str = "stop"
-    model: str
-    usage: ModelUsageStats
+class TTSResponse(GenerativeResponse):
     language_code: str
     outputs: Dict[str, OutputReference] = Field(
         ..., description="named S3 outputs; key 'audio' is the synthesised audio"
@@ -223,11 +236,7 @@ class Txt2AudioRequest(ModelRequest):
     )
 
 
-class Txt2AudioResponse(BaseModel):
-    created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
-    finish_reason: str = "stop"
-    model: str
-    usage: ModelUsageStats
+class Txt2AudioResponse(GenerativeResponse):
     outputs: Dict[str, OutputReference] = Field(
         ..., description="named S3 outputs; key 'audio' is the generated audio"
     )
@@ -251,11 +260,7 @@ class Txt2ImgRequest(ModelRequest):
     guidance_scale: float = Field(7.5, description="classifier-free guidance scale")
 
 
-class Txt2ImgResponse(BaseModel):
-    created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
-    finish_reason: str = "stop"
-    model: str
-    usage: ModelUsageStats
+class Txt2ImgResponse(GenerativeResponse):
     outputs: Dict[str, OutputReference] = Field(
         ..., description="named S3 outputs; key 'image' is the generated image"
     )
@@ -272,12 +277,8 @@ class Img2TxtRequest(ModelRequest):
     max_tokens: int = Field(500, description="maximum tokens to generate")
 
 
-class Img2TxtResponse(BaseModel):
-    created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
-    finish_reason: str = "stop"
-    model: str
+class Img2TxtResponse(GenerativeResponse):
     choices: List[InstructMessage]
-    usage: ModelUsageStats
 
 
 # ---------------------------------------------------------------------------
@@ -289,10 +290,7 @@ class DepthRequest(ModelRequest):
     input: str = Field(..., description="base64 encoded input image")
 
 
-class DepthResponse(BaseModel):
-    created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
-    model: str
-    usage: ModelUsageStats
+class DepthResponse(GenerativeResponse):
     outputs: Dict[str, OutputReference] = Field(
         ..., description="named S3 outputs; key 'depth' is the depth map"
     )
@@ -307,10 +305,7 @@ class Img2MaskRequest(ModelRequest):
     input: str = Field(..., description="base64 encoded input image")
 
 
-class Img2MaskResponse(BaseModel):
-    created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
-    model: str
-    usage: ModelUsageStats
+class Img2MaskResponse(GenerativeResponse):
     outputs: Dict[str, OutputReference] = Field(
         ..., description="named S3 outputs; key 'mask' is the segmentation mask"
     )
@@ -365,11 +360,9 @@ class EvalScore(BaseModel):
     end:          Optional[int] = None
 
 
-class EvalResponse(BaseModel):
+class EvalResponse(ModelResponse):
     created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
-    model:   str
     scores:  List[EvalScore]
-    usage:   ModelUsageStats
 
 
 # ---------------------------------------------------------------------------
@@ -378,3 +371,337 @@ class EvalResponse(BaseModel):
 
 
 UsageResponse = List[ModelUsageStats]
+
+
+# ---------------------------------------------------------------------------
+# Demo Chat
+# ---------------------------------------------------------------------------
+
+class ChatRequest(BaseModel):
+    messages:    List[InstructMessage]
+    system:      Optional[str]   = None
+    temperature: Optional[float] = Field(0.7, ge=0.0, le=2.0)
+    max_tokens:  Optional[int]   = Field(500,  ge=1, le=4096)
+    nonce:       Optional[str]   = None
+
+
+# ---------------------------------------------------------------------------
+# Txt2Vid
+# ---------------------------------------------------------------------------
+
+
+class Txt2VidRequest(ModelRequest):
+    prompt: str = Field(..., description="generation prompt")
+    negative_prompt: Optional[str] = Field(
+        None,
+        description="qualities to suppress; supported by CogVideoX and similar models",
+    )
+    num_frames: int = Field(
+        49,
+        ge=1,
+        description=(
+            "number of frames to generate. CogVideoX-5b default is 49 (approx 6s at 8fps). "
+            "Must be 4k+1 for most DiT video models (e.g. 49, 81, 97)"
+        ),
+    )
+    fps: int = Field(
+        8,
+        ge=1,
+        le=60,
+        description="frames per second of the output video",
+    )
+    num_inference_steps: Optional[int] = Field(
+        None,
+        description=(
+            "diffusion steps. Defaults to NUM_STEPS env var on the ECS task. "
+            "Falls back to 50 if unset"
+        ),
+    )
+    guidance_scale: float = Field(
+        6.0,
+        description="classifier-free guidance scale",
+    )
+    width: Optional[int] = Field(
+        None,
+        description="output width in pixels; defaults to the model's native resolution",
+    )
+    height: Optional[int] = Field(
+        None,
+        description="output height in pixels; defaults to the model's native resolution",
+    )
+
+
+class Txt2VidResponse(BaseModel):
+    created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
+    finish_reason: str = "stop"
+    model: str
+    usage: ModelUsageStats
+    num_frames: int
+    fps: int
+    outputs: Dict[str, OutputReference] = Field(
+        ..., description="named S3 outputs; key 'video' is the generated video"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Vid2Txt
+# ---------------------------------------------------------------------------
+
+
+class Vid2TxtRequest(ModelRequest):
+    input: str = Field(
+        ...,
+        description=(
+            "video to describe. Accepts base64-encoded video or an "
+            "s3://bucket/key URI. Short clips only for base64; use S3 for "
+            "anything over ~10MB"
+        ),
+    )
+    prompt: Optional[str] = Field(
+        None,
+        description=(
+            "optional question or instruction. When None, the model produces "
+            "a general description of the video content"
+        ),
+    )
+    max_tokens: int = Field(500, description="maximum tokens to generate")
+
+
+class Vid2TxtResponse(BaseModel):
+    created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
+    finish_reason: str = "stop"
+    model: str
+    choices: List[InstructMessage]
+    usage: ModelUsageStats
+
+
+# ---------------------------------------------------------------------------
+# Img23D
+# ---------------------------------------------------------------------------
+
+
+class Img23DRequest(ModelRequest):
+    input: str = Field(
+        ...,
+        description="base64 encoded input image. A clean subject on a plain "
+                    "background produces the best reconstruction",
+    )
+    remove_background: bool = Field(
+        True,
+        description=(
+            "run background removal before reconstruction. Set to False if "
+            "the image already has a transparent or uniform background"
+        ),
+    )
+    num_views: Optional[int] = Field(
+        None,
+        description=(
+            "number of intermediate views to generate during reconstruction. "
+            "Higher values improve quality at the cost of compute. "
+            "Defaults to the model's recommended value when None"
+        ),
+    )
+
+
+class Img23DResponse(BaseModel):
+    created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
+    model: str
+    usage: ModelUsageStats
+    outputs: Dict[str, OutputReference] = Field(
+        ...,
+        description="named S3 outputs; key 'mesh' is the GLB file",
+    )
+
+
+# ---------------------------------------------------------------------------
+# ASR
+# ---------------------------------------------------------------------------
+
+
+class ASRRequest(ModelRequest):
+    input: str = Field(
+        ...,
+        description=(
+            "audio to transcribe. Accepts base64-encoded audio (any format "
+            "ffmpeg can decode) or an s3://bucket/key URI for larger files"
+        ),
+    )
+    language: Optional[str] = Field(
+        None,
+        description=(
+            "BCP-47 language code of the spoken language, e.g. 'en', 'fr'. "
+            "When None, the model performs language detection if supported"
+        ),
+    )
+    return_timestamps: bool = Field(
+        False,
+        description=(
+            "request time-aligned segment boundaries in the response. "
+            "Ignored by models that do not support timestamp output"
+        ),
+    )
+
+
+class ASRSegment(BaseModel):
+    """One time-aligned segment from a transcription.
+
+    start and end are in seconds from the beginning of the audio.
+    confidence is a normalised score in the range 0.0 to 1.0 where
+    available; None when the model does not produce per-segment confidence.
+    """
+
+    id: int
+    start: float
+    end: float
+    text: str
+    confidence: Optional[float] = None
+
+
+class ASRResponse(GenerativeResponse):
+    language: str = Field(..., description="detected or specified BCP-47 language code")
+    text: str = Field(..., description="full transcript as a single string")
+    segments: Optional[List[ASRSegment]] = Field(
+        None,
+        description="per-segment detail; present only when return_timestamps=True",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Img2Vid
+# ---------------------------------------------------------------------------
+
+
+class VideoKeyframe(BaseModel):
+    """One image anchor in a video generation sequence.
+
+    image is a base64-encoded RGB image.
+
+    timestamp is the position of this frame in seconds from the start of
+    the output video. When None, the handler distributes keyframes at
+    uniform intervals across the requested duration. At least one keyframe
+    at timestamp=0.0 (or with timestamp=None) is required to establish
+    the starting frame.
+
+    Models that do not support multi-keyframe conditioning use keyframes[0]
+    as the single conditioning image and ignore the rest.
+    """
+    image: str = Field(..., description="base64 encoded RGB image")
+    timestamp: Optional[float] = Field(
+        None,
+        ge=0.0,
+        description="position in seconds from the start of the video; "
+                    "None defers to handler-computed uniform spacing",
+    )
+
+
+class Img2VidRequest(ModelRequest):
+    keyframes: List[VideoKeyframe] = Field(
+        ...,
+        min_length=1,
+        description=(
+            "one or more image anchors for the generation. "
+            "A single keyframe produces standard image-to-video output. "
+            "Two keyframes condition on start and end frames. "
+            "Multiple keyframes are passed to models that support "
+            "multi-reference conditioning"
+        ),
+    )
+    prompt: Optional[str] = Field(
+        None,
+        description=(
+            "optional text conditioning. Ignored by models that do not "
+            "support text-conditioned image-to-video generation"
+        ),
+    )
+    negative_prompt: Optional[str] = None
+    num_frames: int = Field(25, ge=1, description="number of frames to generate")
+    fps: int = Field(8, ge=1, le=60, description="frames per second of the output video")
+    num_inference_steps: Optional[int] = Field(None, description="diffusion steps; defaults to NUM_STEPS env var, falls back to 25")
+    guidance_scale: float = Field(7.5, description="classifier-free guidance scale")
+
+class Img2VidResponse(GenerativeResponse):
+    num_frames: int
+    fps: int
+    outputs: Dict[str, OutputReference] = Field(
+        ..., description="named S3 outputs; key 'video' is the generated video"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Obs2Act
+# ---------------------------------------------------------------------------
+
+
+class Obs2ActRequest(ModelRequest):
+    image: str = Field(
+        ...,
+        description="base64 encoded RGB observation image from the robot camera",
+    )
+    instruction: str = Field(
+        ...,
+        description="natural language task instruction, e.g. 'pick up the red block'",
+    )
+    state: Optional[List[float]] = Field(
+        None,
+        description=(
+            "current robot state vector. Layout is model-dependent: typically "
+            "joint positions followed by end-effector pose. Pass None if the "
+            "model does not use state input"
+        ),
+    )
+
+
+class Obs2ActResponse(GenerativeResponse):
+    choices: List[InstructMessage]
+
+
+# ---------------------------------------------------------------------------
+# Vid2Vid
+# ---------------------------------------------------------------------------
+
+
+class Vid2VidRequest(ModelRequest):
+    input: str = Field(
+        ...,
+        description=(
+            "source video to transform. Accepts base64-encoded video or an "
+            "s3://bucket/key URI"
+        ),
+    )
+    prompt: Optional[str] = Field(
+        None,
+        description=(
+            "optional text conditioning. Guides the transformation toward "
+            "the described content. Ignored by models that do not support "
+            "text conditioning"
+        ),
+    )
+    negative_prompt: Optional[str] = None
+    strength: float = Field(
+        0.7,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "transformation strength. 0.0 returns output close to the input; "
+            "1.0 allows the model to deviate fully from the source video"
+        ),
+    )
+    num_inference_steps: Optional[int] = Field(
+        None,
+        description="diffusion steps; defaults to NUM_STEPS env var, falls back to 50",
+    )
+    guidance_scale: float = Field(7.5, description="classifier-free guidance scale")
+    fps: int = Field(
+        8,
+        ge=1,
+        le=60,
+        description="frames per second of the output video",
+    )
+
+
+class Vid2VidResponse(GenerativeResponse):
+    num_frames: int
+    fps: int
+    outputs: Dict[str, OutputReference] = Field(
+        ..., description="named S3 outputs; key 'video' is the transformed video"
+    )

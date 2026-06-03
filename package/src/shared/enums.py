@@ -31,20 +31,30 @@ class ModelType(Enum):
     without a coordinated migration of all stored data.
     """
 
-    TEXT_EMBEDDING = "text-embedding"
-    IMAGE_EMBEDDING = "image-embedding"
-    INSTRUCT = "instruct"
-    TTS = "tts"
-    TXT2AUDIO = "txt2audio"
-    DEPTH = "depth"
-    IMG2TXT = "img2txt"
-    TXT2IMG = "txt2img"
-    IMG2MASK = "img2mask"
-    TEXT_EVAL = "text-eval"
-    TEXT_SIMILARITY = "text-similarity"
-    IMAGE_EVAL = "image-eval"
-    IMAGE_TEXT_EVAL = "image-text-eval"
-    HTTP = "http"
+    TEXT_EMBEDDING   = "text-embedding"
+    IMAGE_EMBEDDING  = "image-embedding"
+    INSTRUCT         = "instruct"
+    TTS              = "tts"
+    TXT2AUDIO        = "txt2audio"
+    DEPTH            = "depth"
+    IMG2TXT          = "img2txt"
+    TXT2IMG          = "txt2img"
+    IMG2MASK         = "img2mask"
+    TEXT_EVAL        = "text-eval"
+    TEXT_SIMILARITY  = "text-similarity"
+    IMAGE_EVAL       = "image-eval"
+    IMAGE_TEXT_EVAL  = "image-text-eval"
+    HTTP             = "http"
+    # --- audio ---
+    ASR              = "asr"
+    # --- video ---
+    TXT2VID          = "txt2vid"
+    IMG2VID          = "img2vid"
+    VID2TXT          = "vid2txt"
+    # --- embodied / robot ---
+    OBS2ACT          = "obs2act"
+    # --- 3d ---
+    IMG23D           = "img23d"
 
 
 class ModelMode(Enum):
@@ -57,8 +67,8 @@ class ModelMode(Enum):
     """
 
     EMBED = "embed"
-    EVAL = "eval"
-    GEN = "gen"
+    EVAL  = "eval"
+    GEN   = "gen"
 
 
 class OutputMimeType(Enum):
@@ -68,24 +78,26 @@ class OutputMimeType(Enum):
     S3 (binary types) or DynamoDB (text and JSON types).
     """
 
-    JSON = "application/json"
-    TEXT = "text/plain"
-    IMAGE_PNG = "image/png"
-    IMAGE_JPEG = "image/jpeg"
-    AUDIO_MP3 = "audio/mpeg"
-    AUDIO_WAV = "audio/wav"
+    JSON        = "application/json"
+    TEXT        = "text/plain"
+    IMAGE_PNG   = "image/png"
+    IMAGE_JPEG  = "image/jpeg"
+    AUDIO_MP3   = "audio/mpeg"
+    AUDIO_WAV   = "audio/wav"
+    VIDEO_MP4   = "video/mp4"
+    MESH_GLB    = "model/gltf-binary"
 
     @property
     def storage(self) -> str:
-        if self.value.startswith(("image/", "audio/", "video/")):
+        if self.value.startswith(("image/", "audio/", "video/", "model/")):
             return "s3"
         return "dynamodb"
 
 
 class ModelModalities(Enum):
-    TEXT = "text"
-    IMAGE = "image"
-    AUDIO = "audio"
-    VIDEO = "video"
+    TEXT      = "text"
+    IMAGE     = "image"
+    AUDIO     = "audio"
+    VIDEO     = "video"
     EMBEDDING = "embedding"
-    MESH = "mesh"
+    MESH      = "mesh"

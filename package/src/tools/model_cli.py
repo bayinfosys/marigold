@@ -81,6 +81,7 @@ logging.getLogger("huggingface_hub.utils").setLevel(logging.WARNING)
 # Environment
 # ---------------------------------------------------------------------------
 
+
 def _load_env(path: str = ".marigold-env"):
     p = Path(path)
     if not p.exists():
@@ -92,6 +93,7 @@ def _load_env(path: str = ".marigold-env"):
         k, v = line.split("=", 1)
         os.environ.setdefault(k.strip(), v.strip())
 
+
 _load_env()
 
 
@@ -99,11 +101,13 @@ _load_env()
 # Error handling
 # ---------------------------------------------------------------------------
 
+
 class CliError(Exception):
     """Raised at the point of failure inside any command function.
 
     Caught once in main(), which logs the message and exits non-zero.
     """
+
     pass
 
 
@@ -113,6 +117,7 @@ CommandResult = tuple[dict, bool]
 # ---------------------------------------------------------------------------
 # Config context -- model catalogue commands
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ModelCatalogueContext:
@@ -158,12 +163,13 @@ class ModelCatalogueContext:
 # API client -- remote workflow and status commands
 # ---------------------------------------------------------------------------
 
+
 class MarigoldClient:
     """Minimal HTTP client for the Marigold workflow API."""
 
     def __init__(self):
         self.base = os.environ.get("API_BASE", "").rstrip("/")
-        self.key  = os.environ.get("API_KEY", "")
+        self.key = os.environ.get("API_KEY", "")
 
         if not self.base:
             raise CliError("API_BASE is required (set in .marigold-env or environment)")
@@ -172,6 +178,7 @@ class MarigoldClient:
 
         try:
             import requests as _requests
+
             self._requests = _requests
         except ImportError:
             raise CliError("requests is required: pip install requests")
@@ -248,6 +255,7 @@ class MarigoldClient:
 # Shared utilities
 # ---------------------------------------------------------------------------
 
+
 def _peak_memory_mb() -> float:
     usage = resource.getrusage(resource.RUSAGE_SELF)
     if sys.platform == "darwin":
@@ -259,16 +267,18 @@ def _model_cache_size_gb(model_name: str, cache_path: Path) -> float:
     cache_dir = cache_path / ("models--" + model_name.replace("/", "--"))
     if not cache_dir.exists():
         return 0.0
-    return sum(
-        f.stat().st_size for f in cache_dir.rglob("*") if f.is_file()
-    ) / (1024 ** 3)
+    return sum(f.stat().st_size for f in cache_dir.rglob("*") if f.is_file()) / (
+        1024**3
+    )
 
 
 def _placeholder_image_b64() -> str:
     import base64
+
     def png_chunk(name: bytes, data: bytes) -> bytes:
         c = zlib.crc32(name + data) & 0xFFFFFFFF
         return struct.pack(">I", len(data)) + name + data + struct.pack(">I", c)
+
     ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
     idat = zlib.compress(b"\x00\xff\x00\x00")
     png = (
@@ -283,30 +293,39 @@ def _placeholder_image_b64() -> str:
 def _inference_fixtures() -> dict:
     image = _placeholder_image_b64()
     return {
-        "instruct":        {"messages": [{"role": "user", "content": "Reply with one word: hello"}]},
-        "text-embedding":  {"input": "The quick brown fox jumps over the lazy dog"},
+        "instruct": {
+            "messages": [{"role": "user", "content": "Reply with one word: hello"}]
+        },
+        "text-embedding": {"input": "The quick brown fox jumps over the lazy dog"},
         "image-embedding": {"input": image},
-        "tts":             {"text": "Hello world", "language_code": "en-gb"},
-        "txt2img":         {"prompt": "A red circle on a white background"},
-        "txt2audio":       {"prompt": "A gentle acoustic guitar melody"},
-        "img2txt":         {"input": image},
-        "depth":           {"input": image},
-        "img2mask":        {"input": image},
-        "text-eval":       {"text": "I love this product"},
+        "tts": {"text": "Hello world", "language_code": "en-gb"},
+        "txt2img": {"prompt": "A red circle on a white background"},
+        "txt2audio": {"prompt": "A gentle acoustic guitar melody"},
+        "img2txt": {"input": image},
+        "depth": {"input": image},
+        "img2mask": {"input": image},
+        "text-eval": {"text": "I love this product"},
         "text-similarity": {
             "text_a": "The cat sat on the mat",
             "text_b": "A cat was sitting on a mat",
         },
-        "image-eval":      {"image": image},
+        "image-eval": {"image": image},
         "image-text-eval": {"image": image, "text": "a red circle"},
+        "asr": {"input": "<base64_of_a_short_wav>"},
+        "txt2vid": {"prompt": "A red ball rolling across a white floor"},
+        "img2vid": {"keyframes": [{"image": image}]},
+        "vid2txt": {"input": "<base64_of_short_mp4>"},
+        "vid2vid": {"input": "<base64_of_short_mp4>", "prompt": "oil painting style"},
+        "obs2act": {"image": image, "instruction": "pick up the red block"},
     }
 
 
 def _elapsed(created_at: str) -> str:
     try:
         from datetime import datetime, timezone
+
         fmt = "%Y-%m-%dT%H:%M:%SZ"
-        t0  = datetime.strptime(created_at, fmt).replace(tzinfo=timezone.utc)
+        t0 = datetime.strptime(created_at, fmt).replace(tzinfo=timezone.utc)
         secs = int((datetime.now(timezone.utc) - t0).total_seconds())
         if secs < 60:
             return "%ds" % secs
@@ -321,6 +340,7 @@ def _elapsed(created_at: str) -> str:
 # Local model commands
 # ---------------------------------------------------------------------------
 
+
 def download_weights(model_name_filter: Optional[str]) -> CommandResult:
     """Download and cache model weights from HuggingFace to the EFS cache."""
     from tools.model_cache_shared import run_build
@@ -332,12 +352,12 @@ def download_weights(model_name_filter: Optional[str]) -> CommandResult:
         ctx.models, ctx.cache_path, hf_token, prune=model_name_filter is None
     )
     result = {
-        "cached":   build_result.cached,
-        "pruned":   build_result.pruned,
-        "errors":   build_result.errors,
-        "total_gb": round(sum(
-            _model_cache_size_gb(n, ctx.cache_path) for n in build_result.cached
-        ), 3),
+        "cached": build_result.cached,
+        "pruned": build_result.pruned,
+        "errors": build_result.errors,
+        "total_gb": round(
+            sum(_model_cache_size_gb(n, ctx.cache_path) for n in build_result.cached), 3
+        ),
     }
     return result, not build_result.errors
 
@@ -346,14 +366,16 @@ def inspect_cache(as_json: bool) -> CommandResult:
     """Report cache state against the models declared in models.yaml."""
     from tools.model_cache_shared import inspect_to_dict, run_inspect
 
-    ctx   = ModelCatalogueContext.load()
+    ctx = ModelCatalogueContext.load()
     state = inspect_to_dict(ctx.models, ctx.cache_path)
     if not as_json:
         run_inspect(state)
     return state, not state["anomalies"]
 
 
-def run_model_inference(model_name: str, model_type: str, request_source: str) -> CommandResult:
+def run_model_inference(
+    model_name: str, model_type: str, request_source: str
+) -> CommandResult:
     """Load a model and run one inference pass against a supplied request."""
     import models as _models
     from shared.registry import _SPECS
@@ -366,7 +388,9 @@ def run_model_inference(model_name: str, model_type: str, request_source: str) -
 
     _models.load_all()
     if model_type not in _SPECS:
-        raise CliError("unknown model type '%s'. known: %s" % (model_type, sorted(_SPECS)))
+        raise CliError(
+            "unknown model type '%s'. known: %s" % (model_type, sorted(_SPECS))
+        )
 
     payload["model"] = model_name
     t_load = time.perf_counter()
@@ -378,19 +402,30 @@ def run_model_inference(model_name: str, model_type: str, request_source: str) -
 
     t_infer = time.perf_counter()
     try:
-        inference_result = handler.process(user_id="cli", message_id="cli-run", request=payload)
+        inference_result = handler.process(
+            user_id="cli", message_id="cli-run", request=payload
+        )
     except Exception as e:
         raise CliError("inference failed: %s" % e)
     infer_duration = time.perf_counter() - t_infer
 
     return {
-        "model":             model_name,
-        "type":              model_type,
-        "load_seconds":      round(load_duration, 3),
+        "model": model_name,
+        "type": model_type,
+        "load_seconds": round(load_duration, 3),
         "inference_seconds": round(infer_duration, 3),
-        "peak_memory_mb":    round(_peak_memory_mb(), 1),
-        "cache_size_gb":     round(_model_cache_size_gb(model_name, Path(os.getenv("CACHE_DIR", "/mnt/efs/cache"))), 3),
-        "output": inference_result.model_dump() if hasattr(inference_result, "model_dump") else str(inference_result),
+        "peak_memory_mb": round(_peak_memory_mb(), 1),
+        "cache_size_gb": round(
+            _model_cache_size_gb(
+                model_name, Path(os.getenv("CACHE_DIR", "/mnt/efs/cache"))
+            ),
+            3,
+        ),
+        "output": (
+            inference_result.model_dump()
+            if hasattr(inference_result, "model_dump")
+            else str(inference_result)
+        ),
     }, True
 
 
@@ -402,25 +437,47 @@ def test_models(model_name_filter: Optional[str]) -> CommandResult:
     ctx = ModelCatalogueContext.load(model_name_filter)
     _models.load_all()
     fixtures = _inference_fixtures()
-    results  = []
+    results = []
 
     for entry in ctx.models:
-        name       = entry["name"]
+        name = entry["name"]
         model_type = entry["type"]
 
         if model_type not in fixtures:
-            results.append({"model": name, "type": model_type, "status": "skipped", "reason": "no fixture"})
+            results.append(
+                {
+                    "model": name,
+                    "type": model_type,
+                    "status": "skipped",
+                    "reason": "no fixture",
+                }
+            )
             continue
         if model_type not in _SPECS:
-            results.append({"model": name, "type": model_type, "status": "skipped", "reason": "not registered"})
+            results.append(
+                {
+                    "model": name,
+                    "type": model_type,
+                    "status": "skipped",
+                    "reason": "not registered",
+                }
+            )
             continue
 
         payload = {**fixtures[model_type], "model": name}
-        t_load  = time.perf_counter()
+        t_load = time.perf_counter()
         try:
             handler = _SPECS[model_type].handler_class(name)
         except Exception as e:
-            results.append({"model": name, "type": model_type, "status": "error", "stage": "load", "error": str(e)})
+            results.append(
+                {
+                    "model": name,
+                    "type": model_type,
+                    "status": "error",
+                    "stage": "load",
+                    "error": str(e),
+                }
+            )
             continue
         load_duration = time.perf_counter() - t_load
 
@@ -428,27 +485,40 @@ def test_models(model_name_filter: Optional[str]) -> CommandResult:
         try:
             handler.process(user_id="cli", message_id="cli-test", request=payload)
         except Exception as e:
-            results.append({"model": name, "type": model_type, "status": "error", "stage": "inference", "error": str(e)})
+            results.append(
+                {
+                    "model": name,
+                    "type": model_type,
+                    "status": "error",
+                    "stage": "inference",
+                    "error": str(e),
+                }
+            )
             continue
         infer_duration = time.perf_counter() - t_infer
 
-        results.append({
-            "model":             name,
-            "type":              model_type,
-            "status":            "ok",
-            "load_seconds":      round(load_duration, 3),
-            "inference_seconds": round(infer_duration, 3),
-            "peak_memory_mb":    round(_peak_memory_mb(), 1),
-            "cache_size_gb":     round(_model_cache_size_gb(name, ctx.cache_path), 3),
-        })
+        results.append(
+            {
+                "model": name,
+                "type": model_type,
+                "status": "ok",
+                "load_seconds": round(load_duration, 3),
+                "inference_seconds": round(infer_duration, 3),
+                "peak_memory_mb": round(_peak_memory_mb(), 1),
+                "cache_size_gb": round(_model_cache_size_gb(name, ctx.cache_path), 3),
+            }
+        )
 
     return {"results": results}, not any(r["status"] == "error" for r in results)
 
 
-def build_public_catalogue(models_yaml_path: str, cache_state_path: Optional[str]) -> CommandResult:
+def build_public_catalogue(
+    models_yaml_path: str, cache_state_path: Optional[str]
+) -> CommandResult:
     """Merge models.yaml with cache state for S3 serving."""
     try:
         import yaml
+
         with open(models_yaml_path) as fh:
             models_list = yaml.safe_load(fh).get("models", [])
     except Exception as e:
@@ -468,17 +538,19 @@ def build_public_catalogue(models_yaml_path: str, cache_state_path: Optional[str
         if cache_state:
             m = cache_state["models"].get(entry["name"])
             cached = m["status"] == "ok" if m else False
-        models_out.append({
-            "name":     entry["name"],
-            "type":     entry["type"],
-            "provider": entry["provider"],
-            "input":    entry["input"],
-            "output":   entry["output"],
-            "cached":   cached,
-        })
+        models_out.append(
+            {
+                "name": entry["name"],
+                "type": entry["type"],
+                "provider": entry["provider"],
+                "input": entry["input"],
+                "output": entry["output"],
+                "cached": cached,
+            }
+        )
 
     return {
-        "models":         models_out,
+        "models": models_out,
         "cache_state_at": cache_state["inspected_at"] if cache_state else None,
     }, True
 
@@ -486,6 +558,7 @@ def build_public_catalogue(models_yaml_path: str, cache_state_path: Optional[str
 # ---------------------------------------------------------------------------
 # Local workflow commands
 # ---------------------------------------------------------------------------
+
 
 def run_workflow_locally(yaml_path: str, inputs: dict) -> CommandResult:
     """Execute a workflow YAML file locally using an in-process backend."""
@@ -500,21 +573,23 @@ def run_workflow_locally(yaml_path: str, inputs: dict) -> CommandResult:
     with open(path) as fh:
         spec = fh.read()
 
-    runner    = InProcessRunner()
-    worker    = InProcessWorker(runner, execute)
-    backend   = rfx.Backend(store=InMemoryStore(), runner=runner)
-    wf        = rfx.Workflow.from_yaml(spec, backend, inputs=inputs)
+    runner = InProcessRunner()
+    worker = InProcessWorker(runner, execute)
+    backend = rfx.Backend(store=InMemoryStore(), runner=runner)
+    wf = rfx.Workflow.from_yaml(spec, backend, inputs=inputs)
     wf_result = wf.run(worker=worker)
-    record    = backend.load(wf.id)
+    record = backend.load(wf.id)
 
     return {
         "workflow": path.name,
-        "inputs":   inputs,
-        "outcome":  wf_result.outcome if hasattr(wf_result, "outcome") else str(wf_result),
+        "inputs": inputs,
+        "outcome": (
+            wf_result.outcome if hasattr(wf_result, "outcome") else str(wf_result)
+        ),
         "trace": {
             "status": record.status.value,
-            "state":  record.state,
-            "steps":  {
+            "state": record.state,
+            "steps": {
                 op: {"status": s.status.value, "output": s.output, "run_id": s.run_id}
                 for op, s in record.steps.items()
             },
@@ -532,7 +607,9 @@ def test_workflow_specs(target: str) -> CommandResult:
     if not target_path.exists():
         raise CliError("target not found: %s" % target)
 
-    yaml_files = sorted(target_path.glob("*.yaml")) if target_path.is_dir() else [target_path]
+    yaml_files = (
+        sorted(target_path.glob("*.yaml")) if target_path.is_dir() else [target_path]
+    )
     if not yaml_files:
         raise CliError("no .yaml files found in %s" % target)
 
@@ -541,21 +618,30 @@ def test_workflow_specs(target: str) -> CommandResult:
         try:
             with open(path) as fh:
                 spec = fh.read()
-            runner    = InProcessRunner()
-            worker    = InProcessWorker(runner, execute)
-            backend   = rfx.Backend(store=InMemoryStore(), runner=runner)
-            wf        = rfx.Workflow.from_yaml(spec, backend, inputs={})
+            runner = InProcessRunner()
+            worker = InProcessWorker(runner, execute)
+            backend = rfx.Backend(store=InMemoryStore(), runner=runner)
+            wf = rfx.Workflow.from_yaml(spec, backend, inputs={})
             wf_result = wf.run(worker=worker)
-            record    = backend.load(wf.id)
-            results.append({
-                "workflow": path.name,
-                "status":   "ok",
-                "outcome":  wf_result.outcome if hasattr(wf_result, "outcome") else str(wf_result),
-                "trace": {
-                    "status": record.status.value,
-                    "steps":  {op: {"status": s.status.value, "run_id": s.run_id} for op, s in record.steps.items()},
-                },
-            })
+            record = backend.load(wf.id)
+            results.append(
+                {
+                    "workflow": path.name,
+                    "status": "ok",
+                    "outcome": (
+                        wf_result.outcome
+                        if hasattr(wf_result, "outcome")
+                        else str(wf_result)
+                    ),
+                    "trace": {
+                        "status": record.status.value,
+                        "steps": {
+                            op: {"status": s.status.value, "run_id": s.run_id}
+                            for op, s in record.steps.items()
+                        },
+                    },
+                }
+            )
         except Exception as e:
             results.append({"workflow": path.name, "status": "error", "error": str(e)})
 
@@ -565,6 +651,7 @@ def test_workflow_specs(target: str) -> CommandResult:
 # ---------------------------------------------------------------------------
 # Remote workflow commands
 # ---------------------------------------------------------------------------
+
 
 def workflow_add(name: str, spec_path: str) -> CommandResult:
     """Create a workflow template via the API.
@@ -586,7 +673,7 @@ def workflow_add(name: str, spec_path: str) -> CommandResult:
 
 def workflow_list() -> CommandResult:
     """List workflow templates via the API."""
-    client    = MarigoldClient()
+    client = MarigoldClient()
     templates = client.list_templates()
     return {"templates": templates, "count": len(templates)}, True
 
@@ -609,8 +696,11 @@ def workflow_submit(name_or_id: str, inputs: dict, tail: bool = False) -> Comman
         workflow_id = template["workflow_id"]
 
     result = client.submit_execution(workflow_id, inputs)
-    log.info("submitted: workflow_id=%s execution_id=%s",
-             result.get("workflow_id"), result.get("execution_id"))
+    log.info(
+        "submitted: workflow_id=%s execution_id=%s",
+        result.get("workflow_id"),
+        result.get("execution_id"),
+    )
 
     if tail:
         return workflow_tail(
@@ -632,8 +722,8 @@ def workflow_tail(
     Prints step progress on each poll. Exits when the execution reaches
     complete, halted, or cancelled, or when timeout is exceeded.
     """
-    client    = MarigoldClient()
-    deadline  = time.time() + timeout
+    client = MarigoldClient()
+    deadline = time.time() + timeout
     last_step_status: dict = {}
 
     print("tailing %s / %s" % (workflow_id, execution_id))
@@ -642,31 +732,36 @@ def workflow_tail(
     while time.time() < deadline:
         try:
             execution = client.get_execution(workflow_id, execution_id)
-            steps     = client.get_steps(workflow_id, execution_id)
+            steps = client.get_steps(workflow_id, execution_id)
         except Exception as e:
             log.warning("poll failed: %s", e)
             time.sleep(poll_interval)
             continue
 
-        status   = execution.get("status", "?")
-        elapsed  = _elapsed(execution.get("created_at", ""))
+        status = execution.get("status", "?")
+        elapsed = _elapsed(execution.get("created_at", ""))
         progress = execution.get("progress", {})
 
         # print step changes
         for step in steps:
-            key        = step.get("step_id", step.get("op", "?"))
+            key = step.get("step_id", step.get("op", "?"))
             new_status = step.get("status", "?")
             if last_step_status.get(key) != new_status:
                 print("  step %-30s  %s" % (step.get("op", key)[:30], new_status))
                 last_step_status[key] = new_status
 
         # print execution status line
-        print("\r  status=%-12s  elapsed=%-8s  steps=%d/%d   " % (
-            status,
-            elapsed,
-            progress.get("complete", 0),
-            progress.get("total", 0),
-        ), end="", flush=True)
+        print(
+            "\r  status=%-12s  elapsed=%-8s  steps=%d/%d   "
+            % (
+                status,
+                elapsed,
+                progress.get("complete", 0),
+                progress.get("total", 0),
+            ),
+            end="",
+            flush=True,
+        )
 
         if status in ("complete", "halted", "cancelled"):
             print()
@@ -687,6 +782,7 @@ def workflow_tail(
 # Status dashboard
 # ---------------------------------------------------------------------------
 
+
 def status_dashboard(watch: bool) -> CommandResult:
     """Compact live dashboard showing models, queues, and API health.
 
@@ -694,29 +790,32 @@ def status_dashboard(watch: bool) -> CommandResult:
     Falls back to plain text.
     """
     try:
-        from rich.console import Console
-        from rich.table   import Table
-        from rich.live    import Live
-        from rich.panel   import Panel
         from rich.columns import Columns
+        from rich.console import Console
+        from rich.live import Live
+        from rich.panel import Panel
+        from rich.table import Table
+
         has_rich = True
     except ImportError:
         has_rich = False
 
     def render_plain():
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         client = MarigoldClient()
-        lines  = ["", "Marigold Status  %s" % now, ""]
+        lines = ["", "Marigold Status  %s" % now, ""]
 
         # models
         models_data = client.get_models()
-        models      = models_data.get("models", [])
-        cached      = sum(1 for m in models if m.get("cached") is True)
-        missing     = sum(1 for m in models if m.get("cached") is False)
-        lines.append("Models: %d cached  %d missing  (state at %s)" % (
-            cached, missing, models_data.get("cache_state_at", "unknown")
-        ))
+        models = models_data.get("models", [])
+        cached = sum(1 for m in models if m.get("cached") is True)
+        missing = sum(1 for m in models if m.get("cached") is False)
+        lines.append(
+            "Models: %d cached  %d missing  (state at %s)"
+            % (cached, missing, models_data.get("cache_state_at", "unknown"))
+        )
 
         by_type = {}
         for m in models:
@@ -731,7 +830,9 @@ def status_dashboard(watch: bool) -> CommandResult:
         # templates
         templates = client.list_templates()
         lines.append("Templates: %d registered" % len(templates))
-        for t in sorted(templates, key=lambda x: x.get("created_at", ""), reverse=True)[:5]:
+        for t in sorted(templates, key=lambda x: x.get("created_at", ""), reverse=True)[
+            :5
+        ]:
             lines.append("  %-40s %s" % (t["name"][:40], t["workflow_id"]))
 
         lines.append("")
@@ -739,26 +840,31 @@ def status_dashboard(watch: bool) -> CommandResult:
 
     def render_rich():
         from datetime import datetime, timezone
+
         from rich.console import Console
-        from rich.table   import Table
-        from rich.panel   import Panel
+        from rich.panel import Panel
+        from rich.table import Table
 
         console = Console()
-        client  = MarigoldClient()
-        now     = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        client = MarigoldClient()
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # models table
         models_data = client.get_models()
-        models      = models_data.get("models", [])
-        by_type     = {}
+        models = models_data.get("models", [])
+        by_type = {}
         for m in models:
             by_type.setdefault(m["type"], []).append(m)
 
-        model_table = Table(title="Models  (state at %s)" % models_data.get("cache_state_at", "unknown"),
-                            show_header=True, header_style="bold")
-        model_table.add_column("Type",   style="cyan",  no_wrap=True)
+        model_table = Table(
+            title="Models  (state at %s)"
+            % models_data.get("cache_state_at", "unknown"),
+            show_header=True,
+            header_style="bold",
+        )
+        model_table.add_column("Type", style="cyan", no_wrap=True)
         model_table.add_column("Cached", justify="right")
-        model_table.add_column("Total",  justify="right")
+        model_table.add_column("Total", justify="right")
 
         for t in sorted(by_type):
             ms = by_type[t]
@@ -767,14 +873,19 @@ def status_dashboard(watch: bool) -> CommandResult:
             model_table.add_row(t, "[%s]%d[/%s]" % (colour, nc, colour), str(len(ms)))
 
         # templates table
-        templates      = client.list_templates()
-        template_table = Table(title="Templates (%d)" % len(templates),
-                               show_header=True, header_style="bold")
-        template_table.add_column("Name",        style="cyan", no_wrap=True, max_width=35)
-        template_table.add_column("ID",          no_wrap=True)
-        template_table.add_column("Created",     no_wrap=True)
+        templates = client.list_templates()
+        template_table = Table(
+            title="Templates (%d)" % len(templates),
+            show_header=True,
+            header_style="bold",
+        )
+        template_table.add_column("Name", style="cyan", no_wrap=True, max_width=35)
+        template_table.add_column("ID", no_wrap=True)
+        template_table.add_column("Created", no_wrap=True)
 
-        for t in sorted(templates, key=lambda x: x.get("created_at", ""), reverse=True)[:10]:
+        for t in sorted(templates, key=lambda x: x.get("created_at", ""), reverse=True)[
+            :10
+        ]:
             template_table.add_row(
                 t["name"][:35],
                 t["workflow_id"],
@@ -782,9 +893,10 @@ def status_dashboard(watch: bool) -> CommandResult:
             )
 
         console.print()
-        console.print("[bold]Marigold Status[/bold]  [cyan]%s[/cyan]  %s" % (
-            os.environ.get("API_BASE", ""), now
-        ))
+        console.print(
+            "[bold]Marigold Status[/bold]  [cyan]%s[/cyan]  %s"
+            % (os.environ.get("API_BASE", ""), now)
+        )
         console.print()
         console.print(model_table)
         console.print()
@@ -821,6 +933,7 @@ def status_dashboard(watch: bool) -> CommandResult:
 # Input parsing
 # ---------------------------------------------------------------------------
 
+
 def parse_workflow_inputs(pairs: list) -> dict:
     """Parse key=value pairs into a workflow inputs dict.
 
@@ -842,16 +955,23 @@ def parse_workflow_inputs(pairs: list) -> dict:
 # Argument parser
 # ---------------------------------------------------------------------------
 
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Marigold model, cache, workflow, and status CLI")
+    parser = argparse.ArgumentParser(
+        description="Marigold model, cache, workflow, and status CLI"
+    )
     parser.add_argument(
-        "--json", action="store_true", dest="as_json",
+        "--json",
+        action="store_true",
+        dest="as_json",
         help="emit structured JSON to stdout",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
     # download-weights
-    dw = sub.add_parser("download-weights", help="download model weights to local cache")
+    dw = sub.add_parser(
+        "download-weights", help="download model weights to local cache"
+    )
     dw.add_argument("model_name", nargs="?", default=None)
 
     # inspect-cache
@@ -864,41 +984,59 @@ def build_parser() -> argparse.ArgumentParser:
     rm.add_argument("--request", default="-")
 
     # test-models
-    tm = sub.add_parser("test-models", help="run fixture inferences against declared models")
+    tm = sub.add_parser(
+        "test-models", help="run fixture inferences against declared models"
+    )
     tm.add_argument("model_name", nargs="?", default=None)
 
     # build-catalogue
-    bc = sub.add_parser("build-catalogue", help="merge models.yaml with cache state for S3")
+    bc = sub.add_parser(
+        "build-catalogue", help="merge models.yaml with cache state for S3"
+    )
     bc.add_argument("models_yaml_file")
     bc.add_argument("--cache-state", default=None, metavar="FILE")
 
     # workflow
-    wf     = sub.add_parser("workflow", help="local and remote workflow commands")
+    wf = sub.add_parser("workflow", help="local and remote workflow commands")
     wf_sub = wf.add_subparsers(dest="workflow_command", required=True)
 
     # workflow run (local)
-    wf_run = wf_sub.add_parser("run", help="execute a workflow YAML file locally (in-process)")
+    wf_run = wf_sub.add_parser(
+        "run", help="execute a workflow YAML file locally (in-process)"
+    )
     wf_run.add_argument("workflow_file", help="path to workflow YAML")
     wf_run.add_argument("--input", dest="inputs", action="append", default=[])
 
     # workflow test (local)
-    wf_test = wf_sub.add_parser("test", help="test workflow YAML files locally (in-process)")
+    wf_test = wf_sub.add_parser(
+        "test", help="test workflow YAML files locally (in-process)"
+    )
     wf_test.add_argument("target", help="path to .yaml file or directory")
 
     # workflow add (remote)
     wf_add = wf_sub.add_parser("add", help="create a workflow template via the API")
     wf_add.add_argument("name", help="template name")
-    wf_add.add_argument("--spec", default="-", metavar="FILE",
-                        help="path to workflow YAML, or - for stdin (default: -)")
+    wf_add.add_argument(
+        "--spec",
+        default="-",
+        metavar="FILE",
+        help="path to workflow YAML, or - for stdin (default: -)",
+    )
 
     # workflow list (remote)
     wf_sub.add_parser("list", help="list workflow templates via the API")
 
     # workflow submit (remote)
-    wf_submit = wf_sub.add_parser("submit", help="submit a workflow execution via the API")
+    wf_submit = wf_sub.add_parser(
+        "submit", help="submit a workflow execution via the API"
+    )
     wf_submit.add_argument("name_or_id", help="template name or workflow_id")
     wf_submit.add_argument("--input", dest="inputs", action="append", default=[])
-    wf_submit.add_argument("--tail", action="store_true", help="automatically tail the execution after submitting")
+    wf_submit.add_argument(
+        "--tail",
+        action="store_true",
+        help="automatically tail the execution after submitting",
+    )
 
     # workflow tail (remote)
     wf_tail = wf_sub.add_parser("tail", help="stream workflow execution status")
@@ -918,9 +1056,10 @@ def build_parser() -> argparse.ArgumentParser:
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = build_parser()
-    args   = parser.parse_args()
+    args = parser.parse_args()
 
     try:
         if args.command == "download-weights":
@@ -930,13 +1069,17 @@ def main():
             result, success = inspect_cache(as_json=args.as_json)
 
         elif args.command == "run-model":
-            result, success = run_model_inference(args.model_name, args.model_type, args.request)
+            result, success = run_model_inference(
+                args.model_name, args.model_type, args.request
+            )
 
         elif args.command == "test-models":
             result, success = test_models(args.model_name)
 
         elif args.command == "build-catalogue":
-            result, success = build_public_catalogue(args.models_yaml_file, args.cache_state)
+            result, success = build_public_catalogue(
+                args.models_yaml_file, args.cache_state
+            )
 
         elif args.command == "workflow":
             wc = args.workflow_command
@@ -956,7 +1099,8 @@ def main():
                 )
             elif wc == "tail":
                 result, success = workflow_tail(
-                    args.workflow_id, args.execution_id,
+                    args.workflow_id,
+                    args.execution_id,
                     poll_interval=args.interval,
                     timeout=args.timeout,
                 )
