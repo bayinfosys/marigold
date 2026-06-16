@@ -117,6 +117,10 @@ class Vid2VidModel(BaseModelHandler):
             modelname, self.max_in_frames, self.num_steps,
         )
 
+    def unload(self) -> None:
+        del self.pipe
+        super().unload()
+
     def _run(
         self, user_id: str, message_id: str, request: Vid2VidRequest
     ) -> Vid2VidResponse:

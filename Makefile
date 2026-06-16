@@ -17,7 +17,6 @@ ifeq ($(TAG),)
 endif
 
 ENV ?= dev
-MODELS_YAML ?= assets/models.yaml
 
 # ---------------------------------------------------------------------------
 # Container image
@@ -34,7 +33,7 @@ build/environment:
 	# the gpu environment container provides everything for running marigold on nvidia gpus
 	# --build-arg BASE_IMAGE=nvidia/cuda:13.1.2-cudnn-runtime-ubuntu24.04 \
 	docker build \
-	  --build-arg BASE_IMAGE=nvidia/cuda:13.1.2-cudnn-runtime-ubuntu24.04 \
+	  --build-arg BASE_IMAGE=nvidia/cuda:13.0.0-cudnn-runtime-ubuntu24.04 \
 	  -t $(PROJECT_NAME)/cuda-python312:$(TAG) \
 	  -f package/src/models/environment/Dockerfile.python312.gpu .
 
@@ -45,6 +44,20 @@ build/environment:
 	  --build-arg TORCH_REQS=pytorch-gpu.requirements.txt \
 	  -t $(PROJECT_NAME)/environment:$(TAG)-gpu \
 	  -f package/src/models/environment/Dockerfile.ecs .
+
+	docker build \
+	  --build-arg BASE_IMAGE=$(PROJECT_NAME)/environment:$(TAG) \
+	  --build-arg GIT_TAG=$(TAG) \
+	  -t $(PROJECT_NAME)/worker:$(TAG) \
+	  -f package/src/models/environment/Dockerfile.worker .
+
+	docker build \
+	  --build-arg BASE_IMAGE=$(PROJECT_NAME)/environment:$(TAG)-gpu \
+	  --build-arg GPU_ENABLED=1 \
+	  --build-arg GIT_TAG=$(TAG) \
+	  -t $(PROJECT_NAME)/worker:$(TAG)-gpu \
+	  -f package/src/models/environment/Dockerfile.worker .
+
 
 push/environment:
 	docker tag $(PROJECT_NAME)/environment:$(TAG) $(AWS_ACCOUNT_ID).dkr.ecr.$(AWS_REGION).amazonaws.com/bayis/$(PROJECT_NAME)/environment:$(TAG) && \
@@ -104,6 +117,7 @@ push: push/environment push/tools
 
 LOCAL_CACHE_DIR = $(shell pwd)/cache/models
 LOCAL_OUTPUT_DIR = $(shell pwd)/cache/outputs
+MODELS_YAML ?= assets/models-2060.yaml
 
 .PHONY: cli/download-weights
 cli/download-weights:
@@ -261,6 +275,7 @@ assets/pull:
 assets/generate: .venv assets/pull assets/models.yaml assets/tools.yaml
 	$(GENERATE) assets/models.yaml terraform-data > assets/models.tfvars
 	$(GENERATE) assets/models.yaml infra-data   > assets/models.json
+	$(GENERATE) assets/models-2060.yaml infra-data > assets/models-2060.json
 	$(GENERATE) assets/models.yaml jekyll-data > $(SITE_DATA)/models.json
 	PYTHONPATH=$(PYTHONPATH) $(PYTHON) package/src/tools/generate_tools_index.py \
 	  assets/tools.yaml \

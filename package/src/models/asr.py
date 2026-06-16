@@ -131,6 +131,10 @@ class ASRModel(BaseModelHandler):
         )
         logger.info("'%s' target sample rate: %iHz", modelname, self.target_sr)
 
+    def unload(self) -> None:
+        del self.pipe
+        super().unload()
+
     def _run(self, user_id: str, message_id: str, request: ASRRequest) -> ASRResponse:
 
         T = clock()

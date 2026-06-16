@@ -28,42 +28,13 @@ logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")
 
 
-MODEL_NAME = os.environ["MODEL_NAME"]
-MODEL_HASH = os.environ["MODEL_HASH"]
-MODEL_TYPE = os.environ["MODEL_TYPE"]
-
-
 class ModelNotFoundError(Exception):
-    pass
-
-
-class ModelVRAMError(Exception):
-    """Raised when a model cannot fit entirely in GPU VRAM."""
-
     pass
 
 
 # ---------------------------------------------------------------------------
 # VRAM utilities
 # ---------------------------------------------------------------------------
-
-
-def get_vram_state() -> dict:
-    """Capture current VRAM state for all GPU devices.
-
-    Returns zeros if CUDA is unavailable or the query fails.
-    Queries fresh each call so values reflect current state at
-    the point of measurement.
-    """
-    if not torch.cuda.is_available():
-        return {"free_vram_b": 0, "total_vram_b": 0, "usable_vram_b": 0}
-    try:
-        free, total = torch.cuda.mem_get_info(0)
-        usable = int(free * 0.90)
-        return {"free_vram_b": free, "total_vram_b": total, "usable_vram_b": usable}
-    except Exception as e:
-        logger.warning("failed to get VRAM info: %s", e)
-        return {"free_vram_b": 0, "total_vram_b": 0, "usable_vram_b": 0}
 
 
 def get_max_memory() -> dict | None:
@@ -84,73 +55,6 @@ def get_max_memory() -> dict | None:
             logger.warning("failed to get VRAM info for device %d: %s", i, e)
 
     return max_memory or None
-
-
-# ---------------------------------------------------------------------------
-# Lifecycle event helpers
-# ---------------------------------------------------------------------------
-
-
-def post_loader_event(event_type: str, extra: dict = None) -> None:
-    """Publish a model loader lifecycle event with current VRAM state.
-
-    Queries VRAM fresh at the point of each call so values reflect
-    actual state at that transition.
-    """
-    vram = get_vram_state()
-    LifecycleEvent(
-        event_type=event_type,
-        model_name=MODEL_NAME,
-        model_hash=MODEL_HASH,
-        payload={
-            "model_type": MODEL_TYPE,
-            **vram,
-            **(extra or {}),
-        },
-    ).post()
-
-
-# ---------------------------------------------------------------------------
-# VRAM check post-load
-# ---------------------------------------------------------------------------
-
-
-def check_model_vram(modelname: str, model):
-    """Raise ModelVRAMError if any model parameters were offloaded to CPU."""
-    cpu_params = [
-        name for name, param in model.named_parameters() if param.device.type == "cpu"
-    ]
-
-    if not cpu_params:
-        return
-
-    gpu_bytes = sum(
-        param.numel() * param.element_size()
-        for param in model.parameters()
-        if param.device.type != "cpu"
-    )
-    cpu_bytes = sum(
-        param.numel() * param.element_size()
-        for param in model.parameters()
-        if param.device.type == "cpu"
-    )
-    total_bytes = gpu_bytes + cpu_bytes
-
-    vram = get_vram_state()
-
-    logger.critical(
-        "'%s' has %d parameter tensors on CPU -- model does not fit in VRAM. "
-        "model_total=%.1fGB gpu_portion=%.1fGB cpu_portion=%.1fGB "
-        "vram_free=%.1fGB vram_total=%.1fGB",
-        modelname,
-        len(cpu_params),
-        total_bytes / 1024**3,
-        gpu_bytes / 1024**3,
-        cpu_bytes / 1024**3,
-        vram["free_vram_b"] / 1024**3,
-        vram["total_vram_b"] / 1024**3,
-    )
-    raise ModelVRAMError(modelname)
 
 
 # ---------------------------------------------------------------------------
@@ -207,8 +111,6 @@ def standard_loader(
     """
     T0 = clock()
 
-    post_loader_event(EventType.MODEL_LOADING)
-
     try:
         processor = TokenizerClass.from_pretrained(
             modelname,
@@ -242,11 +144,9 @@ def standard_loader(
         )
     except OSError as e:
         logger.error("'%s' not in local cache [%s]", modelname, str(e))
-        post_loader_event(EventType.MODEL_LOAD_FAILED, {"error": "not_in_cache"})
         raise ModelNotFoundError(modelname) from e
     except Exception as e:
         logger.exception("'%s' model load failed [%s]", modelname, str(e))
-        post_loader_event(EventType.MODEL_LOAD_FAILED, {"error": str(e)})
         raise ModelNotFoundError(modelname) from e
 
     try:
@@ -258,11 +158,6 @@ def standard_loader(
         footprint = model.get_memory_footprint()
     except Exception:
         footprint = 0
-
-    post_loader_event(EventType.MODEL_LOADED, {"footprint_b": footprint})
-
-    if torch.cuda.is_available() and load_in_4bit:
-        check_model_vram(modelname, model)
 
     load_time = int((clock() - T0) * 1000)
 

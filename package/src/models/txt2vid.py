@@ -116,6 +116,10 @@ class Txt2VidModel(BaseModelHandler):
         self.pipe      = self.model
         self.num_steps = int(os.getenv("NUM_STEPS", str(_DEFAULT_NUM_STEPS)))
 
+    def unload(self) -> None:
+        del self.pipe
+        super().unload()
+
     def _run(
         self, user_id: str, message_id: str, request: Txt2VidRequest
     ) -> Txt2VidResponse:

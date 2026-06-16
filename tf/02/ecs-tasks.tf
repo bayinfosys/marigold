@@ -79,9 +79,9 @@ resource "aws_ecs_task_definition" "model" {
       local.task_tiers[each.value.gpu_tier].gpu_required && each.value.gpu_units > 0
     ) ? [{ type = "GPU", value = tostring(each.value.gpu_units) }] : []
 
-    command = ["python3", "-c", "from models import sqs_handler; sqs_handler()"]
-
     environment = local.def_env[each.key]
+
+    command = ["python3", "-c", "from models.entrypoint_handlers import sqs_handler; sqs_handler()"]
 
     mountPoints = each.value.provider == "huggingface" ? [{
       sourceVolume  = "efs-cache"

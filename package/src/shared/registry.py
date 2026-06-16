@@ -217,3 +217,31 @@ class BaseModelHandler(ABC):
         request    -- validated request model instance, typed to the specific
                       request class declared in the ModelSpec
         """
+
+    def unload(self) -> None:
+        """Release model and processor from memory.
+
+        Clears self.model and self.processor, then runs gc and empties the
+        CUDA cache. Handlers that hold additional named references (self.pipe,
+        self.embedder, etc.) must override this method, call super().unload(),
+        then del their extra references before the super() call.
+
+        After unload() returns this instance must not be used for inference.
+        """
+        import gc
+        import torch
+
+        if hasattr(self, "model") and self.model is not None:
+            del self.model
+            self.model = None
+
+        if hasattr(self, "processor") and self.processor is not None:
+            del self.processor
+            self.processor = None
+
+        gc.collect()
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        logger.info("'%s' unloaded", self.modelname)

@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: marigold
+      POSTGRES_USER: marigold
+      POSTGRES_PASSWORD: marigold
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marigold"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    image: vecmdl/worker:${TAG}-gpu
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      DATABASE_URL: postgresql://marigold:marigold@postgres:5432/marigold
+      MODELS_CONFIG_PATH: /app/assets/models-2060.json
+      # MARIGOLD_MODELS: "cf9e4c4987a13f2f2477bc76afc1b46f,68ff972fd10b6f96a82ac701f8397573,888238fa721f9db1ab983d834bee0335,d6c6cad40fc66f04e8a297d549693761,7f763d46d5521774cb9617d04322bc3d,963b39c74a95819155b1ca09986ccc5e,4d90d1bac372bd447048831830f12e80,91e0648fcd238d91d34e2eca73e13460"
+      SQS_VISIBILITY_TIMEOUT: "300"
+      IDLE_TIMEOUT: "600"
+      LIFECYCLE_TOPIC: lifecycle
+      LOG_LEVEL: INFO
+      # huggingface cache -- must match the mount point
+      CACHE_DIR: /models
+      HF_HUB_CACHE: /models
+      HF_HOME: /tmp
+      HF_HUB_OFFLINE: "1"
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      REMOTE_CODE: "0"
+      USE_FAST: "0"
+
+    volumes:
+      - ./cache/models:/models:ro
+      - ./assets/models-2060.json:/app/assets/models-2060.json:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  api:
+    image: vecmdl/worker:${TAG}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://marigold:marigold@postgres:5432/marigold
+      MODELS_CONFIG_PATH: /app/assets/models-2060.json
+      LIFECYCLE_TOPIC: lifecycle
+      RESULTS_TABLE: results
+    volumes:
+      - ./assets/models-2060.json:/app/assets/models-2060.json:ro

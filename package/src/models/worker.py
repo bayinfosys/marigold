@@ -1,29 +1,26 @@
-"""SQS worker loop for model inference tasks.
+"""Worker loop for Marigold model inference tasks.
 
-Reads one message at a time from the configured SQS queue, validates
-the payload, runs inference, writes results to the appropriate backing
-stores, and deletes the message.
+Reads one message at a time from the configured queue backend, validates
+the payload, runs inference, writes the result to the results table, and
+deletes the message.
 
-Execution contexts
-------------------
-Direct API jobs (sqs_msg.workflow_execution_id is None):
-    Status written to results cache under API#{message_id}.
-    Client polls GET /{mode}/{task}/{message_id} for the result.
+The worker has no knowledge of why a job was submitted -- whether it came
+from a direct API call or a workflow step. It writes the result to
+results_cache and publishes a REQUEST_COMPLETE lifecycle event. Downstream
+consumers (state_listener on AWS, listener_logic locally) handle any
+further routing.
 
-Workflow step jobs (sqs_msg.workflow_execution_id is set):
-    Status written to results cache under
-    WORKFLOW#{workflow_execution_id}#STEP#{op}#RUN#{run_id}.
-    Step completion also written to WORKFLOW_STEPS_TABLE to trigger
-    the executor Lambda via DynamoDB Streams.
+QueueWorker
+-----------
+Single model, single queue. Loads the model on construction, polls until
+idle_timeout seconds have elapsed since the last message, calls
+model.unload(), then returns. idle_timeout=-1 polls indefinitely.
 
-Both contexts always write to the results cache, giving a unified
-view of all job activity across the platform.
-
-Idle behaviour
---------------
-When the queue is empty the worker continues polling until idle_timeout
-seconds have elapsed since the last message was processed, then exits.
-Set idle_timeout=0 to exit on the first empty poll response.
+MultiQueueWorker
+----------------
+Multiple models, multiple queues. Polls all queue depths, loads the model
+with the deepest non-empty queue, constructs a QueueWorker, drains it,
+then sweeps again. Exits when all queues are empty on a full sweep.
 """
 
 import json
@@ -32,211 +29,270 @@ import os
 import threading
 import time
 from contextlib import contextmanager
-from datetime import datetime, timezone
 
-import boto3
-from botocore.exceptions import ClientError, NoRegionError
-from dynawrap.backends.dynamodb import DynamoDBBackend
+import torch
+from backend.messaging.base import NotificationBackend, QueueBackend
 from pydantic import ValidationError
-from shared.db_models import ResultsItem, WorkflowStep
-from shared.registry import _SPECS, BaseModelHandler
+from shared.registry import _SPECS
 from shared.sns_models import EventType, LifecycleEvent
-from shared.sqs_models import MarigoldSQSMessage, make_job_id
+from shared.sqs_models import MarigoldSQSMessage
+from tools.polling.results_cache import ResultsCache
 
 logger = logging.getLogger(__name__)
 
-_LONG_POLL_WAIT = 20  # seconds; SQS maximum
 _HEARTBEAT_BUFFER = 5  # seconds before timeout to extend visibility
 
-DYNAMODB_TABLE = os.environ.get("DYNAMODB_RESULTS_TABLE", "")
-IDLE_TIMEOUT = int(os.getenv("IDLE_TIMEOUT", "180"))  # 3 minutes
+IDLE_TIMEOUT = int(os.getenv("IDLE_TIMEOUT", "180"))
 
 
-try:
-    _s3 = boto3.client("s3")
-    _ddb = boto3.client("dynamodb")
-    _dynawrap = DynamoDBBackend(_ddb)
-except NoRegionError:
-    logger.warning("no AWS region configured; S3 and DynamoDB unavailable")
-    _s3 = None
-    _ddb = None
-    _dynawrap = None
+# ---------------------------------------------------------------------------
+# VRAM check post-load
+# ---------------------------------------------------------------------------
+
+
+class ModelVRAMError(Exception):
+    """Raised when a model cannot fit entirely in GPU VRAM."""
+
+    pass
+
+
+def get_vram_state() -> dict:
+    """Capture current VRAM state for all GPU devices.
+
+    Returns zeros if CUDA is unavailable or the query fails.
+    Queries fresh each call so values reflect current state at
+    the point of measurement.
+    """
+    if not torch.cuda.is_available():
+        return {"free_vram_b": 0, "total_vram_b": 0, "usable_vram_b": 0}
+    try:
+        free, total = torch.cuda.mem_get_info(0)
+        usable = int(free * 0.90)
+        return {"free_vram_b": free, "total_vram_b": total, "usable_vram_b": usable}
+    except Exception as e:
+        logger.warning("failed to get VRAM info: %s", e)
+        return {"free_vram_b": 0, "total_vram_b": 0, "usable_vram_b": 0}
+
+
+def check_model_vram(model_name: str, model):
+    """Raise ModelVRAMError if any model parameters were offloaded to CPU.
+    NB: we need the model.model to get the underlying pytorch implementation
+    """
+    cpu_params = [
+        name for name, param in model.model.named_parameters() if param.device.type == "cpu"
+    ]
+
+    if not cpu_params:
+        return
+
+    gpu_bytes = sum(
+        param.numel() * param.element_size()
+        for param in model.model.parameters()
+        if param.device.type != "cpu"
+    )
+    cpu_bytes = sum(
+        param.numel() * param.element_size()
+        for param in model.model.parameters()
+        if param.device.type == "cpu"
+    )
+    total_bytes = gpu_bytes + cpu_bytes
+
+    vram = get_vram_state()
+
+    logger.critical(
+        "'%s' has %d parameter tensors on CPU -- model does not fit in VRAM. "
+        "model_total=%.1fGB gpu_portion=%.1fGB cpu_portion=%.1fGB "
+        "vram_free=%.1fGB vram_total=%.1fGB",
+        model_name,
+        len(cpu_params),
+        total_bytes / 1024**3,
+        gpu_bytes / 1024**3,
+        cpu_bytes / 1024**3,
+        vram["free_vram_b"] / 1024**3,
+        vram["total_vram_b"] / 1024**3,
+    )
+
+    raise ModelVRAMError(model_name)
 
 
 # ---------------------------------------------------------------------------
 # Heartbeat
-# - for long running messages we update the message visibility in the
-# - background to prevent it going back on the queue and starting a new worker
 # ---------------------------------------------------------------------------
 
 
 def _heartbeat(
-    client,
-    queue_url: str,
+    queue_backend: QueueBackend,
+    queue: str,
     receipt_handle: str,
     visibility_timeout: int,
     stop: threading.Event,
-):
-    """Extend SQS visibility timeout periodically until stop is set.
-
-    Fires every (visibility_timeout - buffer) seconds to keep the message
-    invisible while inference is running.
-    """
+) -> None:
+    """Extend queue visibility timeout periodically until stop is set."""
     interval = max(1, visibility_timeout - _HEARTBEAT_BUFFER)
     while not stop.wait(timeout=interval):
         try:
-            client.change_message_visibility(
-                QueueUrl=queue_url,
-                ReceiptHandle=receipt_handle,
-                VisibilityTimeout=visibility_timeout,
-            )
+            queue_backend.extend_visibility(queue, receipt_handle, visibility_timeout)
             logger.debug("visibility timeout extended")
         except Exception as e:
             logger.warning("failed to extend visibility timeout: %s", e)
 
 
 # ---------------------------------------------------------------------------
-# Persistence helpers
+# QueueWorker
 # ---------------------------------------------------------------------------
 
 
-def _write_workflow_step_complete(
-    sqs_msg: MarigoldSQSMessage,
-    output: dict,
-):
-    steps_table = os.getenv("WORKFLOW_STEPS_TABLE")
-    if not steps_table:
-        logger.warning(
-            "[%s/%s] WORKFLOW_STEPS_TABLE not set, skipping step write",
-            sqs_msg.user_id,
-            sqs_msg.message_id,
-        )
-        return
+class QueueWorker:
+    """Backend-agnostic worker loop for a single model and queue.
 
-    workflow_id, execution_id = sqs_msg.workflow_execution_id.split("#", 1)
-    now = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    Loads the model on construction. Polls the queue until idle_timeout
+    seconds have elapsed since the last message, then calls model.unload()
+    and returns. idle_timeout=-1 polls indefinitely (local development).
 
-    step = WorkflowStep(
-        user_id=sqs_msg.user_id,
-        workflow_id=workflow_id,
-        execution_id=execution_id,
-        op=sqs_msg.op,
-        step_id=WorkflowStep.make_step_id(sqs_msg.op),
-        run_id=sqs_msg.run_id,
-        model_type=sqs_msg.model_type,
-        model_name=sqs_msg.model_name,
-        status="complete",
-        submitted_at=now,
-        completed_at=now,
-        output=json.dumps(output),
-    )
+    The worker writes results via results_cache when injected (local path)
+    or via outputs.update_results_table() on AWS. It publishes lifecycle
+    events for all state transitions. It has no knowledge of workflows --
+    workflow step handling is the responsibility of the state machine.
 
-    try:
-        _dynawrap.save(steps_table, step)
-        logger.info(
-            "[%s/%s] workflow step complete written",
-            sqs_msg.user_id,
-            sqs_msg.message_id,
-        )
-    except Exception as e:
-        logger.exception(
-            "[%s/%s] failed to write workflow step complete [%s]",
-            sqs_msg.user_id,
-            sqs_msg.message_id,
-            str(e),
-        )
-
-
-def _write_workflow_step_failed(
-    sqs_msg: MarigoldSQSMessage,
-    error: str,
-):
-    steps_table = os.getenv("WORKFLOW_STEPS_TABLE")
-    if not steps_table:
-        logger.warning(
-            "[%s/%s] WORKFLOW_STEPS_TABLE not set, skipping step failure write",
-            sqs_msg.user_id,
-            sqs_msg.message_id,
-        )
-        return
-
-    workflow_id, execution_id = sqs_msg.workflow_execution_id.split("#", 1)
-    now = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-
-    step = WorkflowStep(
-        user_id=sqs_msg.user_id,
-        workflow_id=workflow_id,
-        execution_id=execution_id,
-        op=sqs_msg.op,
-        step_id=WorkflowStep.make_step_id(sqs_msg.op),
-        run_id=sqs_msg.run_id,
-        model_type=sqs_msg.model_type,
-        model_name=sqs_msg.model_name,
-        status="failed",
-        submitted_at=now,
-        completed_at=now,
-        output=json.dumps({"error": error}),
-    )
-
-    try:
-        _dynawrap.save(steps_table, step)
-    except Exception as e:
-        logger.exception(
-            "[%s/%s] failed to write workflow step failure [%s]",
-            sqs_msg.user_id,
-            sqs_msg.message_id,
-            str(e),
-        )
-
-
-# ---------------------------------------------------------------------------
-# Worker
-# ---------------------------------------------------------------------------
-
-
-class SQSWorker:
-    """SQS long-poll loop for any BaseModelHandler."""
+    Args:
+        queue:                Queue name or identifier.
+        model_name:           HuggingFace model identifier.
+        model_type:           ModelType value, for registry lookup.
+        model_hash:           md5(model_name), for event payloads.
+        queue_backend:        QueueBackend implementation.
+        notification_backend: NotificationBackend implementation.
+        visibility_timeout:   Seconds to hide a dequeued message.
+        topic:                Notification topic name.
+        idle_timeout:         Seconds to keep polling after queue empties.
+                              -1 means poll indefinitely.
+        results_cache:        Optional ResultsCache for direct result writes.
+                              None on AWS -- falls back to
+                              outputs.update_results_table().
+    """
 
     def __init__(
         self,
-        queue_url: str,
-        model: BaseModelHandler,
+        queue: str,
+        model_name: str,
+        model_type: str,
+        model_hash: str,
+        queue_backend: QueueBackend,
+        notification_backend: NotificationBackend,
         visibility_timeout: int,
-        model_hash: str = "",
+        topic: str,
+        idle_timeout: int = None,
+        results_cache: ResultsCache = None,
     ):
-        self.queue_url = queue_url
-        self.model = model
-        self.visibility_timeout = visibility_timeout
-        self.idle_timeout = IDLE_TIMEOUT
+        self.queue = queue
+        self.model_name = model_name
+        self.model_type = model_type
         self.model_hash = model_hash
-        self.model_type = os.environ.get("MODEL_TYPE", "UNSET")
-        self.client = boto3.client("sqs")
-        self._dynamodb = boto3.client("dynamodb")
+        self.queue_backend = queue_backend
+        self.notification_backend = notification_backend
+        self.visibility_timeout = visibility_timeout
+        self.topic = topic
+        self.idle_timeout = idle_timeout if idle_timeout is not None else IDLE_TIMEOUT
+        self.results_cache = results_cache
 
         self._base_payload = {
-            "model_name": self.model.modelname,
-            "model_type": self.model_type,
-            "model_hash": self.model_hash,
+            "model_name": model_name,
+            "model_type": model_type,
+            "model_hash": model_hash,
         }
 
+        self._publish(EventType.MODEL_LOADING)
+
+        if model_type not in _SPECS:
+            self._publish(
+                EventType.MODEL_LOAD_FAILED, payload={"error": "unknown model_type"}
+            )
+            raise ValueError(
+                "unknown model_type '%s'; registered types: %s"
+                % (model_type, sorted(_SPECS))
+            )
+
+        spec = _SPECS[model_type]
         logger.info(
-            "worker starting: version='%s' queue='%s' model='%s' idle_timeout=%is",
+            "loading '%s' (%s) via %s",
+            model_name,
+            model_type,
+            spec.handler_class.__name__,
+        )
+
+        try:
+            self.model = spec.handler_class(model_name)
+        except Exception as e:
+            self._publish(EventType.MODEL_LOAD_FAILED, payload={"error": str(e)})
+            raise
+
+        self._publish(EventType.MODEL_LOADED, payload=get_vram_state())
+
+        logger.info(
+            "worker ready: version='%s' queue='%s' model='%s' idle_timeout=%is",
             os.getenv("BUILD_VERSION", "unknown"),
-            self.queue_url,
-            self.model.modelname,
+            self.queue,
+            self.model_name,
             self.idle_timeout,
         )
 
-    def _event(
+        # validate the load is all in memory
+        if torch.cuda.is_available():
+            check_model_vram(model_name, self.model)
+
+    # ---------------------------------------------------------------------------
+    # Notifications
+    # ---------------------------------------------------------------------------
+
+    def _publish(
         self, event_type: str, message_id: str = None, payload: dict = None
-    ) -> LifecycleEvent:
-        return LifecycleEvent(
+    ) -> None:
+        """Publish a LifecycleEvent via the notification backend. Never raises."""
+        event = LifecycleEvent(
             event_type=event_type,
-            model_name=self.model.modelname,
+            model_name=self.model_name,
             model_hash=self.model_hash,
             message_id=message_id,
             payload={**self._base_payload, **(payload or {})},
         )
+        try:
+            self.notification_backend.publish(self.topic, event.model_dump())
+        except Exception as e:
+            logger.warning("failed to publish %s: %s", event_type, e)
+
+    # ---------------------------------------------------------------------------
+    # Result persistence
+    # ---------------------------------------------------------------------------
+
+    def _write_result(self, user_id: str, message_id: str, response: dict) -> None:
+        """Write the inference result to the appropriate results backend.
+
+        Local path (results_cache injected):
+            Calls results_cache.write_result() which updates the existing
+            queued row to status=complete with the result payload.
+
+        AWS path (results_cache is None):
+            Delegates to outputs.update_results_table() which writes to
+            DynamoDB using the module-level client.
+        """
+        if self.results_cache is not None:
+            self.results_cache.write_result(user_id, message_id, response)
+        else:
+            from shared.outputs import update_results_table
+
+            update_results_table(user_id, message_id, response)
+
+    def _write_error(self, user_id: str, message_id: str, error: str) -> None:
+        """Write an error status to the results backend."""
+        if self.results_cache is not None:
+            self.results_cache.write_error(user_id, message_id, error)
+        else:
+            from shared.outputs import update_results_table
+
+            update_results_table(user_id, message_id, {"error": error}, status="error")
+
+    # ---------------------------------------------------------------------------
+    # Heartbeat
+    # ---------------------------------------------------------------------------
 
     @contextmanager
     def _heartbeat_context(self, receipt_handle: str):
@@ -244,8 +300,8 @@ class SQSWorker:
         thread = threading.Thread(
             target=_heartbeat,
             args=(
-                self.client,
-                self.queue_url,
+                self.queue_backend,
+                self.queue,
                 receipt_handle,
                 self.visibility_timeout,
                 stop,
@@ -259,80 +315,78 @@ class SQSWorker:
             stop.set()
             thread.join(timeout=2)
 
-    def get_message(self) -> tuple[MarigoldSQSMessage | None, str | None]:
-        """Read a message off the queue and parse it."""
-        response = self.client.receive_message(
-            QueueUrl=self.queue_url,
-            MaxNumberOfMessages=1,
-            WaitTimeSeconds=_LONG_POLL_WAIT,
-            VisibilityTimeout=self.visibility_timeout,
-        )
-        messages = response.get("Messages", [])
+    # ---------------------------------------------------------------------------
+    # Message handling
+    # ---------------------------------------------------------------------------
 
-        if not messages:
+    def _get_message(self) -> tuple[MarigoldSQSMessage | None, str | None]:
+        """Dequeue one message and parse it as a MarigoldSQSMessage.
+
+        Malformed messages are deleted immediately and (None, None) returned.
+        """
+        payload, receipt_handle = self.queue_backend.receive(
+            self.queue, self.visibility_timeout
+        )
+
+        if payload is None:
             return None, None
 
-        if len(messages) > 1:
-            logger.critical("[%s] multiple messages found in queue", self.queue_url)
-
-        msg = messages[0]
-
         try:
-            body = json.loads(msg["Body"])
-            sqs_msg = MarigoldSQSMessage.model_validate(body)
-        except (json.JSONDecodeError, ValidationError) as e:
-            logger.error("malformed SQS message, discarding [%s]", str(e))
-            self.client.delete_message(
-                QueueUrl=self.queue_url,
-                ReceiptHandle=msg["ReceiptHandle"],
-            )
+            sqs_msg = MarigoldSQSMessage.model_validate(payload)
+        except ValidationError as e:
+            logger.error("malformed message, discarding: %s", e)
+            self.queue_backend.delete(self.queue, receipt_handle)
             return None, None
 
         logger.info("[%s/%s] dequeued", sqs_msg.user_id, sqs_msg.message_id)
-        self._event(
+        self._publish(
             EventType.REQUEST_DEQUEUED,
-            sqs_msg.message_id,
+            message_id=sqs_msg.message_id,
             payload={"user_id": sqs_msg.user_id},
-        ).post()
+        )
+        return sqs_msg, receipt_handle
 
-        return sqs_msg, msg["ReceiptHandle"]
+    def _process_message(self, sqs_msg: MarigoldSQSMessage) -> None:
+        """Run inference for one message and write results.
 
-    def process_message(self, sqs_msg: MarigoldSQSMessage):
-        self._event(
+        Routing errors, validation failures, and inference exceptions are
+        all caught and reported as REQUEST_ERROR events. The message is
+        always deleted by the caller after this method returns.
+        """
+        self._publish(
             EventType.REQUEST_PROCESSING,
-            sqs_msg.message_id,
+            message_id=sqs_msg.message_id,
             payload={"user_id": sqs_msg.user_id},
-        ).post()
+        )
 
         if sqs_msg.model_type != self.model_type:
             logger.critical(
-                "[%s/%s] model routing error [%s!=%s]",
+                "[%s/%s] routing error: expected model_type '%s', got '%s'",
                 sqs_msg.user_id,
                 sqs_msg.message_id,
-                sqs_msg.model_type,
                 self.model_type,
+                sqs_msg.model_type,
             )
-            self._event(
+            self._publish(
                 EventType.REQUEST_ERROR,
-                sqs_msg.message_id,
+                message_id=sqs_msg.message_id,
                 payload={
                     "user_id": sqs_msg.user_id,
                     "error": "model_type_mismatch",
-                    "model_type": sqs_msg.model_type,
-                    "expected_model_type": self.model_type,
+                    "expected": self.model_type,
+                    "got": sqs_msg.model_type,
                 },
-            ).post()
+            )
             return
 
         try:
             spec = _SPECS[sqs_msg.model_type]
-
             request = spec.request_model.model_validate(
                 {**sqs_msg.model_inputs, "model": sqs_msg.model_name}
             )
 
             logger.info(
-                "[%s/%s] submitted %s",
+                "[%s/%s] processing %s",
                 sqs_msg.user_id,
                 sqs_msg.message_id,
                 json.dumps(request.model_dump()),
@@ -340,104 +394,172 @@ class SQSWorker:
 
             result = self.model.process(sqs_msg.user_id, sqs_msg.message_id, request)
 
-            if sqs_msg.workflow_execution_id is not None:
-                _write_workflow_step_complete(
-                    sqs_msg=sqs_msg,
-                    output=result.model_dump(),
-                )
+            self._write_result(sqs_msg.user_id, sqs_msg.message_id, result.model_dump())
 
-            self._event(
+            self._publish(
                 EventType.REQUEST_COMPLETE,
-                sqs_msg.message_id,
-                payload={"user_id": sqs_msg.user_id, "result": result.model_dump()},
-            ).post()
-            logger.info("[%s/%s] complete", sqs_msg.user_id, sqs_msg.message_id)
-
-        except KeyError as e:
-            logger.exception(
-                "[%s/%s] unknown model %s [%s]",
-                sqs_msg.user_id,
-                sqs_msg.message_id,
-                sqs_msg.model_name,
-                sqs_msg.model_type,
+                message_id=sqs_msg.message_id,
+                payload={"user_id": sqs_msg.user_id},
             )
-            if sqs_msg.workflow_execution_id is not None:
-                _write_workflow_step_failed(sqs_msg=sqs_msg, error=str(e))
-            self._event(
-                EventType.REQUEST_ERROR,
-                sqs_msg.message_id,
-                payload={"user_id": sqs_msg.user_id, "error": str(e)},
-            ).post()
+            logger.info("[%s/%s] complete", sqs_msg.user_id, sqs_msg.message_id)
 
         except ValidationError as e:
             logger.exception(
-                "[%s/%s] malformed message for %s",
-                sqs_msg.user_id,
-                sqs_msg.message_id,
-                sqs_msg.model_type,
+                "[%s/%s] malformed request: %s", sqs_msg.user_id, sqs_msg.message_id, e
             )
-            if sqs_msg.workflow_execution_id is not None:
-                _write_workflow_step_failed(sqs_msg=sqs_msg, error=str(e))
-            self._event(
+            self._write_error(sqs_msg.user_id, sqs_msg.message_id, str(e))
+            self._publish(
                 EventType.REQUEST_ERROR,
-                sqs_msg.message_id,
+                message_id=sqs_msg.message_id,
                 payload={"user_id": sqs_msg.user_id, "error": str(e)},
-            ).post()
+            )
 
         except Exception as e:
             logger.exception(
-                "[%s/%s] processing failed [%s]",
-                sqs_msg.user_id,
-                sqs_msg.message_id,
-                str(e),
+                "[%s/%s] inference failed: %s", sqs_msg.user_id, sqs_msg.message_id, e
             )
-            if sqs_msg.workflow_execution_id is not None:
-                _write_workflow_step_failed(sqs_msg=sqs_msg, error=str(e))
-            self._event(
+            self._write_error(sqs_msg.user_id, sqs_msg.message_id, str(e))
+            self._publish(
                 EventType.REQUEST_ERROR,
-                sqs_msg.message_id,
+                message_id=sqs_msg.message_id,
                 payload={"user_id": sqs_msg.user_id, "error": str(e)},
-            ).post()
+            )
 
-    def run(self):
-        logger.info(
-            "worker starting: queue='%s' model='%s' idle_timeout=%is",
-            self.queue_url,
-            self.model.modelname,
-            self.idle_timeout,
-        )
+    # ---------------------------------------------------------------------------
+    # Run loop
+    # ---------------------------------------------------------------------------
 
-        self._event(EventType.WORKER_STARTED).post()
+    def run(self) -> None:
+        """Poll the queue and process messages until idle_timeout elapses.
 
+        idle_timeout=-1 polls indefinitely.
+        Calls model.unload() before returning regardless of exit reason.
+        """
+        self._publish(EventType.WORKER_STARTED)
         last_message_at = time.monotonic()
 
+        try:
+            while True:
+                sqs_msg, receipt_handle = self._get_message()
+
+                if sqs_msg is None:
+                    idle_s = time.monotonic() - last_message_at
+                    if self.idle_timeout >= 0 and (
+                        self.idle_timeout == 0 or idle_s >= self.idle_timeout
+                    ):
+                        logger.info("idle for %.0fs, exiting", idle_s)
+                        self._publish(EventType.WORKER_EXITING)
+                        break
+                    self._publish(EventType.WORKER_IDLE)
+                    continue
+
+                try:
+                    with self._heartbeat_context(receipt_handle):
+                        self._process_message(sqs_msg)
+                except Exception as e:
+                    logger.exception("unhandled error processing message: %s", e)
+                finally:
+                    self.queue_backend.delete(self.queue, receipt_handle)
+
+                last_message_at = time.monotonic()
+
+        finally:
+            self.model.unload()
+
+
+# ---------------------------------------------------------------------------
+# MultiQueueWorker
+# ---------------------------------------------------------------------------
+
+
+class MultiQueueWorker:
+    """Multi-queue worker for single-GPU local development.
+
+    Polls all queue depths in a sweep, loads the model for the deepest
+    non-empty queue, constructs a QueueWorker to drain it, then sweeps
+    again. QueueWorker.run() calls model.unload() before returning.
+
+    Sleeps between sweeps when all queues are empty, then checks again.
+
+    Args:
+        entries:              List of model config dicts, each containing:
+                                model_hash, queue_name, model_name, model_type
+        queue_backend:        Shared QueueBackend instance.
+        notification_backend: Shared NotificationBackend instance.
+        visibility_timeout:   Passed to each QueueWorker.
+        topic:                Notification topic name.
+        idle_timeout:         Passed to each QueueWorker. Default 0 so the
+                              worker exits immediately on empty queue and the
+                              next model can be loaded promptly.
+        results_cache:        Optional ResultsCache for direct result writes.
+    """
+
+    def __init__(
+        self,
+        entries: list[dict],
+        queue_backend: QueueBackend,
+        notification_backend: NotificationBackend,
+        visibility_timeout: int,
+        topic: str,
+        idle_timeout: int = 0,
+        results_cache: ResultsCache = None,
+    ):
+        self.entries = entries
+        self.queue_backend = queue_backend
+        self.notification_backend = notification_backend
+        self.visibility_timeout = visibility_timeout
+        self.topic = topic
+        self.idle_timeout = idle_timeout
+        self.results_cache = results_cache
+
+    def _pick_entry(self) -> dict | None:
+        """Return the entry with the highest queue depth, or None if all empty."""
+        depths = [
+            (entry, self.queue_backend.depth(entry["queue_name"]))
+            for entry in self.entries
+        ]
+        best_entry, best_depth = max(depths, key=lambda t: t[1])
+        return best_entry if best_depth > 0 else None
+
+    def run(self) -> None:
+        """Sweep queues, load, drain, unload, repeat indefinitely."""
+        logger.info("MultiQueueWorker starting: %d queues", len(self.entries))
+
         while True:
-            sqs_msg, receipt_handle = self.get_message()
+            entry = self._pick_entry()
 
-            if sqs_msg is None:
-                idle_s = time.monotonic() - last_message_at
-
-                if self.idle_timeout == 0 or idle_s >= self.idle_timeout:
-                    self._event(EventType.WORKER_EXITING).post()
-                    logger.info("idle for %.0fs, exiting", idle_s)
-                    break
-
-                self._event(EventType.WORKER_IDLE).post()
+            if entry is None:
+                logger.info("all queues empty, sleeping")
+                time.sleep(10)
                 continue
 
+            logger.info(
+                "selected model '%s' (%s) from queue '%s'",
+                entry["name"],
+                entry["type"],
+                entry["queue_name"],
+            )
+
             try:
-                with self._heartbeat_context(receipt_handle):
-                    self.process_message(sqs_msg)
+                worker = QueueWorker(
+                    queue=entry["queue_name"],
+                    model_name=entry["name"],
+                    model_type=entry["type"],
+                    model_hash=entry["model_hash"],
+                    queue_backend=self.queue_backend,
+                    notification_backend=self.notification_backend,
+                    visibility_timeout=self.visibility_timeout,
+                    topic=self.topic,
+                    idle_timeout=self.idle_timeout,
+                    results_cache=self.results_cache,
+                )
             except Exception as e:
                 logger.exception(
-                    "[%s] message failed [%s]",
-                    self.model.modelname,
-                    str(e),
+                    "failed to load model '%s': %s -- skipping", entry["name"], e
                 )
-            finally:
-                self.client.delete_message(
-                    QueueUrl=self.queue_url,
-                    ReceiptHandle=receipt_handle,
-                )
+                self.entries = [
+                    en for en in self.entries if en["model_hash"] != entry["model_hash"]
+                ]
+                continue
 
-            last_message_at = time.monotonic()
+            worker.run()

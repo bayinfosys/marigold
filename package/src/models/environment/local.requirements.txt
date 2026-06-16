@@ -1,0 +1,5 @@
+# local execution support libraries
+psycopg2-binary
+uvicorn
+fastapi
+fastapi-aws
