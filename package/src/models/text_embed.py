@@ -18,7 +18,7 @@ from models.standard_loader import ModelLoaderResult
 from sentence_transformers.quantization import quantize_embeddings
 from shared.enums import ModelMode, ModelType
 from shared.registry import BaseModelHandler, model_spec
-from shared.usage import record_usage
+from shared.usage import build_usage
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -101,7 +101,7 @@ class TextEmbeddingModel(BaseModelHandler):
             inference_time,
         )
 
-        usage = record_usage(
+        usage = build_usage(
             user_id=user_id,
             model_type=ModelType.TEXT_EMBEDDING,
             modelname=self.modelname,

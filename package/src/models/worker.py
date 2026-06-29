@@ -37,82 +37,16 @@ from shared.registry import _SPECS
 from shared.sns_models import EventType, LifecycleEvent
 from shared.sqs_models import MarigoldSQSMessage
 from tools.polling.results_cache import ResultsCache
+from tools.power_sampler import (ModelVRAMError, PowerSampler,
+                                 check_model_vram, get_vram_state)
+from shared.usage_models import UsageItem
+from shared.usage import write_usage
 
 logger = logging.getLogger(__name__)
 
 _HEARTBEAT_BUFFER = 5  # seconds before timeout to extend visibility
 
 IDLE_TIMEOUT = int(os.getenv("IDLE_TIMEOUT", "180"))
-
-
-# ---------------------------------------------------------------------------
-# VRAM check post-load
-# ---------------------------------------------------------------------------
-
-
-class ModelVRAMError(Exception):
-    """Raised when a model cannot fit entirely in GPU VRAM."""
-
-    pass
-
-
-def get_vram_state() -> dict:
-    """Capture current VRAM state for all GPU devices.
-
-    Returns zeros if CUDA is unavailable or the query fails.
-    Queries fresh each call so values reflect current state at
-    the point of measurement.
-    """
-    if not torch.cuda.is_available():
-        return {"free_vram_b": 0, "total_vram_b": 0, "usable_vram_b": 0}
-    try:
-        free, total = torch.cuda.mem_get_info(0)
-        usable = int(free * 0.90)
-        return {"free_vram_b": free, "total_vram_b": total, "usable_vram_b": usable}
-    except Exception as e:
-        logger.warning("failed to get VRAM info: %s", e)
-        return {"free_vram_b": 0, "total_vram_b": 0, "usable_vram_b": 0}
-
-
-def check_model_vram(model_name: str, model):
-    """Raise ModelVRAMError if any model parameters were offloaded to CPU.
-    NB: we need the model.model to get the underlying pytorch implementation
-    """
-    cpu_params = [
-        name for name, param in model.model.named_parameters() if param.device.type == "cpu"
-    ]
-
-    if not cpu_params:
-        return
-
-    gpu_bytes = sum(
-        param.numel() * param.element_size()
-        for param in model.model.parameters()
-        if param.device.type != "cpu"
-    )
-    cpu_bytes = sum(
-        param.numel() * param.element_size()
-        for param in model.model.parameters()
-        if param.device.type == "cpu"
-    )
-    total_bytes = gpu_bytes + cpu_bytes
-
-    vram = get_vram_state()
-
-    logger.critical(
-        "'%s' has %d parameter tensors on CPU -- model does not fit in VRAM. "
-        "model_total=%.1fGB gpu_portion=%.1fGB cpu_portion=%.1fGB "
-        "vram_free=%.1fGB vram_total=%.1fGB",
-        model_name,
-        len(cpu_params),
-        total_bytes / 1024**3,
-        gpu_bytes / 1024**3,
-        cpu_bytes / 1024**3,
-        vram["free_vram_b"] / 1024**3,
-        vram["total_vram_b"] / 1024**3,
-    )
-
-    raise ModelVRAMError(model_name)
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +127,7 @@ class QueueWorker:
         self.topic = topic
         self.idle_timeout = idle_timeout if idle_timeout is not None else IDLE_TIMEOUT
         self.results_cache = results_cache
+        self._power_sampler = PowerSampler()
 
         self._base_payload = {
             "model_name": model_name,
@@ -235,8 +170,9 @@ class QueueWorker:
             self.idle_timeout,
         )
 
-        # validate the load is all in memory
+        # validate the load is all in memory and throw if not
         if torch.cuda.is_available():
+            # this will throw a modelvramerror
             check_model_vram(model_name, self.model)
 
     # ---------------------------------------------------------------------------
@@ -392,15 +328,27 @@ class QueueWorker:
                 json.dumps(request.model_dump()),
             )
 
-            result = self.model.process(sqs_msg.user_id, sqs_msg.message_id, request)
+            # track power usage.
+            with self._power_sampler.sample() as sampler:
+                result = self.model.process(sqs_msg.user_id, sqs_msg.message_id, request)
 
+            usage_update = sampler.as_usage_fields()
+            # FIXME: we need to capture this is power sampler
+            #usage_update["cpu_offload_bytes"] = self._cpu_offload_bytes
+            result = result.model_copy(update={"usage": result.usage.model_copy(update=usage_update)})
+
+            item = UsageItem.from_model_stats(
+                stats=result.usage,
+                user_id=sqs_msg.user_id,
+                model_type=self.model_type,
+                model_name=self.model_name,
+            )
+            write_usage(item)
+
+            # update the results db
             self._write_result(sqs_msg.user_id, sqs_msg.message_id, result.model_dump())
 
-            self._publish(
-                EventType.REQUEST_COMPLETE,
-                message_id=sqs_msg.message_id,
-                payload={"user_id": sqs_msg.user_id},
-            )
+            self._publish(EventType.REQUEST_COMPLETE, message_id=sqs_msg.message_id, payload={"user_id": sqs_msg.user_id})
             logger.info("[%s/%s] complete", sqs_msg.user_id, sqs_msg.message_id)
 
         except ValidationError as e:
@@ -465,11 +413,26 @@ class QueueWorker:
 
         finally:
             self.model.unload()
+            self._power_sampler.shutdown()
 
 
 # ---------------------------------------------------------------------------
 # MultiQueueWorker
 # ---------------------------------------------------------------------------
+
+
+def set_model_config_env(config_entry):
+    _ENV_KEYS = ("LOAD_IN_4BIT", "USE_FAST", "TRUST_REMOTE_CODE", "LOW_CPU_MEM_USAGE")
+
+    # remove any existing values
+    for key in _ENV_KEYS:
+        os.environ.pop(key, None)
+
+    custom_env = config_entry.get("extra_env", {})
+
+    # insert our custom values
+    for key, value in custom_env.items():
+        os.environ[key] = value
 
 
 class MultiQueueWorker:
@@ -540,6 +503,9 @@ class MultiQueueWorker:
                 entry["queue_name"],
             )
 
+            # insert the custom envvars into the runtime
+            set_model_config_env(entry)
+
             try:
                 worker = QueueWorker(
                     queue=entry["queue_name"],
@@ -553,6 +519,18 @@ class MultiQueueWorker:
                     idle_timeout=self.idle_timeout,
                     results_cache=self.results_cache,
                 )
+            except ModelVRAMError as e:
+                logger.exception(
+                    "model '%s' failed VRAM check: %s -- failing queued requests",
+                    entry["name"],
+                    e,
+                )
+                # remove this model from this worker
+                self.entries = [
+                    en for en in self.entries if en["model_hash"] != entry["model_hash"]
+                ]
+                # FIXME: do we continue here, or just exit?
+                continue
             except Exception as e:
                 logger.exception(
                     "failed to load model '%s': %s -- skipping", entry["name"], e

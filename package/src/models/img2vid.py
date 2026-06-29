@@ -44,7 +44,7 @@ from models.standard_loader import ModelLoaderResult
 from shared.enums import ModelMode, ModelType, OutputMimeType
 from shared.outputs import decode_image, frames_to_mp4_bytes
 from shared.registry import BaseModelHandler, OutputField, model_spec
-from shared.usage import record_usage
+from shared.usage import build_usage
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -256,7 +256,7 @@ class Img2VidModel(BaseModelHandler):
 
         output_reference = self.write_output("video", video_bytes, message_id)
 
-        usage = record_usage(
+        usage = build_usage(
             user_id          = user_id,
             model_type       = ModelType.IMG2VID,
             modelname        = self.modelname,

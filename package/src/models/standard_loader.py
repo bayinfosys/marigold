@@ -100,6 +100,7 @@ def standard_loader(
     local_files_only: bool = True,
     low_cpu_mem_usage: bool = True,
     load_in_4bit: bool = False,
+    **model_kwargs
 ) -> ModelLoaderResult:
     """Load a tokenizer/processor and a model using the from_pretrained pattern.
 
@@ -108,6 +109,10 @@ def standard_loader(
 
     load_in_4bit is applied only to the model, not to the tokenizer.
     use_fast and remote_code apply to both.
+
+    Any additional keyword arguments (model_kwargs) are passed straight
+    through to ModelClass.from_pretrained(), e.g. attn_implementation.
+    They have no effect on the tokenizer load.
     """
     T0 = clock()
 
@@ -129,6 +134,9 @@ def standard_loader(
     logger.info("loaded '%s' tokenizer in %0.2fs", modelname, clock() - T0)
     T0 = clock()
 
+    # double check the envvar here, so we don't rely on the caller.
+    load_in_4bit = load_in_4bit or os.getenv("LOAD_IN_4BIT", "").lower() in ("1", "true")
+
     quantization_config = BitsAndBytesConfig(load_in_4bit=True, llm_int8_enable_fp32_cpu_offload=True) if load_in_4bit else None
 
     try:
@@ -141,6 +149,7 @@ def standard_loader(
             quantization_config=quantization_config,
             device_map="auto",
             max_memory=get_max_memory(),
+            **model_kwargs,
         )
     except OSError as e:
         logger.error("'%s' not in local cache [%s]", modelname, str(e))

@@ -3,16 +3,16 @@
 Imports all sub-routers and includes them into a single AWSAPIRouter.
 main.py includes this router on the FastAPI app.
 """
-
 from fastapi_aws import AWSAPIRouter
 
+from .catalogue import router as catalogue_router
 from .embed import router as embed_router
 from .eval import router as eval_router
 from .gen import router as gen_router
+from .openai import router as openai_router
 from .output import router as output_router
-from .users import router as users_router
 from .usage import router as usage_router
-from .catalogue import router as catalogue_router
+from .users import router as users_router
 
 try:
     from ..workflow.routes import router as workflow_router
@@ -29,6 +29,7 @@ router.include_router(output_router, tags=["polling"])
 router.include_router(users_router, tags=["users"])
 router.include_router(usage_router, tags=["usage"])
 router.include_router(catalogue_router, tags=["api"])
+router.include_router(openai_router, tags=["openai"])
 
 if _has_workflow:
     router.include_router(workflow_router, prefix="/workflows", tags=["workflow"])

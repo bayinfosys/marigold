@@ -31,7 +31,7 @@ from models.standard_loader import ModelLoaderResult, standard_loader
 from pydub import AudioSegment
 from shared.enums import ModelMode, ModelType, OutputMimeType
 from shared.registry import BaseModelHandler, OutputField, model_spec
-from shared.usage import record_usage
+from shared.usage import build_usage
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -151,7 +151,7 @@ class TTSModel(BaseModelHandler):
 
         output_reference = self.write_output("audio", mp3, message_id)
 
-        usage = record_usage(
+        usage = build_usage(
             user_id=user_id,
             model_type=ModelType.TTS,
             modelname=self.modelname,

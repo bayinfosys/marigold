@@ -24,7 +24,6 @@ import logging
 import os
 import sys
 
-from models.worker import QueueWorker
 from shared.registry import _SPECS, BaseModelHandler  # noqa: F401
 
 logger = logging.getLogger(__name__)

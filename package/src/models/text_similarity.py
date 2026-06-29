@@ -22,7 +22,7 @@ from api.models import EvalResponse, TextSimilarityRequest
 from models.text_embed import load_text_embedding
 from shared.enums import ModelMode, ModelType
 from shared.registry import BaseModelHandler, model_spec
-from shared.usage import record_usage
+from shared.usage import build_usage
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -76,7 +76,7 @@ class TextSimilarityModel(BaseModelHandler):
             iduration,
         )
 
-        usage = record_usage(
+        usage = build_usage(
             user_id=user_id,
             model_type=ModelType.TEXT_SIMILARITY,
             modelname=self.modelname,

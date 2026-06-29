@@ -19,7 +19,7 @@ from models.standard_loader import ModelLoaderResult, standard_loader
 from shared.enums import ModelMode, ModelType
 from shared.models import InstructRole
 from shared.registry import BaseModelHandler, model_spec
-from shared.usage import record_usage
+from shared.usage import build_usage
 from transformers import set_seed
 
 logger = logging.getLogger(__name__)
@@ -147,7 +147,7 @@ class InstructModel(BaseModelHandler):
             duration,
         )
 
-        usage = record_usage(
+        usage = build_usage(
             user_id=user_id,
             model_type=ModelType.INSTRUCT,
             modelname=self.modelname,

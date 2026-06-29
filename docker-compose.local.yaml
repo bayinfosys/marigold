@@ -2,31 +2,31 @@ services:
   postgres:
     image: postgres:17
     environment:
-      POSTGRES_DB: marigold
-      POSTGRES_USER: marigold
-      POSTGRES_PASSWORD: marigold
+      POSTGRES_DB: ${POSTGRES_DB:-marigold}
+      POSTGRES_USER: ${POSTGRES_USER:-marigold}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-marigold}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U marigold"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-marigold}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   worker:
-    image: vecmdl/worker:${TAG}-gpu
+    image: marigold/worker:${TAG:-latest}-gpu
     depends_on:
       postgres:
         condition: service_healthy
 
     environment:
-      DATABASE_URL: postgresql://marigold:marigold@postgres:5432/marigold
-      MODELS_CONFIG_PATH: /app/assets/models-2060.json
-      # MARIGOLD_MODELS: "cf9e4c4987a13f2f2477bc76afc1b46f,68ff972fd10b6f96a82ac701f8397573,888238fa721f9db1ab983d834bee0335,d6c6cad40fc66f04e8a297d549693761,7f763d46d5521774cb9617d04322bc3d,963b39c74a95819155b1ca09986ccc5e,4d90d1bac372bd447048831830f12e80,91e0648fcd238d91d34e2eca73e13460"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-marigold}:${POSTGRES_PASSWORD:-marigold}@postgres:5432/${POSTGRES_DB:-marigold}
+      MODELS_CONFIG_PATH: /app/assets/models.json
+      MARIGOLD_MODELS: ${MARIGOLD_MODELS:-0dca151a8ff01ced4a093e781d7ee2b9,1965063244b50f03fca03e4a890378e4,229cce904f3d47f9fd5d7c2dfed8c15e,2518e360d067c7fedad30ed6b5eba9bc,2b51cd9f107c5e86f6ed8c8341e23bde,331a6f1441470596e0dff8c731170635,3d0cd2673ea0b77a17ae078737ac1672,715ada45fdd765ec29de889d038b7b42,7aa1b348c11a40bf247bbdce521667cc,8364ed87255bb1b99eaac51a2bdfd01f,9be5bdd2069b33a205b02d7d2cffb8ee,a055bacbbabd6b87aa44f62aca00cc37,a9ecf0917dd86a5fbf78054eba916660,c8a8f750457bfb88010710f7c1384e6a,f432174c2b6f0add737999419b310fdd,ff73996519cd3749362ec82c8224bfb8}
       SQS_VISIBILITY_TIMEOUT: "300"
-      IDLE_TIMEOUT: "600"
+      IDLE_TIMEOUT: "${IDLE_TIMEOUT:-600}"
       LIFECYCLE_TOPIC: lifecycle
-      LOG_LEVEL: INFO
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # huggingface cache -- must match the mount point
       CACHE_DIR: /models
       HF_HUB_CACHE: /models
@@ -36,10 +36,12 @@ services:
       HF_HUB_DISABLE_TELEMETRY: "1"
       REMOTE_CODE: "0"
       USE_FAST: "0"
+      MARIGOLD_TMP_OFFLOAD: "/tmp/models"
 
     volumes:
-      - ./cache/models:/models:ro
-      - ./assets/models-2060.json:/app/assets/models-2060.json:ro
+      - ${MARIGOLD_CACHE_DIR:-./cache/models}:/models:ro
+      - ${MARIGOLD_MODELS_CONFIG:-./assets/models-3060.json}:/app/assets/models.json:ro
+      - ${MARIGOLD_MODEL_TMP_DIR:-./cache/tmp}:/tmp/models
     deploy:
       resources:
         reservations:
@@ -49,17 +51,35 @@ services:
               capabilities: [gpu]
 
   api:
-    image: vecmdl/worker:${TAG}
+    image: marigold/worker:${TAG:-latest}
     depends_on:
       postgres:
         condition: service_healthy
     command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     environment:
-      DATABASE_URL: postgresql://marigold:marigold@postgres:5432/marigold
-      MODELS_CONFIG_PATH: /app/assets/models-2060.json
+      DATABASE_URL: postgresql://${POSTGRES_USER:-marigold}:${POSTGRES_PASSWORD:-marigold}@postgres:5432/${POSTGRES_DB:-marigold}
+      MODELS_CONFIG_PATH: /app/assets/models.json
       LIFECYCLE_TOPIC: lifecycle
       RESULTS_TABLE: results
     volumes:
-      - ./assets/models-2060.json:/app/assets/models-2060.json:ro
+      - ${MARIGOLD_MODELS_CONFIG:-./assets/models-3060.json}:/app/assets/models.json:ro
+
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    ports:
+      - "${WEBUI_PORT:-3000}:8080"
+    environment:
+      - OPENAI_API_KEY=${WEBUI_DUMMY_KEY:-marigold}
+      - OPENAI_API_BASE_URL=http://api:8000/v1
+      - WEBUI_AUTH=false
+      - AIOHTTP_CLIENT_TIMEOUT=300
+    volumes:
+      - open-webui:/app/backend/data
+    depends_on:
+      - api
+
+volumes:
+  open-webui:

@@ -153,10 +153,7 @@ class TFVarsEntry(BaseModel):
         lines.append("  },")
         return "\n".join(lines)
 
-
 class InternalCatalogueEntry(BaseModel):
-    """Internal catalogue entry. Consumed by cache builder and tooling."""
-
     name: str
     type: str
     provider: str
@@ -166,6 +163,22 @@ class InternalCatalogueEntry(BaseModel):
     auth_required: bool
     gpu_tier: str
     parameters: Dict[str, Any]
+    extra_env: Dict[str, str] = Field(default_factory=dict)
+
+
+def to_internal_entry(model: ModelDefinition) -> InternalCatalogueEntry:
+    return InternalCatalogueEntry(
+        name=model.name,
+        type=model.type.value,
+        provider=model.provider.value,
+        input=model.input,
+        output=model.output,
+        timeout=model.timeout,
+        auth_required=model.auth_required,
+        gpu_tier=model.gpu_tier,
+        parameters=model.parameters.model_dump(exclude_none=True),
+        extra_env=model.extra_env,
+    )
 
 
 class HuggingFaceProviderParameters(BaseModel):
@@ -243,20 +256,6 @@ def to_tfvars_entry(model: ModelDefinition) -> TFVarsEntry:
         auth_required=model.auth_required,
         provider=model.provider.value,
         environment_variables=_make_env_vars(model),
-    )
-
-
-def to_internal_entry(model: ModelDefinition) -> InternalCatalogueEntry:
-    return InternalCatalogueEntry(
-        name=model.name,
-        type=model.type.value,
-        provider=model.provider.value,
-        input=model.input,
-        output=model.output,
-        timeout=model.timeout,
-        auth_required=model.auth_required,
-        gpu_tier=model.gpu_tier,
-        parameters=model.parameters.model_dump(exclude_none=True),
     )
 
 

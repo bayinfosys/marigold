@@ -33,10 +33,14 @@ class ModelUsageStats(BaseModel):
     inference:    int = Field(..., description="model inference duration in milliseconds")
     input_tokens: int = Field(0,   description="number of input tokens")
     output_tokens: int = Field(0,   description="number of output tokens")
-    memory_usage: int = Field(..., description="peak process memory in KB")
+    memory_usage: int = Field(0, description="peak process memory in KB")
     load_time_ms:     int = Field(0,   description="model load time in ms")
     model_size_bytes: int = Field(0,   description="model size in bytes")
     vram_usage_bytes: int = Field(0,   description="VRAM allocated during inference bytes")
+    vram_usage_bytes_peak: int = Field(0, description="peak VRAM allocated during inference, bytes")
+    power_watts_peak: float = Field(0.0, description="peak GPU power draw during inference, watts")
+    power_watts_mean: float = Field(0.0, description="mean GPU power draw during inference, watts")
+    cpu_offload_bytes: int = Field(0, description="model bytes offloaded off-GPU at load time")
 
 
 class ModelResponse(BaseModel):

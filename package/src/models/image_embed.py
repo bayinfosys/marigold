@@ -19,7 +19,7 @@ from models.standard_loader import ModelLoaderResult, standard_loader
 from shared.enums import ModelMode, ModelType
 from shared.outputs import decode_image
 from shared.registry import BaseModelHandler, model_spec
-from shared.usage import record_usage
+from shared.usage import build_usage
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -133,7 +133,7 @@ class ImageEmbeddingModel(BaseModelHandler):
             iduration,
         )
 
-        usage = record_usage(
+        usage = build_usage(
             user_id=user_id,
             model_type=ModelType.IMAGE_EMBEDDING,
             modelname=self.modelname,

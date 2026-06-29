@@ -30,7 +30,7 @@ from api.models import EvalResponse, EvalScore, EvalTextRequest
 from models.standard_loader import ModelLoaderResult, standard_loader
 from shared.enums import ModelMode, ModelType
 from shared.registry import BaseModelHandler, model_spec
-from shared.usage import record_usage
+from shared.usage import build_usage
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -119,7 +119,7 @@ class TextEvalModel(BaseModelHandler):
             str(scores), duration, iduration,
         )
 
-        usage = record_usage(
+        usage = build_usage(
             user_id=user_id,
             model_type=ModelType.TEXT_EVAL,
             modelname=self.modelname,
@@ -180,7 +180,7 @@ class TextEvalModel(BaseModelHandler):
             len(scores), duration, iduration,
         )
 
-        usage = record_usage(
+        usage = build_usage(
             user_id=user_id,
             model_type=ModelType.TEXT_EVAL,
             modelname=self.modelname,

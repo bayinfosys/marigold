@@ -38,7 +38,7 @@ from shared.enums import ModelMode, ModelType
 from shared.models import InstructMessage, InstructRole
 from shared.outputs import decode_image
 from shared.registry import BaseModelHandler, model_spec
-from shared.usage import record_usage
+from shared.usage import build_usage
 from transformers import set_seed
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -172,7 +172,7 @@ class Obs2ActModel(BaseModelHandler):
             duration, iduration,
         )
 
-        usage = record_usage(
+        usage = build_usage(
             user_id          = user_id,
             model_type       = ModelType.OBS2ACT,
             modelname        = self.modelname,

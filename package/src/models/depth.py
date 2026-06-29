@@ -17,7 +17,7 @@ from PIL import Image
 from shared.enums import ModelMode, ModelType, OutputMimeType
 from shared.outputs import decode_image, image_to_png_bytes
 from shared.registry import BaseModelHandler, OutputField, model_spec
-from shared.usage import record_usage
+from shared.usage import build_usage
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -89,7 +89,7 @@ class DepthModel(BaseModelHandler):
 
         output_reference = self.write_output("depth", depth_bytes, message_id)
 
-        usage = record_usage(
+        usage = build_usage(
             user_id=user_id,
             model_type=ModelType.DEPTH,
             modelname=self.modelname,
