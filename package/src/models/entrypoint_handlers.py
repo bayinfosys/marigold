@@ -258,7 +258,7 @@ def local_handler():
             notification_backend=notification_backend,
             visibility_timeout=visibility_timeout,
             topic=topic,
-            idle_timeout=0,  # exit each queue immediately to load next model
+            idle_timeout=int(os.getenv("MARIGOLD_QUEUE_IDLE_TIMEOUT", "0")),  # if zero, exit each queue immediately to load next model
             results_cache=results_cache,
         )
 

@@ -11,20 +11,16 @@ logger = logging.getLogger(__name__)
 
 class ModelVRAMError(Exception):
     """Raised when a model cannot fit entirely in GPU VRAM."""
-
     pass
 
 
 def get_memory_usage() -> int:
     import resource
-
     return 1 + int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0)
 
 
 def get_vram_usage() -> int:
     try:
-        import torch
-
         if torch.cuda.is_available():
             return torch.cuda.memory_allocated()
         return 0
@@ -50,15 +46,83 @@ def get_vram_state() -> dict:
         return {"free_vram_b": 0, "total_vram_b": 0, "usable_vram_b": 0}
 
 
+# ---------------------------------------------------------------------------
+# Parameter extraction -- one function per model backing type
+# ---------------------------------------------------------------------------
+
+def _params_from_transformer(model) -> list:
+    """Extract parameters from a transformers-backed model.
+
+    Expects model.model to be an nn.Module with a named_parameters() method,
+    which covers AutoModel, AutoModelForCausalLM, AutoModelForVision2Seq,
+    and the sentence-transformers wrappers used by text-embedding models.
+    """
+    return list(model.model.named_parameters())
+
+
+def _params_from_diffusion_pipeline(model) -> list:
+    """Extract parameters from a diffusers DiffusionPipeline.
+
+    A DiffusionPipeline is a composite object. Its sub-components are
+    accessible via .components, which returns a dict of name to object.
+    Only components that are nn.Module instances carry parameters.
+
+    Covers StableDiffusionPipeline, StableDiffusionXLPipeline,
+    StableDiffusion3Pipeline, FluxPipeline, and any pipeline whose
+    components follow the standard diffusers pattern.
+    """
+    params = []
+    for component_name, component in model.model.components.items():
+        if isinstance(component, torch.nn.Module):
+            for param_name, param in component.named_parameters():
+                params.append((f"{component_name}.{param_name}", param))
+    return params
+
+
+# ---------------------------------------------------------------------------
+# Dispatch
+# ---------------------------------------------------------------------------
+
+def _extract_named_parameters(model_name: str, model) -> list:
+    """Dispatch to the appropriate parameter extractor for model.model.
+
+    Raises NotImplementedError for unrecognised backing types so that new
+    model types are caught explicitly rather than silently producing an
+    incorrect VRAM check.
+
+    To add support for a new backing type: implement a _params_from_*
+    function above and add an isinstance branch here.
+    """
+    from diffusers import DiffusionPipeline
+
+    if isinstance(model.model, DiffusionPipeline):
+        return _params_from_diffusion_pipeline(model)
+
+    if isinstance(model.model, torch.nn.Module):
+        return _params_from_transformer(model)
+
+    raise NotImplementedError(
+        "check_model_vram: unhandled model backing type '%s' for '%s'. "
+        "Implement a _params_from_* extractor in power_sampler.py and add "
+        "an isinstance branch in _extract_named_parameters."
+        % (type(model.model).__name__, model_name)
+    )
+
+
+# ---------------------------------------------------------------------------
+# VRAM check
+# ---------------------------------------------------------------------------
+
 def check_model_vram(model_name: str, model):
     """Raise ModelVRAMError if any model parameters were offloaded to CPU.
-    NB: we need the model.model to get the underlying pytorch implementation
+
+    Dispatches parameter extraction via _extract_named_parameters. Raises
+    NotImplementedError for unhandled model backing types.
     """
-    device_types = [param.device.type for name, param in model.model.named_parameters()]
+    named_params = _extract_named_parameters(model_name, model)
 
     cpu_params = [
-        name
-        for name, param in model.model.named_parameters()
+        name for name, param in named_params
         if param.device.type in ("cpu", "meta")
     ]
 
@@ -66,29 +130,26 @@ def check_model_vram(model_name: str, model):
         return
 
     gpu_params = [
-        name
-        for name, param in model.model.named_parameters()
-        if param.device.type in ("gpu", "cuda")
+        name for name, param in named_params
+        if param.device.type in ("cuda",)
     ]
 
     gpu_bytes = sum(
         param.numel() * param.element_size()
-        for param in model.model.parameters()
-        if param.device.type in ("gpu", "cuda")
+        for _, param in named_params
+        if param.device.type in ("cuda",)
     )
     cpu_bytes = sum(
         param.numel() * param.element_size()
-        for param in model.model.parameters()
+        for _, param in named_params
         if param.device.type in ("cpu", "meta")
     )
-
-    total_bytes = gpu_bytes + cpu_bytes
 
     vram = get_vram_state()
 
     logger.critical(
         "'%s' did not fit on GPU -- %d tensors on CPU (%.1fGB) "
-        "%d on gpu=%.1fGB vram_free=%.1fGB vram_total=%.1fGB",
+        "%d on GPU (%.1fGB) vram_free=%.1fGB vram_total=%.1fGB",
         model_name,
         len(cpu_params),
         cpu_bytes / 1024**3,
@@ -106,10 +167,10 @@ class PowerSampler:
 
     Mirrors _heartbeat/_heartbeat_context's thread+Event pattern, with a
     sub-second interval instead of visibility_timeout's, and a read instead
-    of a write. Captures device state *at the time of* the request, not a
-    property of the request itself -- under concurrency>1 on a worker that
-    did run requests in parallel, a sample reflects whatever the whole GPU
-    was doing at that instant, same caveat as vram_usage_bytes already has.
+    of a write. Captures device state at the time of the request, not a
+    property of the request itself -- under concurrency > 1 on a worker
+    that ran requests in parallel, a sample reflects whatever the whole GPU
+    was doing at that instant, the same caveat as vram_usage_bytes.
     """
 
     def __init__(self, interval: float = 0.1):
@@ -121,7 +182,7 @@ class PowerSampler:
         if torch.cuda.is_available():
             try:
                 pynvml.nvmlInit()
-                # FIXME: adjust for multi-gpu setup
+                # FIXME: adjust for multi-GPU setup
                 self._nvml_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
             except Exception as e:
                 logger.warning("NVML init failed, power sampling disabled: %s", e)
@@ -160,12 +221,9 @@ class PowerSampler:
 
         if torch.cuda.is_available():
             torch.cuda.reset_peak_memory_stats()
-
-            # get the current vram allocation
             self.vram_usage = get_vram_usage()
         else:
             self.vram_usage = 0
-
 
         thread = threading.Thread(target=self._run, daemon=True)
         thread.start()
@@ -184,18 +242,19 @@ class PowerSampler:
     def as_usage_fields(self) -> dict:
         """The one place that maps sampled readings onto ModelUsageStats field
         names. Adding a metric means adding it here and to ModelUsageStats --
-        nowhere else needs to change."""
+        nowhere else needs to change.
+        """
         return {
-            "power_watts_peak": self.peak_watts,
-            "power_watts_mean": self.mean_watts,
+            "power_watts_peak":    self.peak_watts,
+            "power_watts_mean":    self.mean_watts,
             "vram_usage_bytes_peak": self.max_vram_usage,
-            "vram_usage_bytes": self.vram_usage,
-            "memory_usage": get_memory_usage(),
+            "vram_usage_bytes":    self.vram_usage,
+            "memory_usage":        get_memory_usage(),
         }
 
     def shutdown(self):
-        """the nvmlShutdown is expensive and we do not do it per-model inference.
-        we do it per-model load/unload
+        """nvmlShutdown is expensive; called per model load/unload, not per
+        inference request.
         """
         if self._nvml_handle is not None:
             try:

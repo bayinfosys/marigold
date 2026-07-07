@@ -31,7 +31,7 @@ from dynawrap.backends.dynamodb import DynamoDBBackend
 from PIL import Image
 from shared.db_models import ResultsItem
 from shared.enums import ModelType
-from shared.models import OutputReference
+from shared.models import OutputReference, OutputMimeType
 
 logger = logging.getLogger(__name__)
 
@@ -238,16 +238,10 @@ def write_binary_output(
     field_name: str,
     data: bytes,
     mimetype: str,
-    bucket: str,
 ) -> "OutputReference":
-    """Write binary model output to S3 and return an OutputReference.
+    """Write binary model output to S3 or the local filesystem and return an OutputReference.
 
     Key schema: outputs/{model_type}/{message_id}/{field_name}
-
-    When the S3 client is unavailable or the write fails, logs the failure
-    and returns an OutputReference with the intended key path. The inference
-    result is structurally valid; the caller can detect the failure from
-    logs. This allows local development to proceed past the persistence step.
 
     :param message_id: unique identifier for this inference request
     :param model_type: ModelType enum value, used as the S3 key prefix
@@ -256,34 +250,64 @@ def write_binary_output(
     :param mimetype:   MIME type of the content, stored as S3 ContentType
     :param bucket:     name of the S3 output bucket
     :returns:          OutputReference with key and mimetype
-    """
-    key = "outputs/%s/%s/%s" % (model_type.value, message_id, field_name)
 
-    if _s3 is None:
-        logger.warning(
-            "[%s] s3 client unavailable; %s not persisted",
-            message_id,
-            key,
-        )
+    Backend is selected by the OUTPUT_BACKEND environment variable:
+      "s3"  -- write to S3 (default; requires OUTPUT_BUCKET and AWS region)
+      "fs"  -- write to local filesystem under OUTPUT_DIR
+
+    The OutputReference path contains the key for both backends. For "fs"
+    the full path is OUTPUT_DIR / key. For "s3" it is the S3 object key.
+
+    When the S3 client is unavailable or the write fails, logs the failure
+    and returns an OutputReference with the intended key. Inference results
+    are structurally valid; only persistence is skipped.
+    """
+
+    ext = OutputMimeType(mimetype).extension
+    clean_id = message_id.removeprefix("API#")
+    key = "outputs/%s/%s_%s.%s" % (model_type.value, clean_id, field_name, ext)
+    backend = os.getenv("OUTPUT_BACKEND", "s3").lower()
+
+    if backend == "fs":
+        output_dir = os.getenv("OUTPUT_DIR", "")
+        if not output_dir:
+            logger.warning("[%s] OUTPUT_DIR not set; %s not persisted", message_id, key)
+            return OutputReference(path=key, mimetype=mimetype)
+
+        full_path = os.path.join(output_dir, key)
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
+        try:
+            with open(full_path, "wb") as f:
+                f.write(data)
+
+            logger.info("wrote %ib to %s", len(data), full_path)
+        except Exception as e:
+            logger.error("failed to write output to %s: %s -- output not persisted", full_path, e)
+
         return OutputReference(path=key, mimetype=mimetype)
 
-    try:
-        _s3.put_object(
-            Bucket=bucket,
-            Key=key,
-            Body=data,
-            ContentType=mimetype,
-        )
-        logger.info("wrote %ib to s3://%s/%s", len(data), bucket, key)
-    except Exception as e:
-        logger.error(
-            "failed to write output to s3://%s/%s: %s -- output not persisted",
-            bucket,
-            key,
-            e,
-        )
+    elif backend == "s3":
+        if _s3 is None:
+            logger.warning("[%s] s3 client unavailable; %s not persisted", message_id, key)
+            return OutputReference(path=key, mimetype=mimetype)
 
-    return OutputReference(path=key, mimetype=mimetype)
+        bucket = os.environ["OUTPUT_BUCKET"]
+
+        try:
+            _s3.put_object(
+                Bucket=bucket,
+                Key=key,
+                Body=data,
+                ContentType=mimetype,
+            )
+            logger.info("wrote %ib to s3://%s/%s", len(data), bucket, key)
+        except Exception as e:
+            logger.error("failed to write output to s3://%s/%s: %s -- output not persisted", bucket, key, e)
+
+        return OutputReference(path=key, mimetype=mimetype)
+    else:
+        raise NotImplementedError(f"Unknown backend: {backend}")
 
 
 # ---------------------------------------------------------------------------

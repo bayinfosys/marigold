@@ -173,19 +173,19 @@ class BaseModelHandler(ABC):
         field = next(
             (f for f in spec.output_fields if f.name == field_name), None
         )
+
         if field is None:
             raise ValueError(
                 "output field '%s' not declared in ModelSpec for '%s'"
                 % (field_name, spec.model_type.value)
             )
-        bucket = os.environ["OUTPUT_BUCKET"]
+
         return write_binary_output(
             message_id=message_id,
             model_type=self._model_type,
             field_name=field_name,
             data=data,
             mimetype=field.mimetype.value,
-            bucket=bucket,
         )
 
     def process(self, user_id: str, message_id: str, request: Any) -> Any:

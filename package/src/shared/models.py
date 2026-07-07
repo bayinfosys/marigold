@@ -79,6 +79,23 @@ class EmbeddingQuantization(str, Enum):
     UBINARY = "ubinary"
 
 
+class OutputMimeType(str, Enum):
+    IMAGE_PNG  = "image/png"
+    IMAGE_JPEG = "image/jpeg"
+    AUDIO_MP3  = "audio/mpeg"
+    VIDEO_MP4  = "video/mp4"
+
+    @property
+    def extension(self) -> str:
+        _MAP = {
+            "image/png":  "png",
+            "image/jpeg": "jpg",
+            "audio/mpeg": "mp3",
+            "video/mp4":  "mp4",
+        }
+        return _MAP.get(self.value, "bin")
+
+
 class OutputReference(BaseModel):
     """Reference to a binary output stored in S3.
 

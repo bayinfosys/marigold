@@ -22,9 +22,9 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-marigold}:${POSTGRES_PASSWORD:-marigold}@postgres:5432/${POSTGRES_DB:-marigold}
       MODELS_CONFIG_PATH: /app/assets/models.json
-      MARIGOLD_MODELS: ${MARIGOLD_MODELS:-0dca151a8ff01ced4a093e781d7ee2b9,1965063244b50f03fca03e4a890378e4,229cce904f3d47f9fd5d7c2dfed8c15e,2518e360d067c7fedad30ed6b5eba9bc,2b51cd9f107c5e86f6ed8c8341e23bde,331a6f1441470596e0dff8c731170635,3d0cd2673ea0b77a17ae078737ac1672,715ada45fdd765ec29de889d038b7b42,7aa1b348c11a40bf247bbdce521667cc,8364ed87255bb1b99eaac51a2bdfd01f,9be5bdd2069b33a205b02d7d2cffb8ee,a055bacbbabd6b87aa44f62aca00cc37,a9ecf0917dd86a5fbf78054eba916660,c8a8f750457bfb88010710f7c1384e6a,f432174c2b6f0add737999419b310fdd,ff73996519cd3749362ec82c8224bfb8}
+      MARIGOLD_MODELS: ${MARIGOLD_MODELS:-0dca151a8ff01ced4a093e781d7ee2b9}
       SQS_VISIBILITY_TIMEOUT: "300"
-      IDLE_TIMEOUT: "${IDLE_TIMEOUT:-600}"
+      MARIGOLD_QUEUE_IDLE_TIMEOUT: "${IDLE_TIMEOUT:-120}"
       LIFECYCLE_TOPIC: lifecycle
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # huggingface cache -- must match the mount point
@@ -37,17 +37,22 @@ services:
       REMOTE_CODE: "0"
       USE_FAST: "0"
       MARIGOLD_TMP_OFFLOAD: "/tmp/models"
+      OUTPUT_BACKEND: "${OUTPUT_BACKEND:-fs}"
+      OUTPUT_DIR: /outputs
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
 
     volumes:
       - ${MARIGOLD_CACHE_DIR:-./cache/models}:/models:ro
       - ${MARIGOLD_MODELS_CONFIG:-./assets/models-3060.json}:/app/assets/models.json:ro
       - ${MARIGOLD_MODEL_TMP_DIR:-./cache/tmp}:/tmp/models
+      - ${MARIGOLD_OUTPUT_DIR:-./cache/outputs}:/outputs
+
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              count: all
               capabilities: [gpu]
 
   api:

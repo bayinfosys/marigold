@@ -32,7 +32,7 @@ DEFAULT_PROMPT = "Describe this image."
 
 def load_img2txt(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
     """Image-to-text: captioning, OCR, VQA."""
-    from transformers import AutoModelForVision2Seq as M
+    from transformers import AutoModelForImageTextToText as M
     from transformers import AutoProcessor as T
 
     return standard_loader(T, M, modelname, cache_dir=cache_dir, **kwargs)
@@ -41,8 +41,10 @@ def load_img2txt(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoader
 def _build_hf_prompt(request: Img2TxtRequest) -> tuple:
     """Extract images and build a HuggingFace-compatible prompt list from the request.
 
-    Returns (hf_prompt, images) where hf_prompt is the list passed to
-    processor.apply_chat_template and images is the list of PIL Images.
+    Returns (hf_prompt, images, prompt_text) where hf_prompt is the list passed
+    to processor.apply_chat_template, images is the list of PIL Images, and
+    prompt_text is the flat instruction string used as a fallback for
+    processors that have no chat template (e.g. PaliGemma2).
     """
     prompt_text = request.prompt or DEFAULT_PROMPT
 
@@ -62,7 +64,7 @@ def _build_hf_prompt(request: Img2TxtRequest) -> tuple:
         }
     ]
 
-    return hf_prompt, [image]
+    return hf_prompt, [image], prompt_text
 
 
 @model_spec(
@@ -84,28 +86,39 @@ class Img2TxtModel(BaseModelHandler):
     ) -> Img2TxtResponse:
         T = clock()
 
-        hf_prompt, images = _build_hf_prompt(request)
+        hf_prompt, images, prompt_text = _build_hf_prompt(request)
 
         logger.info("[%s/%s] prompt: '%s'", user_id, message_id, hf_prompt)
 
-        try:
-            prompt_str = self.processor.apply_chat_template(
-                hf_prompt,
-                return_tensors=None,
-                tokenize=False,
-                add_generation_prompt=True,
+        if getattr(self.processor, "chat_template", None):
+            try:
+                prompt_str = self.processor.apply_chat_template(
+                    hf_prompt,
+                    return_tensors=None,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+            except Exception as e:
+                logger.exception(
+                    "[%s/%s] apply_chat_template failed [%s]", user_id, message_id, str(e)
+                )
+                raise
+        else:
+            # No chat template on this processor (e.g. PaliGemma2) -- the
+            # model takes the instruction directly, not a templated
+            # conversation. The processor inserts image tokens itself.
+            logger.info(
+                "[%s/%s] '%s' has no chat template, using flat prompt",
+                user_id, message_id, self.modelname,
             )
-        except Exception as e:
-            logger.exception(
-                "[%s/%s] apply_chat_template failed [%s]", user_id, message_id, str(e)
-            )
-            raise
+            prompt_str = prompt_text
 
         model_inputs = self.processor(
             text=prompt_str,
             images=images,
             return_tensors="pt",
         )
+        model_inputs = model_inputs.to(self.model.device)   # ensure device compat
 
         if request.seed:
             set_seed(request.seed)
