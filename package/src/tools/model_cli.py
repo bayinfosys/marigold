@@ -17,7 +17,7 @@ Commands:
 
 Environment (or .marigold-env in cwd):
     CACHE_DIR           Path to local model cache (default: /mnt/efs/cache)
-    MODELS_YAML_PATH    Path to models.yaml (required for cache commands)
+    MARIGOLD_MODEL_CATALOGUE_YAMLS    Path to models.yaml (required for cache commands)
     HF_TOKEN            HuggingFace token for gated models
     LOG_LEVEL           Logging verbosity (default: INFO)
     API_BASE            Marigold API base URL (required for remote commands)
@@ -59,9 +59,14 @@ import struct
 import sys
 import time
 import zlib
+import glob
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+from shared.db_models import ModelCatalogueItem
+from models.catalogue import load_catalogue_from_yaml
+
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -121,40 +126,20 @@ CommandResult = tuple[dict, bool]
 
 @dataclass
 class ModelCatalogueContext:
-    models: list
+    models: list[ModelCatalogueItem]
     cache_path: Path
 
     @classmethod
     def load(cls, model_name_filter: Optional[str] = None) -> "ModelCatalogueContext":
-        try:
-            import yaml
-        except ImportError:
-            raise CliError("pyyaml is required: pip install pyyaml")
+        yaml_pattern = os.environ.get("MARIGOLD_MODEL_CATALOGUE_YAMLS", "")
 
-        yaml_path = os.environ.get("MODELS_YAML_PATH", "")
-        if not yaml_path:
-            raise CliError("MODELS_YAML_PATH is required")
+        if not yaml_pattern:
+            raise CliError("MARIGOLD_MODEL_CATALOGUE_YAMLS is required")
 
-        path = Path(yaml_path)
-        if not path.exists():
-            raise CliError("models yaml not found: %s" % yaml_path)
-
-        with open(path) as fh:
-            config = yaml.safe_load(fh)
-
-        all_models = config.get("models", [])
-        if not all_models:
-            raise CliError("no models found in config")
-
-        if model_name_filter:
-            models = [m for m in all_models if m["name"] == model_name_filter]
-            if not models:
-                raise CliError("'%s' not found in models.yaml" % model_name_filter)
-        else:
-            models = all_models
+        model_catalogue_items = load_catalogue_from_yaml(list(glob.glob(yaml_pattern)))
 
         return cls(
-            models=models,
+            models=model_catalogue_items,
             cache_path=Path(os.getenv("CACHE_DIR", "/mnt/efs/cache")),
         )
 

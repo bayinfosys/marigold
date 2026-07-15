@@ -171,9 +171,9 @@ def standard_loader(
     load_time = int((clock() - T0) * 1000)
 
     logger.info(
-        "loaded '%s' model in %ims footprint=%ib dtype=%s",
+        "loaded '%s' model in %0.2fs footprint=%ib dtype=%s",
         modelname,
-        load_time,
+        load_time/1000.,
         footprint,
         getattr(getattr(model, "config", None), "dtype", "unknown"),
     )

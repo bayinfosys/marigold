@@ -15,6 +15,7 @@ from api.models import (
 )
 from api.routes._submit import _submit
 from api.auth import apikey_auth
+from shared.enums import ModelType
 
 router = AWSAPIRouter()
 
@@ -30,7 +31,7 @@ _IAM = "${request_receiver_lambda_iam_role_arn}"
     aws_iam_arn=_IAM,
 )
 async def gen_instruct(request: Request, body: InstructRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump())
+    return await _submit(request, user.id, body.model_dump(), ModelType.INSTRUCT)
 
 
 @router.post(
@@ -41,7 +42,7 @@ async def gen_instruct(request: Request, body: InstructRequest, user=Security(ap
     aws_iam_arn=_IAM,
 )
 async def gen_tts(request: Request, body: TTSRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump())
+    return await _submit(request, user.id, body.model_dump(), ModelType.TTS)
 
 
 @router.post(
@@ -52,7 +53,7 @@ async def gen_tts(request: Request, body: TTSRequest, user=Security(apikey_auth)
     aws_iam_arn=_IAM,
 )
 async def gen_txt2audio(request: Request, body: Txt2AudioRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump())
+    return await _submit(request, user.id, body.model_dump(), ModelType.TXT2AUDIO)
 
 
 @router.post(
@@ -63,7 +64,7 @@ async def gen_txt2audio(request: Request, body: Txt2AudioRequest, user=Security(
     aws_iam_arn=_IAM,
 )
 async def gen_txt2img(request: Request, body: Txt2ImgRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump())
+    return await _submit(request, user.id, body.model_dump(), ModelType.TXT2IMG)
 
 
 @router.post(
@@ -74,7 +75,7 @@ async def gen_txt2img(request: Request, body: Txt2ImgRequest, user=Security(apik
     aws_iam_arn=_IAM,
 )
 async def gen_img2txt(request: Request, body: Img2TxtRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump())
+    return await _submit(request, user.id, body.model_dump(), ModelType.IMG2TXT)
 
 
 @router.post(
@@ -85,7 +86,7 @@ async def gen_img2txt(request: Request, body: Img2TxtRequest, user=Security(apik
     aws_iam_arn=_IAM,
 )
 async def gen_depth(request: Request, body: DepthRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump())
+    return await _submit(request, user.id, body.model_dump(), ModelType.DEPTH)
 
 
 @router.post(
@@ -96,4 +97,4 @@ async def gen_depth(request: Request, body: DepthRequest, user=Security(apikey_a
     aws_iam_arn=_IAM,
 )
 async def gen_img2mask(request: Request, body: Img2MaskRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump())
+    return await _submit(request, user.id, body.model_dump(), ModelType.IMG2MASK)

@@ -13,37 +13,47 @@ services:
       timeout: 5s
       retries: 5
 
+  cache-init:
+    image: marigold/environment:${TAG:-latest}   # CPU image -- see note below, not *-gpu
+    command: ["python3", "-m", "tools.model_cli", "download-weights"]
+    environment:
+      MARIGOLD_MODEL_CATALOGUE_YAMLS: ${MODELS_CATALOGUE:-/app/assets/models-instruct-3060.yaml}
+      HF_TOKEN: ${HF_TOKEN:-}
+      CACHE_DIR: /models
+      HF_HUB_OFFLINE: 0
+    volumes:
+      - ./assets:/app/assets:ro
+      - ${MARIGOLD_CACHE_DIR:-./cache/models}:/models
+    restart: "no"
+
   worker:
     image: marigold/worker:${TAG:-latest}-gpu
     depends_on:
       postgres:
         condition: service_healthy
+      cache-init:
+        condition: service_completed_successfully
 
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-marigold}:${POSTGRES_PASSWORD:-marigold}@postgres:5432/${POSTGRES_DB:-marigold}
-      MODELS_CONFIG_PATH: /app/assets/models.json
-      MARIGOLD_MODELS: ${MARIGOLD_MODELS:-0dca151a8ff01ced4a093e781d7ee2b9}
+      MARIGOLD_VERSION: ${TAG:-latest}
+      MARIGOLD_DATABASE_URL: postgresql://${POSTGRES_USER:-marigold}:${POSTGRES_PASSWORD:-marigold}@postgres:5432/${POSTGRES_DB:-marigold}
+      MARIGOLD_MODEL_CATALOGUE_YAMLS: ${MODELS_CATALOGUE:-/app/assets/models-instruct-3060.yaml}
       SQS_VISIBILITY_TIMEOUT: "300"
       MARIGOLD_QUEUE_IDLE_TIMEOUT: "${IDLE_TIMEOUT:-120}"
       LIFECYCLE_TOPIC: lifecycle
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # huggingface cache -- must match the mount point
       CACHE_DIR: /models
-      HF_HUB_CACHE: /models
-      HF_HOME: /tmp
-      HF_HUB_OFFLINE: "1"
-      HF_HUB_DISABLE_PROGRESS_BARS: "1"
-      HF_HUB_DISABLE_TELEMETRY: "1"
       REMOTE_CODE: "0"
       USE_FAST: "0"
       MARIGOLD_TMP_OFFLOAD: "/tmp/models"
       OUTPUT_BACKEND: "${OUTPUT_BACKEND:-fs}"
       OUTPUT_DIR: /outputs
       PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+      MARIGOLD_MODEL_CATALOGUE_TABLE: model_catalogue
 
     volumes:
       - ${MARIGOLD_CACHE_DIR:-./cache/models}:/models:ro
-      - ${MARIGOLD_MODELS_CONFIG:-./assets/models-3060.json}:/app/assets/models.json:ro
       - ${MARIGOLD_MODEL_TMP_DIR:-./cache/tmp}:/tmp/models
       - ${MARIGOLD_OUTPUT_DIR:-./cache/outputs}:/outputs
 
@@ -64,12 +74,15 @@ services:
     ports:
       - "${API_PORT:-8000}:8000"
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-marigold}:${POSTGRES_PASSWORD:-marigold}@postgres:5432/${POSTGRES_DB:-marigold}
-      MODELS_CONFIG_PATH: /app/assets/models.json
+      MARIGOLD_VERSION: ${TAG:-latest}
+      MARIGOLD_DATABASE_URL: postgresql://${POSTGRES_USER:-marigold}:${POSTGRES_PASSWORD:-marigold}@postgres:5432/${POSTGRES_DB:-marigold}
       LIFECYCLE_TOPIC: lifecycle
-      RESULTS_TABLE: results
+      MARIGOLD_RESULTS_TABLE: results
+      MARIGOLD_MODEL_CATALOGUE_YAMLS: ${MODELS_CATALOGUE:-/app/assets/models-instruct-3060.yaml}
+      MARIGOLD_MODEL_CATALOGUE_TABLE: model_catalogue
+
     volumes:
-      - ${MARIGOLD_MODELS_CONFIG:-./assets/models-3060.json}:/app/assets/models.json:ro
+      - ./assets:/app/assets:ro
 
 
   open-webui:

@@ -6,15 +6,15 @@ filesystem configuration. Imported by the CLI and any cache builder scripts.
 
 Public interface
 ----------------
-run_build(models_list, cache_path, hf_token, prune)
+run_build(catalogue, cache_path, hf_token, prune)
     Download and cache all declared models. Prune undeclared entries if prune=True.
     Returns a BuildResult.
 
-inspect_to_dict(models_list, cache_path)
+inspect_to_dict(catalogue, cache_path)
     Collect cache state as a serialisable dict. Used by the CLI --json path
     and by run_inspect.
 
-run_inspect(models_list, cache_path)
+run_inspect(catalogue, cache_path)
     Print a human-readable cache inspection report to stdout.
     Returns a list of anomaly names; empty means clean.
 
@@ -31,8 +31,10 @@ from pathlib import Path
 
 import models
 from shared.registry import _SPECS
+from shared.db_models import ModelCatalogueItem
+from shared.enums import ModelProvider
 
-log = logging.getLogger("cache-manager")
+log = logging.getLogger("marigold.model-cache")
 
 
 # ---------------------------------------------------------------------------
@@ -127,12 +129,8 @@ class Provider:
 class HuggingFaceProvider(Provider):
 
     def build(self, model: dict, cache_path: Path, hf_token: str) -> bool:
-        name = model["name"]
-        model_type = model.get("type")
-
-        if model.get("auth_required") and not hf_token:
-            log.warning("%s requires an HF token but none is set -- skipping", name)
-            return False
+        name = model.name
+        model_type = model.type
 
         if model_type not in _SPECS:
             log.error("%s: unknown model type '%s'", name, model_type)
@@ -142,8 +140,11 @@ class HuggingFaceProvider(Provider):
             log.info("skip %s (complete)", name)
             return True
 
-        if hf_token:
-            os.environ["HF_TOKEN"] = hf_token
+        if model.provider == ModelProvider.HUGGINGFACE:
+            if "HF_TOKEN" in os.environ:
+                os.environ["HF_TOKEN"] = hf_token
+            else:
+                log.warning("HF_TOKEN not provided")
 
         os.environ["HF_HUB_CACHE"] = str(cache_path)
         os.environ["HF_HUB_OFFLINE"] = "0"
@@ -162,7 +163,7 @@ class HuggingFaceProvider(Provider):
             return False
 
     def inspect(self, model: dict, cache_path: Path) -> tuple:
-        name = model["name"]
+        name = model.name
         existing = cached_model_names(cache_path)
         path = cache_path / model_to_cache_name(name)
 
@@ -214,24 +215,24 @@ class BuildResult:
     errors: list = field(default_factory=list)
 
 
-def _get_provider(model: dict) -> tuple:
+def _get_provider(model: ModelCatalogueItem) -> tuple:
     """Return (provider_key, provider) for a model dict.
 
     provider is None if the key is not registered.
     """
-    provider_key = model.get("provider", "huggingface")
+    provider_key = model.provider
     return provider_key, _PROVIDERS.get(provider_key)
 
 
 def run_build(
-    models_list: list,
+    catalogue: list[ModelCatalogueItem],
     cache_path: Path,
     hf_token: str,
     prune: bool = True,
 ) -> BuildResult:
     """Download and cache all declared models.
 
-    Prune any entries found on disk that are not in models_list if prune=True.
+    Prune any entries found on disk that are not in catalogue if prune=True.
     The declared list is the source of truth for pruning. Providers that write
     nothing to disk have no-op prune implementations.
     """
@@ -239,12 +240,12 @@ def run_build(
 
     result = BuildResult()
     existing = cached_model_names(cache_path)
-    declared = {m["name"] for m in models_list}
+    declared = {m.name for m in catalogue}
 
     cache_path.mkdir(parents=True, exist_ok=True)
 
-    for model in models_list:
-        name = model["name"]
+    for model in catalogue:
+        name = model.name
         provider_key, provider = _get_provider(model)
 
         if provider is None:
@@ -262,11 +263,12 @@ def run_build(
         for name, path in existing.items():
             if name not in declared:
                 log.info("pruning %s", name)
-                provider_key, provider = _get_provider({"name": name})
-                if provider.prune(name, path):
-                    result.pruned.append(name)
-                else:
-                    result.errors.append("prune:%s" % name)
+                # TODO: cache pruning should be implemented in the provider class
+                #provider_key, provider = _get_provider({"name": name})
+                #if provider.prune(name, path):
+                #    result.pruned.append(name)
+                #else:
+                #    result.errors.append("prune:%s" % name)
 
     return result
 
@@ -276,7 +278,7 @@ def run_build(
 # ---------------------------------------------------------------------------
 
 
-def inspect_to_dict(models_list: list, cache_path: Path) -> dict:
+def inspect_to_dict(catalogue: list[ModelCatalogueItem], cache_path: Path) -> dict:
     """Collect cache state as a serialisable dict.
 
     Shape:
@@ -295,14 +297,14 @@ def inspect_to_dict(models_list: list, cache_path: Path) -> dict:
 
     Status values: ok | MISSING | INCOMPLETE | UNDECLARED | ERROR
     """
-    declared = {m["name"] for m in models_list}
+    declared = {m.name for m in catalogue}
     existing = cached_model_names(cache_path)
     model_states = {}
     anomalies = []
     total_gb = 0.0
 
-    for model in models_list:
-        name = model["name"]
+    for model in catalogue:
+        name = model.name
         provider_key, provider = _get_provider(model)
 
         if provider is None:

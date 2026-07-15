@@ -41,6 +41,7 @@ from tools.power_sampler import (ModelVRAMError, PowerSampler,
                                  check_model_vram, get_vram_state)
 from shared.usage_models import UsageItem
 from shared.usage import write_usage
+from shared.db_models import ModelCatalogueItem
 
 logger = logging.getLogger(__name__)
 
@@ -428,7 +429,7 @@ def set_model_config_env(config_entry):
     for key in _ENV_KEYS:
         os.environ.pop(key, None)
 
-    custom_env = config_entry.get("extra_env", {})
+    custom_env = config_entry.extra_env
 
     # insert our custom values
     for key, value in custom_env.items():
@@ -445,7 +446,7 @@ class MultiQueueWorker:
     Sleeps between sweeps when all queues are empty, then checks again.
 
     Args:
-        entries:              List of model config dicts, each containing:
+        model_catalogue:        List of model catalogue items, each containing:
                                 model_hash, queue_name, model_name, model_type
         queue_backend:        Shared QueueBackend instance.
         notification_backend: Shared NotificationBackend instance.
@@ -459,7 +460,7 @@ class MultiQueueWorker:
 
     def __init__(
         self,
-        entries: list[dict],
+        model_catalogue: list[ModelCatalogueItem],
         queue_backend: QueueBackend,
         notification_backend: NotificationBackend,
         visibility_timeout: int,
@@ -467,7 +468,7 @@ class MultiQueueWorker:
         idle_timeout: int = 0,
         results_cache: ResultsCache = None,
     ):
-        self.entries = entries
+        self.model_catalogue = model_catalogue
         self.queue_backend = queue_backend
         self.notification_backend = notification_backend
         self.visibility_timeout = visibility_timeout
@@ -478,15 +479,15 @@ class MultiQueueWorker:
     def _pick_entry(self) -> dict | None:
         """Return the entry with the highest queue depth, or None if all empty."""
         depths = [
-            (entry, self.queue_backend.depth(entry["queue_name"]))
-            for entry in self.entries
+            (m, self.queue_backend.depth(m.queue_name))
+            for m in self.model_catalogue
         ]
         best_entry, best_depth = max(depths, key=lambda t: t[1])
         return best_entry if best_depth > 0 else None
 
     def run(self) -> None:
         """Sweep queues, load, drain, unload, repeat indefinitely."""
-        logger.info("MultiQueueWorker starting: %d queues", len(self.entries))
+        logger.info("MultiQueueWorker starting: %d queues", len(self.model_catalogue))
 
         while True:
             entry = self._pick_entry()
@@ -498,9 +499,9 @@ class MultiQueueWorker:
 
             logger.info(
                 "selected model '%s' (%s) from queue '%s'",
-                entry["name"],
-                entry["type"],
-                entry["queue_name"],
+                entry.name,
+                entry.type,
+                entry.queue_name,
             )
 
             # insert the custom envvars into the runtime
@@ -508,10 +509,10 @@ class MultiQueueWorker:
 
             try:
                 worker = QueueWorker(
-                    queue=entry["queue_name"],
-                    model_name=entry["name"],
-                    model_type=entry["type"],
-                    model_hash=entry["model_hash"],
+                    queue=entry.queue_name,
+                    model_name=entry.name,
+                    model_type=entry.type,
+                    model_hash=entry.hash,
                     queue_backend=self.queue_backend,
                     notification_backend=self.notification_backend,
                     visibility_timeout=self.visibility_timeout,
@@ -520,24 +521,14 @@ class MultiQueueWorker:
                     results_cache=self.results_cache,
                 )
             except ModelVRAMError as e:
-                logger.exception(
-                    "model '%s' failed VRAM check: %s -- failing queued requests",
-                    entry["name"],
-                    e,
-                )
+                logger.exception("model '%s' failed VRAM check: %s", entry.name, e)
                 # remove this model from this worker
-                self.entries = [
-                    en for en in self.entries if en["model_hash"] != entry["model_hash"]
-                ]
+                self.model_catalogue = [m for m in self.model_catalogue if m.hash != entry.hash]
                 # FIXME: do we continue here, or just exit?
                 continue
             except Exception as e:
-                logger.exception(
-                    "failed to load model '%s': %s -- skipping", entry["name"], e
-                )
-                self.entries = [
-                    en for en in self.entries if en["model_hash"] != entry["model_hash"]
-                ]
+                logger.exception("failed to load model '%s': %s -- skipping", entry.name, e)
+                self.model_catalogue = [m for m in self.model_catalogue if m.hash != entry.hash]
                 continue
 
             worker.run()

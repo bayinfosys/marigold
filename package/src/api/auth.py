@@ -34,7 +34,7 @@ def get_authorizer():
     Locally: returns a FastAPI dependency that accepts any request and
     returns a User with id from X-User-Id header or 'local-user'.
     """
-    if os.getenv("DATABASE_URL") and not os.getenv("AWS_EXECUTION_ENV"):
+    if os.getenv("MARIGOLD_DATABASE_URL") and not os.getenv("AWS_EXECUTION_ENV"):
         return _local_authorizer()
 
     from fastapi_aws import APIKeyAuthorizer

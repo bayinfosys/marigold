@@ -9,39 +9,39 @@ the local filesystem if MODELS_JSON_PATH is set.
 import json
 import os
 
-from fastapi import Security
+from fastapi import Request, Security
 from fastapi.responses import JSONResponse
 from fastapi_aws import APIKeyAuthorizer, AWSAPIRouter
 from api.auth import apikey_auth
 
+from shared.enums import ModelType
+from models.catalogue import get_all_models
+
 router = AWSAPIRouter()
 
 
-@router.get(
-    "/openapi.json",
-    aws_s3_bucket="${s3_assets_bucket_name}",
-    aws_s3_object_key="openapi.json",
-    aws_iam_arn="${s3_read_api_object_iam_role_arn}",
-)
-async def openapi_spec(user=Security(apikey_auth)):
-    # On AWS: served from S3. Locally: FastAPI serves /openapi.json natively.
-    return JSONResponse(status_code=200, content={"message": "use /openapi.json"})
+@router.get("/models")
+async def model_list(request: Request, user=Security(apikey_auth)):
+    table = request.app.state.model_catalogue_table
+    backend = request.app.state.table_backend
+    items = get_all_models(backend, table)
+
+    return JSONResponse(status_code=200, content=[i.model_dump(mode="json") for i in items])
 
 
-@router.get(
-    "/models.json",
-    aws_s3_bucket="${s3_assets_bucket_name}",
-    aws_s3_object_key="models.json",
-    aws_iam_arn="${s3_read_api_object_iam_role_arn}",
-)
-async def model_list(user=Security(apikey_auth)):
-    path = os.getenv("MODELS_CONFIG_PATH")
+@router.get("/models/{model_type}/{model_name:path}")
+async def model_detail(
+    request: Request, model_type: ModelType, model_name: str, user=Security(apikey_auth)
+):
+    table = request.app.state.model_catalogue_table
+    backend = request.app.state.table_backend
 
-    if path and os.path.exists(path):
-        with open(path) as f:
-            return JSONResponse(status_code=200, content=json.load(f))
+    item = get_model(backend, table, model_type, model_name)
 
-    return JSONResponse(
-        status_code=501,
-        content={"status": "error", "message": "MODELS_CONFIG_PATH not configured"},
-    )
+    if item is None:
+        return JSONResponse(
+            status_code=404,
+            content={"status": "error", "message": f"no such model: {model_type}/{model_name}"},
+        )
+
+    return JSONResponse(status_code=200, content=item.model_dump(mode="json"))

@@ -15,9 +15,11 @@ from hashlib import md5 as _md5
 from typing import ClassVar, Optional
 
 from dynawrap import DBItem
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 from .sns_models import LifecycleEvent
+from .enums import ModelType, ModelProvider
+
 
 _DEFAULT_TTL_OFFSET = 86400 * 30  # 30 days
 
@@ -181,3 +183,41 @@ class InstanceEvent(DBItem, BaseModel):
             payload=evt.payload,
             ttl=ResultsItem.make_ttl(),
         )
+
+
+class ModelCatalogueItem(DBItem, BaseModel):
+    """One entry in the model catalogue.
+
+    Sourced from models-*.yaml at init time; hash and queue_name are
+    derived, not stored input -- never set them directly, they are
+    fixed by model_name and model_type.
+    """
+
+    pk_pattern: ClassVar[str] = "MODEL#{type}"
+    sk_pattern: ClassVar[str] = "MODELNAME#{name}"
+
+    name: str
+    type: ModelType
+    provider: ModelProvider
+    input: str
+    output: str
+    timeout: int = 180
+    gpu_tier: str
+    gpu_units: int = 1
+    memory_size: int = 2048
+    extra_env: dict = {}
+    description: str = ""
+    source_file: str = ""
+    active: bool = True
+    updated_at: Optional[str] = None  # set by the init step, not by the loader
+
+    @computed_field
+    @property
+    def hash(self) -> str:
+        """md5(model_name#model_type) -- the compound key, replacing md5(name)."""
+        return _md5(f"{self.name}#{self.type.value}".encode()).hexdigest()
+
+    @computed_field
+    @property
+    def queue_name(self) -> str:
+        return f"mdl_{self.hash}_queue"

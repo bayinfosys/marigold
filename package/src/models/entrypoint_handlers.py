@@ -6,27 +6,25 @@ imported transitively.
 
 Entry points
 ------------
-sqs_handler()   -- AWS ECS production path. Single model, SQS/SNS backends.
-local_handler() -- Local development path. One or more models, Postgres backends.
+sqs_handler()   -- AWS ECS production path. Single model, SQS/SNS backends,
+                   models_config.json loaded from S3 or local file. Unchanged
+                   by the catalogue migration below -- out of scope.
+local_handler() -- Local development path. One or more models, Postgres
+                   backends, model catalogue read from the models table
+                   (populated separately by the API's startup hook).
 
-models_config.json
-------------------
-Keyed by md5(model_name). Each entry contains at minimum:
-    name        str   HuggingFace model identifier
-    type        str   ModelType enum value
-    queue_url   str   SQS queue URL (AWS only, not used locally)
-
-On AWS this file lives in S3. Locally it is generated from models.yaml via:
-    python3 scripts/generate_models_tfvars.py assets/models.yaml infra-data
+models_config.json (sqs_handler only)
+--------------------------------------
+Keyed by md5(model_name). On AWS this file lives in S3.
 
 Environment variables
 ---------------------
 Both handlers:
-    MARIGOLD_MODELS           comma-separated model hash(es)
+    MARIGOLD_MODELS           comma-separated model hash(es); unset/empty
+                              means "serve everything available"
     SQS_VISIBILITY_TIMEOUT    seconds (default: 300)
     LIFECYCLE_TOPIC           topic name / ARN (default: "lifecycle")
     IDLE_TIMEOUT              seconds before idle exit; -1 for indefinite
-                              (default: 180; use -1 for local development)
 
 sqs_handler (additional):
     MODELS_CONFIG_S3_OBJECT   S3 key for models_config.json
@@ -34,9 +32,9 @@ sqs_handler (additional):
     AWS_ENDPOINT_URL          optional endpoint override (LocalStack)
 
 local_handler (additional):
-    MODELS_CONFIG_PATH        local filesystem path to models_config.json
-    DATABASE_URL              psycopg2 DSN
-    RESULTS_TABLE             results table name (default: results)
+    MARIGOLD_DATABASE_URL              psycopg2 DSN
+    MARIGOLD_MODEL_CATALOGUE_TABLE              model catalogue table name (default: models)
+    MARIGOLD_RESULTS_TABLE             results table name (default: results)
 """
 
 import json
@@ -48,28 +46,12 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Shared utilities
+# Shared utilities -- sqs_handler only, unchanged
 # ---------------------------------------------------------------------------
 
 
-def _queue_name(model_hash: str) -> str:
-    """Derive a Postgres queue table name from a model hash.
-
-    Uses underscores rather than hyphens because Postgres table identifiers
-    cannot contain hyphens unquoted.
-
-        mdl_{hash}_queue
-    """
-    return f"mdl_{model_hash}_queue"
-
-
 def _load_models_config() -> dict:
-    """Load models_config.json from S3 or local filesystem.
-
-    Resolution order:
-    1. If MODELS_CONFIG_S3_OBJECT is set, load from S3.
-    2. Otherwise load from MODELS_CONFIG_PATH as a local file.
-    """
+    """Load models_config.json from S3 or local filesystem. sqs_handler only."""
     s3_key = os.getenv("MODELS_CONFIG_S3_OBJECT")
     if s3_key:
         import boto3
@@ -85,27 +67,20 @@ def _load_models_config() -> dict:
 
 
 def _resolve_model_hashes(config: dict) -> list[str]:
-    """Parse MARIGOLD_MODELS into a list of model hashes.
-
-    If MARIGOLD_MODELS is unset or empty, all hashes in config are used.
-    """
+    """Parse MARIGOLD_MODELS against a models_config dict. sqs_handler only."""
     raw = os.environ.get("MARIGOLD_MODELS", "").strip()
-
     if not raw:
         logger.info("MARIGOLD_MODELS not set -- serving all %d models in config", len(config))
         return list(config.keys())
-
     hashes = [h.strip() for h in raw.split(",") if h.strip()]
-
     if not hashes:
         logger.error("MARIGOLD_MODELS is set but contains no valid entries")
         sys.exit(1)
-
     return hashes
 
 
 def _resolve_model_entries(hashes: list[str], config: dict) -> list[dict]:
-    """Look up each hash in models_config and return the resolved entries."""
+    """Look up each hash in models_config. sqs_handler only."""
     entries = []
     for h in hashes:
         if h not in config:
@@ -119,17 +94,26 @@ def _resolve_model_entries(hashes: list[str], config: dict) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# AWS / ECS entry point
+# Local / Postgres catalogue resolution -- local_handler only
+# ---------------------------------------------------------------------------
+
+
+def _load_catalogue(conn, table: str) -> list:
+    """Fetch the full active model catalogue from Postgres."""
+    from dynawrap.backends.postgres import PostgresBackend
+    from models.catalogue import get_all_models
+
+    backend = PostgresBackend(conn)
+    return get_all_models(backend, table)
+
+
+# ---------------------------------------------------------------------------
+# AWS / ECS entry point -- unchanged
 # ---------------------------------------------------------------------------
 
 
 def sqs_handler():
-    """ECS task entry point for a single model.
-
-    Constructs SQS and SNS backends, loads the model, and runs QueueWorker
-    until the queue is idle. results_cache is None -- the AWS path writes
-    results via outputs.update_results_table() inside _write_result().
-    """
+    """ECS task entry point for a single model. Unchanged -- out of scope."""
     from backend.messaging.sqs_sns import SNSNotificationBackend, SQSQueueBackend
     from models import load_all
     from models.worker import QueueWorker
@@ -149,7 +133,6 @@ def sqs_handler():
         sys.exit(1)
 
     model_hash = hashes[0]
-    config = _load_models_config()
     entries = _resolve_model_entries([model_hash], config)
     entry = entries[0]
 
@@ -169,7 +152,6 @@ def sqs_handler():
 
     queue_backend = SQSQueueBackend(endpoint_url=endpoint_url)
     queue_backend.add_queue_url(model_hash, queue_url)
-
     notification_backend = SNSNotificationBackend(endpoint_url=endpoint_url)
 
     worker = QueueWorker(
@@ -181,7 +163,7 @@ def sqs_handler():
         notification_backend=notification_backend,
         visibility_timeout=visibility_timeout,
         topic=topic,
-        results_cache=None,  # AWS path: _write_result uses outputs.update_results_table
+        results_cache=None,
     )
     worker.run()
 
@@ -194,13 +176,14 @@ def sqs_handler():
 def local_handler():
     """Local development entry point for one or more models.
 
-    Constructs Postgres backends from DATABASE_URL. Creates queue tables
-    and the results table if they do not exist (idempotent).
+    Constructs Postgres backends from DATABASE_URL. Reads the model
+    catalogue from the models table -- populated separately by the API's
+    startup hook, not by this handler. Creates queue tables and the
+    results table if they do not exist (idempotent).
 
-    Single hash in MARIGOLD_MODELS -> QueueWorker (idle_timeout=-1).
-    Multiple hashes                -> MultiQueueWorker (idle_timeout=0,
-                                      exits each queue immediately so the
-                                      next model can be loaded promptly).
+    Single entry     -> QueueWorker (idle_timeout=-1).
+    Multiple entries -> MultiQueueWorker (idle_timeout=0, exits each queue
+                        immediately so the next model can be loaded promptly).
     """
     import psycopg2
     from backend.messaging.local import LocalNotificationBackend
@@ -212,19 +195,21 @@ def local_handler():
 
     load_all()
 
-    config = _load_models_config()
-    hashes = _resolve_model_hashes(config)
-    entries = _resolve_model_entries(hashes, config)
-
-    dsn = os.environ["DATABASE_URL"]
+    dsn = os.environ["MARIGOLD_DATABASE_URL"]
     visibility_timeout = int(os.getenv("SQS_VISIBILITY_TIMEOUT", "300"))
     topic = os.getenv("LIFECYCLE_TOPIC", "lifecycle")
-    results_table = os.getenv("RESULTS_TABLE", "results")
-
-    logger.info(entries)
+    results_table = os.getenv("MARIGOLD_RESULTS_TABLE", "results")
+    models_table = os.getenv("MARIGOLD_MODEL_CATALOGUE_TABLE", "models")
 
     conn = psycopg2.connect(dsn)
     conn.autocommit = True
+
+    catalogue = _load_catalogue(conn, models_table)
+    #logger.info("catalogue: %s", str(catalogue))
+    for idx, model in enumerate(catalogue):
+        logger.info("[%03i] %s", idx, str(model))
+    logger.info("serving: %s", [m.name for m in catalogue])
+
     queue_backend = PostgresQueueBackend(conn)
     notification_backend = LocalNotificationBackend()
 
@@ -232,33 +217,31 @@ def local_handler():
     PostgresBackend.create_table(conn, results_table)
     results_cache = ResultsCache(results_backend, results_table)
 
-    # Derive queue names and ensure tables exist.
-    for entry in entries:
-        entry["queue_name"] = _queue_name(entry["model_hash"])
-        queue_backend.create_queue(entry["queue_name"])
+    for model in catalogue:
+        queue_backend.create_queue(model.queue_name)
 
-    if len(entries) == 1:
-        entry = entries[0]
+    if len(catalogue) == 1:
+        entry = catalogue[0]
         worker = QueueWorker(
-            queue=entry["queue_name"],
-            model_name=entry.get("model_name") or entry.get("name"),
-            model_type=entry.get("model_type") or entry.get("type"),
-            model_hash=entry["model_hash"],
+            queue=entry.queue_name,
+            model_name=entry.name,
+            model_type=entry.type,
+            model_hash=entry.hash,
             queue_backend=queue_backend,
             notification_backend=notification_backend,
             visibility_timeout=visibility_timeout,
             topic=topic,
-            idle_timeout=-1,  # poll indefinitely in local dev
+            idle_timeout=-1,
             results_cache=results_cache,
         )
     else:
         worker = MultiQueueWorker(
-            entries=entries,
+            model_catalogue=catalogue,  # requires the worker.py refactor flagged above
             queue_backend=queue_backend,
             notification_backend=notification_backend,
             visibility_timeout=visibility_timeout,
             topic=topic,
-            idle_timeout=int(os.getenv("MARIGOLD_QUEUE_IDLE_TIMEOUT", "0")),  # if zero, exit each queue immediately to load next model
+            idle_timeout=int(os.getenv("MARIGOLD_QUEUE_IDLE_TIMEOUT", "0")),
             results_cache=results_cache,
         )
 

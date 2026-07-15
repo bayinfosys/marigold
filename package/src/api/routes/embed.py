@@ -6,6 +6,7 @@ from fastapi_aws import APIKeyAuthorizer, AWSAPIRouter
 from api.models import EmbedImageRequest, EmbedTextRequest, SubmissionResponse
 from api.routes._submit import _submit
 from api.auth import apikey_auth
+from shared.enums import ModelType
 
 
 router = AWSAPIRouter()
@@ -22,7 +23,7 @@ _IAM = "${request_receiver_lambda_iam_role_arn}"
     aws_iam_arn=_IAM,
 )
 async def embed_text(request: Request, body: EmbedTextRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump())
+    return await _submit(request, user.id, body.model_dump(), ModelType.TEXT_EMBEDDING)
 
 
 @router.post(
@@ -33,4 +34,4 @@ async def embed_text(request: Request, body: EmbedTextRequest, user=Security(api
     aws_iam_arn=_IAM,
 )
 async def embed_image(request: Request, body: EmbedImageRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump())
+    return await _submit(request, user.id, body.model_dump(), ModelType.IMAGE_EMBEDDING)

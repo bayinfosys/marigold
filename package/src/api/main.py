@@ -36,10 +36,13 @@ Local only:
 
 import logging
 import os
+import glob
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+
+from models.catalogue import load_catalogue_from_yaml, save_models
 
 from api.routes import router
 
@@ -56,18 +59,6 @@ def _is_lambda() -> bool:
     return bool(os.getenv("AWS_EXECUTION_ENV") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
 
 
-def _load_models_config() -> dict:
-    """Load models_config.json from S3 or local filesystem.
-
-    Delegates to the same loader used by entrypoint_handlers so the
-    resolution logic is defined in one place.
-    """
-    from models.entrypoint_handlers import _load_models_config as _load
-    return _load()
-
-
-
-
 def _build_local_backends(app: FastAPI) -> None:
     import psycopg2
     from dynawrap.backends.postgres import PostgresBackend
@@ -75,8 +66,10 @@ def _build_local_backends(app: FastAPI) -> None:
     from backend.messaging.local import LocalNotificationBackend
     from tools.polling.results_cache import ResultsCache
 
-    dsn = os.environ["DATABASE_URL"]
-    results_table = os.environ["RESULTS_TABLE"]
+    dsn = os.environ["MARIGOLD_DATABASE_URL"]
+    results_table = os.environ["MARIGOLD_RESULTS_TABLE"]
+    model_catalogue_table = os.environ["MARIGOLD_MODEL_CATALOGUE_TABLE"]
+    model_catalogue_yamls = os.environ["MARIGOLD_MODEL_CATALOGUE_YAMLS"]
 
     conn = psycopg2.connect(dsn)
     conn.autocommit = True
@@ -84,19 +77,29 @@ def _build_local_backends(app: FastAPI) -> None:
     queue_backend = PostgresQueueBackend(conn)
     notification_backend = LocalNotificationBackend()
 
-    results_backend = PostgresBackend(conn)
+    # create the output results
+    table_backend = PostgresBackend(conn)
     PostgresBackend.create_table(conn, results_table)
-    results_cache = ResultsCache(results_backend, results_table)
+    results_cache = ResultsCache(table_backend, results_table)
 
-    app.state.models_config = _load_models_config()
+    # create the model catalogue
+    model_catalogue_items = load_catalogue_from_yaml(list(glob.glob(model_catalogue_yamls)))
+    logger.info("found %i models", len(model_catalogue_items))
+    PostgresBackend.create_table(conn, model_catalogue_table)
+    save_models(table_backend, model_catalogue_table, model_catalogue_items)
+
+    # set application state for the api
     app.state.queue_backend = queue_backend
     app.state.notification_backend = notification_backend
     app.state.results_cache = results_cache
+    app.state.table_backend = table_backend
     app.state.topic = os.getenv("LIFECYCLE_TOPIC", "lifecycle")
+    app.state.model_catalogue_table = model_catalogue_table
 
     logger.info(
-        "local backends configured: %d models, table='%s'",
-        len(app.state.models_config),
+        "local backends configured: %d models, models='%s', results='%s'",
+        len(model_catalogue_items),
+        model_catalogue_table,
         results_table,
     )
 
@@ -105,23 +108,15 @@ def _build_local_backends(app: FastAPI) -> None:
 async def lifespan(app: FastAPI):
     if _is_lambda():
         logger.info("Lambda environment detected -- skipping backend construction")
-        app.state.models_config = {}
         app.state.queue_backend = None
         app.state.notification_backend = None
         app.state.results_cache = None
         app.state.topic = None
-    elif os.getenv("DATABASE_URL"):
+    elif os.getenv("MARIGOLD_DATABASE_URL"):
         _build_local_backends(app)
     else:
-        logger.warning(
-            "neither Lambda environment nor DATABASE_URL detected -- "
-            "route handlers will fail if called"
-        )
-        app.state.models_config = {}
-        app.state.queue_backend = None
-        app.state.notification_backend = None
-        app.state.results_cache = None
-        app.state.topic = None
+        logger.critical("neither Lambda environment nor MARIGOLD_DATABASE_URL detected")
+        raise ValueError("MARIGOLD_DATABASE_URL expected")
 
     yield
 
@@ -129,7 +124,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Marigold",
     description="Hosted model inference API.",
-    version=os.getenv("BUILD_VERSION", "dev"),
+    version=os.getenv("MARIGOLD_VERSION", "dev"),
     lifespan=lifespan,
 )
 

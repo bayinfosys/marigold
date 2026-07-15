@@ -26,12 +26,15 @@ routes are local-only and have no AWS decorator metadata.
 import asyncio
 import logging
 import time
-from typing import Literal
+from typing import Literal, List
 
 from fastapi import HTTPException, Request
 from fastapi_aws import AWSAPIRouter
 from pydantic import BaseModel
 from tools.state_machine.receiver_logic import handle_status, handle_submission
+from models.catalogue import get_model, get_all_models, get_models_by_type
+from shared.db_models import ModelCatalogueItem
+from shared.enums import ModelType
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +150,9 @@ async def _poll(
 # ---------------------------------------------------------------------------
 
 
-def _validate_model(model_name: str, models_config: dict, model_type: str = None) -> None:
+def _validate_model(
+    model_name: str, catalogue_backend, catalogue_table: str, model_type: str = None
+) -> None:
     """Validate that model_name exists in models_config.
 
     Raises HTTPException 400 with a clear error message if not found.
@@ -160,28 +165,23 @@ def _validate_model(model_name: str, models_config: dict, model_type: str = None
         model_type:    Optional ModelType value to restrict the check.
     """
     from hashlib import md5
+
     model_hash = md5(model_name.lower().encode()).hexdigest()
 
     if model_type is not None:
-        available = [
-            v.get("name") or v.get("model_name")
-            for v in models_config.values()
-            if (v.get("type") or v.get("model_type")) == model_type
-        ]
+        available = get_models_by_type(catalogue_backend, catalogue_table, model_type)
     else:
         available = [
-            v.get("name") or v.get("model_name")
-            for v in models_config.values()
+            get_model(catalogue_backend, catalogue_table, model_type, model_name)
         ]
 
-    entry = models_config.get(model_hash)
-
-    if entry is None:
+    if not available:
         raise HTTPException(
             status_code=400,
             detail={
                 "error": {
-                    "message": "unknown model '%s'; available%s: %s" % (
+                    "message": "unknown model '%s'; available%s: %s"
+                    % (
                         model_name,
                         (" %s" % model_type) if model_type else "",
                         available,
@@ -193,14 +193,19 @@ def _validate_model(model_name: str, models_config: dict, model_type: str = None
         )
 
     if model_type is not None:
-        entry_type = entry.get("type") or entry.get("model_type")
-        if entry_type != model_type:
+        entry = available[0]
+        if entry.type != model_type:
             raise HTTPException(
                 status_code=400,
                 detail={
                     "error": {
-                        "message": "model '%s' is type '%s', not '%s'; available %s models: %s" % (
-                            model_name, entry_type, model_type, model_type, available,
+                        "message": "model '%s' is type '%s', not '%s'; available %s models: %s"
+                        % (
+                            model_name,
+                            entry.type,
+                            model_type,
+                            model_type,
+                            available,
                         ),
                         "type": "invalid_request_error",
                         "code": "model_type_mismatch",
@@ -214,23 +219,17 @@ def _validate_model(model_name: str, models_config: dict, model_type: str = None
 # ---------------------------------------------------------------------------
 
 
-@router.get("/v1/models", response_model=ModelsResponse)
-async def list_models(request: Request) -> ModelsResponse:
+@router.get("/v1/models", response_model=List[ModelCatalogueItem])
+async def list_models(request: Request) -> List[ModelCatalogueItem]:
     """Return the list of models available in the current deployment.
 
     Derived from models_config in app.state. Each model appears once
     regardless of type -- clients use the model name to select.
     """
-    config = getattr(request.app.state, "models_config", {})
-    models = [
-        ModelObject(
-            id=v.get("name") or v.get("model_name", k),
-            created=0,
-            owned_by="marigold",
-        )
-        for k, v in config.items()
-    ]
-    return ModelsResponse(data=models)
+    table_backend = request.app.state.table_backend
+    table = request.app.state.model_catalogue_table
+
+    return get_all_models(request.app.state.tabke_backend, table)
 
 
 @router.post("/v1/chat/completions")
@@ -260,7 +259,9 @@ async def chat_completions(
     s = request.app.state
     user_id = "openai-local"
 
-    _validate_model(body.model, s.models_config, model_type="instruct")
+    _validate_model(
+        body.model, s.table_backend, s.model_catalogue_table, model_type="instruct"
+    )
 
     submission_body = {
         "model": body.model,
@@ -273,14 +274,21 @@ async def chat_completions(
     if body.top_k is not None:
         submission_body["top_k"] = body.top_k
 
+    table_backend = request.app.state.table_backend
+    queue_backend = request.app.state.queue_backend
+    results_cache = request.app.state.results_cache
+    table = request.app.state.model_catalogue_table
+
     code, resp = handle_submission(
         user_id=user_id,
-        body=submission_body,
-        models_config=s.models_config,
-        queue_backend=s.queue_backend,
-        notification_backend=s.notification_backend,
-        results_cache=s.results_cache,
-        topic=s.topic,
+        body=body.model_dump(),
+        model_type=ModelType.INSTRUCT,
+        catalogue_backend=table_backend,
+        catalogue_table=table,
+        queue_backend=queue_backend,
+        notification_backend=None,
+        results_cache=results_cache,
+        topic=None,  # s.topic,
     )
 
     if code != 200 or "message_id" not in resp:
@@ -325,14 +333,20 @@ async def chat_completions(
 
 
 @router.post("/v1/embeddings")
-async def create_embeddings(body: EmbeddingRequest, request: Request) -> EmbeddingResponse:
+async def create_embeddings(
+    body: EmbeddingRequest, request: Request
+) -> EmbeddingResponse:
     """OpenAI-compatible text embeddings.
 
     Submits to the Marigold text-embedding queue. Accepts a single string
     or a list of strings -- each is submitted as a separate job and results
     are collected in order.
     """
-    logger.info("embeddings request: model=%s input_type=%s", body.model, type(body.input).__name__)
+    logger.info(
+        "embeddings request: model=%s input_type=%s",
+        body.model,
+        type(body.input).__name__,
+    )
 
     s = request.app.state
     user_id = "openai-local"
@@ -341,7 +355,12 @@ async def create_embeddings(body: EmbeddingRequest, request: Request) -> Embeddi
     total_tokens = 0
     embedding_data = []
 
-    _validate_model(body.model, s.models_config, model_type="text-embedding")
+    _validate_model(
+        body.model,
+        s.table_backend,
+        s.model_catalogue_table,
+        model_type="text-embedding",
+    )
 
     for i, text in enumerate(inputs):
         submission_body = {"model": body.model, "input": text}
@@ -349,7 +368,7 @@ async def create_embeddings(body: EmbeddingRequest, request: Request) -> Embeddi
         code, resp = handle_submission(
             user_id=user_id,
             body=submission_body,
-            models_config=s.models_config,
+            models_config=s.model_catalogue_table,
             queue_backend=s.queue_backend,
             notification_backend=s.notification_backend,
             results_cache=s.results_cache,

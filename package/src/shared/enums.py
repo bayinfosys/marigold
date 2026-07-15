@@ -6,7 +6,7 @@ All three enum classes must be kept in sync with:
   - _SPECS registry  (ModelType values used as keys)
 """
 
-from enum import Enum
+from enum import Enum, StrEnum
 
 
 class ModelProvider(str, Enum):
@@ -23,7 +23,7 @@ class ModelProvider(str, Enum):
     TOOLS = "tools"
 
 
-class ModelType(Enum):
+class ModelType(StrEnum):
     """Unique identifier for each task type.
 
     Values are stable strings stored in DynamoDB, S3 key prefixes, ECS
