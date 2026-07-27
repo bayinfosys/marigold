@@ -11,30 +11,46 @@ GET  /v1/models                  list available models
 POST /v1/chat/completions        instruct/chat inference
 POST /v1/embeddings              text embedding
 
-Not implemented
----------------
-Streaming (stream=true) -- returns an error asking the client to disable it.
-Image generation, audio, fine-tuning -- not mapped.
+Streaming
+---------
+stream=true is accepted. Marigold's generation path (instruct.py) still
+runs a single blocking call per request and does not stream tokens as
+they are produced. When stream=true is set, the full result is sent as
+a fixed sequence of SSE chunks (role, then content and/or tool_calls,
+then a final chunk carrying finish_reason) followed by [DONE], matching
+the framing an OpenAI-compatible client expects. This is not token-level
+streaming. Real token-level streaming requires changes to instruct.py
+and worker.py and is not implemented here.
 
-On AWS
-------
-This module is not wired into the AWS API Gateway deployment. The async
-poll pattern is the correct approach for Lambda-based inference. These
-routes are local-only and have no AWS decorator metadata.
+Tool calling
+------------
+Tool definitions in a request's `tools` field are passed straight
+through to /gen/instruct, which passes them to apply_chat_template --
+see instruct.py for what that does and does not guarantee. Only one
+tool call per assistant turn round-trips correctly: InstructMessage has
+no field for OpenAI's tool_call_id, so a turn with multiple simultaneous
+tool calls has no way to match a tool result back to the call that
+produced it. tool_call_id is accepted on incoming messages for OpenAI
+API compatibility but is dropped when submitting to /gen/instruct.
+
+Not implemented
+----------------
+Image generation, audio, fine-tuning -- not mapped.
 """
 
 import asyncio
+import json
 import logging
 import time
-from typing import Literal, List
+from typing import Literal
 
 from fastapi import HTTPException, Request
+from fastapi.responses import StreamingResponse
 from fastapi_aws import AWSAPIRouter
+from models.catalogue import get_models_by_type
 from pydantic import BaseModel
-from tools.state_machine.receiver_logic import handle_status, handle_submission
-from models.catalogue import get_model, get_all_models, get_models_by_type
-from shared.db_models import ModelCatalogueItem
 from shared.enums import ModelType
+from tools.state_machine.receiver_logic import handle_status, handle_submission
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +65,24 @@ _MAX_WAIT = 300  # seconds before timing out
 # ---------------------------------------------------------------------------
 
 
+class ToolCallFunction(BaseModel):
+    name: str
+    arguments: str  # JSON-encoded string, per OpenAI convention
+
+
+class ToolCall(BaseModel):
+    id: str
+    type: str = "function"
+    function: ToolCallFunction
+
+
 class ChatMessage(BaseModel):
-    role: Literal["system", "user", "assistant"]
-    content: str
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str | None = None
+    tool_calls: list[ToolCall] | None = None
+    tool_call_id: str | None = (
+        None  # accepted for compatibility, dropped before submission -- see module docstring
+    )
 
 
 class ChatCompletionRequest(BaseModel):
@@ -62,6 +93,8 @@ class ChatCompletionRequest(BaseModel):
     top_p: float | None = None
     top_k: int | None = None
     stream: bool = False
+    tools: list[dict] | None = None
+    tool_choice: str | dict | None = None
 
 
 class ChatCompletionChoice(BaseModel):
@@ -83,6 +116,26 @@ class ChatCompletionResponse(BaseModel):
     model: str
     choices: list[ChatCompletionChoice]
     usage: UsageStats
+
+
+class ChatCompletionChunkDelta(BaseModel):
+    role: str | None = None
+    content: str | None = None
+    tool_calls: list[ToolCall] | None = None
+
+
+class ChatCompletionChunkChoice(BaseModel):
+    index: int = 0
+    delta: ChatCompletionChunkDelta
+    finish_reason: str | None = None
+
+
+class ChatCompletionChunk(BaseModel):
+    id: str
+    object: str = "chat.completion.chunk"
+    created: int
+    model: str
+    choices: list[ChatCompletionChunkChoice]
 
 
 class EmbeddingRequest(BaseModel):
@@ -117,6 +170,51 @@ class ModelsResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Message shape conversion -- OpenAI <-> InstructMessage
+# ---------------------------------------------------------------------------
+
+
+def _to_instruct_message(m: ChatMessage) -> dict:
+    """Convert an OpenAI-shaped ChatMessage into the dict shape
+    /gen/instruct's InstructMessage expects.
+
+    tool_call_id is dropped here -- InstructMessage has no field for it.
+    See the module docstring for the single-tool-call-per-turn limitation
+    this implies.
+    """
+    d = {"role": m.role, "content": m.content}
+    if m.tool_calls:
+        d["tool_calls"] = [
+            {
+                "name": tc.function.name,
+                "arguments": (
+                    json.loads(tc.function.arguments) if tc.function.arguments else {}
+                ),
+            }
+            for tc in m.tool_calls
+        ]
+    return d
+
+
+def _from_instruct_tool_calls(
+    raw_tool_calls: list[dict], message_id: str
+) -> list[ToolCall]:
+    """Convert InstructMessage-shaped tool_calls (arguments as a dict) into
+    OpenAI-shaped ToolCall objects (arguments as a JSON-encoded string).
+    """
+    return [
+        ToolCall(
+            id="call_%s_%d" % (message_id[:8], i),
+            function=ToolCallFunction(
+                name=tc.get("name", ""),
+                arguments=json.dumps(tc.get("arguments", {})),
+            ),
+        )
+        for i, tc in enumerate(raw_tool_calls)
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Shared poll helper
 # ---------------------------------------------------------------------------
 
@@ -145,127 +243,119 @@ async def _poll(
     return 504, {}
 
 
-# ---------------------------------------------------------------------------
-# Model validation
-# ---------------------------------------------------------------------------
+async def _sse_chunks(
+    completion_id: str,
+    created: int,
+    model: str,
+    content: str | None,
+    tool_calls: list[ToolCall] | None,
+    finish_reason: str,
+):
+    """Yield a fixed sequence of SSE chunks for a completed (non-token-streamed) result.
 
-
-def _validate_model(
-    model_name: str, catalogue_backend, catalogue_table: str, model_type: str = None
-) -> None:
-    """Validate that model_name exists in models_config.
-
-    Raises HTTPException 400 with a clear error message if not found.
-    If model_type is supplied, also checks that the model is of that type
-    and lists only models of that type in the error message.
-
-    Args:
-        model_name:    HuggingFace model identifier as sent by the client.
-        models_config: models_config dict from app.state.
-        model_type:    Optional ModelType value to restrict the check.
+    Marigold's generation path is still a single blocking call per request --
+    this does not stream tokens as they are produced. It produces the
+    chunk shape and framing an OpenAI-compatible client expects, so
+    stream=true stops failing with a 400. Real token-level streaming is a
+    separate, larger change to instruct.py and worker.py, not made here.
     """
-    from hashlib import md5
-
-    model_hash = md5(model_name.lower().encode()).hexdigest()
-
-    if model_type is not None:
-        available = get_models_by_type(catalogue_backend, catalogue_table, model_type)
-    else:
-        available = [
-            get_model(catalogue_backend, catalogue_table, model_type, model_name)
-        ]
-
-    if not available:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": {
-                    "message": "unknown model '%s'; available%s: %s"
-                    % (
-                        model_name,
-                        (" %s" % model_type) if model_type else "",
-                        available,
-                    ),
-                    "type": "invalid_request_error",
-                    "code": "model_not_found",
-                }
-            },
-        )
-
-    if model_type is not None:
-        entry = available[0]
-        if entry.type != model_type:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": {
-                        "message": "model '%s' is type '%s', not '%s'; available %s models: %s"
-                        % (
-                            model_name,
-                            entry.type,
-                            model_type,
-                            model_type,
-                            available,
-                        ),
-                        "type": "invalid_request_error",
-                        "code": "model_type_mismatch",
-                    }
-                },
+    role_chunk = ChatCompletionChunk(
+        id=completion_id,
+        created=created,
+        model=model,
+        choices=[
+            ChatCompletionChunkChoice(
+                delta=ChatCompletionChunkDelta(role="assistant"), finish_reason=None
             )
+        ],
+    )
+    yield "data: %s\n\n" % role_chunk.model_dump_json(exclude_none=True)
+
+    if content is not None or tool_calls:
+        body_chunk = ChatCompletionChunk(
+            id=completion_id,
+            created=created,
+            model=model,
+            choices=[
+                ChatCompletionChunkChoice(
+                    delta=ChatCompletionChunkDelta(
+                        content=content, tool_calls=tool_calls
+                    ),
+                    finish_reason=None,
+                )
+            ],
+        )
+        yield "data: %s\n\n" % body_chunk.model_dump_json(exclude_none=True)
+
+    final_chunk = ChatCompletionChunk(
+        id=completion_id,
+        created=created,
+        model=model,
+        choices=[
+            ChatCompletionChunkChoice(
+                delta=ChatCompletionChunkDelta(), finish_reason=finish_reason
+            )
+        ],
+    )
+    yield "data: %s\n\n" % final_chunk.model_dump_json(exclude_none=True)
+
+    yield "data: [DONE]\n\n"
 
 
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
+_models = None
 
-@router.get("/v1/models", response_model=List[ModelCatalogueItem])
-async def list_models(request: Request) -> List[ModelCatalogueItem]:
-    """Return the list of models available in the current deployment.
 
-    Derived from models_config in app.state. Each model appears once
-    regardless of type -- clients use the model name to select.
-    """
-    table_backend = request.app.state.table_backend
-    table = request.app.state.model_catalogue_table
+@router.get("/v1/models", response_model=ModelsResponse)
+async def list_models(request: Request) -> ModelsResponse:
+    """Return the list of models available in the current deployment."""
+    global _models
 
-    return get_all_models(request.app.state.tabke_backend, table)
+    if _models is None:
+        _db_models = get_models_by_type(
+            backend=request.app.state.table_backend,
+            table=request.app.state.model_catalogue_table,
+            model_type=ModelType.INSTRUCT,
+        )
+
+        _models = [
+            ModelObject(id=m.name, created=0, owned_by=m.provider.value)
+            for m in _db_models
+        ]
+
+    return ModelsResponse(data=_models)
 
 
 @router.post("/v1/chat/completions")
 async def chat_completions(
     body: ChatCompletionRequest,
     request: Request,
-) -> ChatCompletionResponse:
+):
     """OpenAI-compatible chat completions.
 
     Submits to the Marigold instruct queue, polls until complete, and
     returns in OpenAI chat completion format.
 
-    stream=true is not supported. If the client requests streaming,
-    a 400 is returned with a message asking it to disable streaming.
+    stream=true is accepted -- see the module docstring. The result is
+    still produced by a single blocking poll; streaming only changes
+    how that finished result is framed in the response.
+
+    tools, if present, is passed straight through to /gen/instruct --
+    see the module docstring for the single-tool-call-per-turn limitation.
     """
-    if body.stream:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": {
-                    "message": "streaming is not supported; set stream=false",
-                    "type": "invalid_request_error",
-                }
-            },
-        )
+    table_backend = request.app.state.table_backend
+    queue_backend = request.app.state.queue_backend
+    results_cache = request.app.state.results_cache
+    table = request.app.state.model_catalogue_table
 
-    s = request.app.state
     user_id = "openai-local"
-
-    _validate_model(
-        body.model, s.table_backend, s.model_catalogue_table, model_type="instruct"
-    )
 
     submission_body = {
         "model": body.model,
-        "messages": [m.model_dump() for m in body.messages],
+        "messages": [_to_instruct_message(m) for m in body.messages],
         "temperature": body.temperature,
         "max_tokens": body.max_tokens,
     }
@@ -273,15 +363,12 @@ async def chat_completions(
         submission_body["top_p"] = body.top_p
     if body.top_k is not None:
         submission_body["top_k"] = body.top_k
-
-    table_backend = request.app.state.table_backend
-    queue_backend = request.app.state.queue_backend
-    results_cache = request.app.state.results_cache
-    table = request.app.state.model_catalogue_table
+    if body.tools is not None:
+        submission_body["tools"] = body.tools
 
     code, resp = handle_submission(
         user_id=user_id,
-        body=body.model_dump(),
+        body=submission_body,
         model_type=ModelType.INSTRUCT,
         catalogue_backend=table_backend,
         catalogue_table=table,
@@ -294,7 +381,7 @@ async def chat_completions(
     if code != 200 or "message_id" not in resp:
         raise HTTPException(status_code=code, detail={"error": resp})
 
-    status_code, result = await _poll(user_id, resp["message_id"], s.results_cache)
+    status_code, result = await _poll(user_id, resp["message_id"], results_cache)
 
     if status_code != 200:
         raise HTTPException(
@@ -308,20 +395,41 @@ async def chat_completions(
         )
 
     choices = result.get("choices", [])
-    content = choices[0].get("content", "") if choices else ""
+    choice0 = choices[0] if choices else {}
+    content = choice0.get("content")
+    raw_tool_calls = choice0.get("tool_calls") or []
+    tool_calls = (
+        _from_instruct_tool_calls(raw_tool_calls, resp["message_id"])
+        if raw_tool_calls
+        else None
+    )
+
     usage = result.get("usage", {})
     input_tokens = usage.get("input_tokens", 0)
     output_tokens = usage.get("output_tokens", 0)
+    finish_reason = "tool_calls" if tool_calls else result.get("finish_reason", "stop")
+    completion_id = "chatcmpl-" + resp["message_id"][:8]
+    created = int(time.time())
+
+    if body.stream:
+        return StreamingResponse(
+            _sse_chunks(
+                completion_id, created, body.model, content, tool_calls, finish_reason
+            ),
+            media_type="text/event-stream",
+        )
 
     return ChatCompletionResponse(
-        id="chatcmpl-" + resp["message_id"][:8],
-        created=int(time.time()),
+        id=completion_id,
+        created=created,
         model=body.model,
         choices=[
             ChatCompletionChoice(
                 index=0,
-                message=ChatMessage(role="assistant", content=content),
-                finish_reason=result.get("finish_reason", "stop"),
+                message=ChatMessage(
+                    role="assistant", content=content, tool_calls=tool_calls
+                ),
+                finish_reason=finish_reason,
             )
         ],
         usage=UsageStats(
@@ -348,19 +456,16 @@ async def create_embeddings(
         type(body.input).__name__,
     )
 
-    s = request.app.state
+    table_backend = request.app.state.table_backend
+    queue_backend = request.app.state.queue_backend
+    results_cache = request.app.state.results_cache
+    table = request.app.state.model_catalogue_table
+
     user_id = "openai-local"
 
     inputs = body.input if isinstance(body.input, list) else [body.input]
     total_tokens = 0
     embedding_data = []
-
-    _validate_model(
-        body.model,
-        s.table_backend,
-        s.model_catalogue_table,
-        model_type="text-embedding",
-    )
 
     for i, text in enumerate(inputs):
         submission_body = {"model": body.model, "input": text}
@@ -368,17 +473,19 @@ async def create_embeddings(
         code, resp = handle_submission(
             user_id=user_id,
             body=submission_body,
-            models_config=s.model_catalogue_table,
-            queue_backend=s.queue_backend,
-            notification_backend=s.notification_backend,
-            results_cache=s.results_cache,
-            topic=s.topic,
+            model_type=ModelType.TEXT_EMBEDDING,
+            catalogue_backend=table_backend,
+            catalogue_table=table,
+            queue_backend=queue_backend,
+            notification_backend=None,
+            results_cache=results_cache,
+            topic=None,  # s.topic,
         )
 
         if code != 200 or "message_id" not in resp:
             raise HTTPException(status_code=400, detail={"error": resp})
 
-        status_code, result = await _poll(user_id, resp["message_id"], s.results_cache)
+        status_code, result = await _poll(user_id, resp["message_id"], results_cache)
 
         if status_code != 200:
             raise HTTPException(

@@ -188,6 +188,7 @@ class InstructRequest(ModelRequest):
     min_p: Optional[float] = Field(None, description="minimum token probability as a fraction of the top token probability; range 0.0-1.0")
     repetition_penalty: Optional[float] = Field(None)
     no_repeat_ngram_size: Optional[int] = Field(None)
+    tools: list[Dict] = Field(default_factory=list, description="JSON schema function tool definitions")
 
 
 class InstructResponse(GenerativeResponse):

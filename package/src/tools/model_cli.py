@@ -131,12 +131,16 @@ class ModelCatalogueContext:
 
     @classmethod
     def load(cls, model_name_filter: Optional[str] = None) -> "ModelCatalogueContext":
-        yaml_pattern = os.environ.get("MARIGOLD_MODEL_CATALOGUE_YAMLS", "")
+        yaml_patterns = os.environ.get("MARIGOLD_MODEL_CATALOGUE_YAMLS", "")
 
-        if not yaml_pattern:
+        if not yaml_patterns:
             raise CliError("MARIGOLD_MODEL_CATALOGUE_YAMLS is required")
 
-        model_catalogue_items = load_catalogue_from_yaml(list(glob.glob(yaml_pattern)))
+        # create the model catalogue
+        yaml_files = [t for x in yaml_patterns.split(",") for t in glob.glob(x)]
+        log.info("found %i model definition files", len(yaml_files))
+
+        model_catalogue_items = load_catalogue_from_yaml(yaml_files)
 
         return cls(
             models=model_catalogue_items,

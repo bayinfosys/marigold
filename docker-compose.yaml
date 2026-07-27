@@ -1,18 +1,4 @@
 services:
-  postgres:
-    image: postgres:17
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-marigold}
-      POSTGRES_USER: ${POSTGRES_USER:-marigold}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-marigold}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-marigold}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   cache-init:
     image: marigold/environment:${TAG:-latest}   # CPU image -- see note below, not *-gpu
     command: ["python3", "-m", "tools.model_cli", "download-weights"]
@@ -26,13 +12,25 @@ services:
       - ${MARIGOLD_CACHE_DIR:-./cache/models}:/models
     restart: "no"
 
-  worker:
-    image: marigold/worker:${TAG:-latest}-gpu
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-marigold}
+      POSTGRES_USER: ${POSTGRES_USER:-marigold}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-marigold}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-marigold}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     depends_on:
-      postgres:
-        condition: service_healthy
       cache-init:
         condition: service_completed_successfully
+
+  worker:
+    image: marigold/worker:${TAG:-latest}-gpu
 
     environment:
       MARIGOLD_VERSION: ${TAG:-latest}
@@ -57,6 +55,12 @@ services:
       - ${MARIGOLD_MODEL_TMP_DIR:-./cache/tmp}:/tmp/models
       - ${MARIGOLD_OUTPUT_DIR:-./cache/outputs}:/outputs
 
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cache-init:
+        condition: service_completed_successfully
+
     deploy:
       resources:
         reservations:
@@ -67,9 +71,6 @@ services:
 
   api:
     image: marigold/worker:${TAG:-latest}
-    depends_on:
-      postgres:
-        condition: service_healthy
     command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     ports:
       - "${API_PORT:-8000}:8000"
@@ -80,10 +81,13 @@ services:
       MARIGOLD_RESULTS_TABLE: results
       MARIGOLD_MODEL_CATALOGUE_YAMLS: ${MODELS_CATALOGUE:-/app/assets/models-instruct-3060.yaml}
       MARIGOLD_MODEL_CATALOGUE_TABLE: model_catalogue
-
     volumes:
       - ./assets:/app/assets:ro
-
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cache-init:
+        condition: service_completed_successfully
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
@@ -94,10 +98,18 @@ services:
       - OPENAI_API_BASE_URL=http://api:8000/v1
       - WEBUI_AUTH=false
       - AIOHTTP_CLIENT_TIMEOUT=300
+      - RAG_EMBEDDING_ENGINE=openai
+      - RAG_OPENAI_API_BASE_URL=http://api:8000/v1
+      - RAG_OPENAI_API_KEY=${WEBUI_DUMMY_KEY:-marigold}
+      - RAG_EMBEDDING_MODEL=sentence-transformers/all-minilm-l6-v2
     volumes:
       - open-webui:/app/backend/data
     depends_on:
-      - api
+      postgres:
+        condition: service_healthy
+      cache-init:
+        condition: service_completed_successfully
+
 
 volumes:
   open-webui:

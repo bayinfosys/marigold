@@ -116,6 +116,7 @@ class InstructRole(str, Enum):
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
+    TOOL = "tool"
 
 
 class InstructMessageContentType(str, Enum):
@@ -153,7 +154,8 @@ class InstructMessage(BaseModel, use_enum_values=True):
     """One turn in a conversation. Matches the OpenAI message structure."""
 
     role: InstructRole
-    content: Union[str, InstructMessageContentList] = Field(...)
+    content: Union[str, InstructMessageContentList, None] = Field(...)
+    tool_calls: list[Dict] = Field(default_factory=list)
 
     @field_validator("role", mode="before")
     @classmethod

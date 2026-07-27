@@ -83,7 +83,10 @@ def _build_local_backends(app: FastAPI) -> None:
     results_cache = ResultsCache(table_backend, results_table)
 
     # create the model catalogue
-    model_catalogue_items = load_catalogue_from_yaml(list(glob.glob(model_catalogue_yamls)))
+    yaml_files = [t for x in model_catalogue_yamls.split(",") for t in glob.glob(x)]
+    logger.info("found %i model definition files", len(yaml_files))
+
+    model_catalogue_items = load_catalogue_from_yaml(yaml_files)
     logger.info("found %i models", len(model_catalogue_items))
     PostgresBackend.create_table(conn, model_catalogue_table)
     save_models(table_backend, model_catalogue_table, model_catalogue_items)

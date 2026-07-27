@@ -29,6 +29,8 @@ def handle_submission(
     it to ModelType.INSTRUCT before this function ever runs) -- it is not
     derived from model_name, since the catalogue key is (model_type,
     model_name) together, not name alone.
+
+    TODO: define a pydantic object for response
     """
     model_name = body.get("model")
     if not model_name:
@@ -89,6 +91,10 @@ def handle_status(
     message_id: str,
     results_cache: ResultsCache,
 ) -> tuple[int, dict]:
+    """Get the status of a message from the cache
+
+    TODO: define a pydantic object for this response
+    """
     full_id = "API#" + message_id
     status = results_cache.get_status(user_id, full_id)
 
@@ -106,6 +112,8 @@ def handle_delete(
     message_id: str,
     results_cache: ResultsCache,
 ) -> tuple[int, dict]:
+    """Delete a message from the cache
+    """
     full_id = "API#" + message_id
     results_cache.delete(user_id, full_id)
     return 200, {"status": "ok", "message": "deleted", "message_id": message_id}
