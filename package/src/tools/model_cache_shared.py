@@ -31,7 +31,7 @@ from pathlib import Path
 
 import models
 from shared.registry import _SPECS
-from shared.db_models import ModelCatalogueItem
+from shared.db_models import ModelCatalogueItem, set_model_config_env
 from shared.enums import ModelProvider
 
 log = logging.getLogger("marigold.model-cache")
@@ -140,15 +140,20 @@ class HuggingFaceProvider(Provider):
             log.info("skip %s (complete)", name)
             return True
 
+        # NB: this is **always** the huggingface provider...
         if model.provider == ModelProvider.HUGGINGFACE:
             if "HF_TOKEN" in os.environ:
                 os.environ["HF_TOKEN"] = hf_token
             else:
                 log.warning("HF_TOKEN not provided")
 
+        # FIXME: these are defined in the container, forcing them here is confusing.
         os.environ["HF_HUB_CACHE"] = str(cache_path)
         os.environ["HF_HUB_OFFLINE"] = "0"
         os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "0"
+
+        # set any env vars given in extra_env
+        set_model_config_env(model)
 
         try:
             _SPECS[model_type].loader(

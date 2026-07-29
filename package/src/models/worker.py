@@ -41,7 +41,7 @@ from tools.power_sampler import (ModelVRAMError, PowerSampler,
                                  check_model_vram, get_vram_state)
 from shared.usage_models import UsageItem
 from shared.usage import write_usage
-from shared.db_models import ModelCatalogueItem
+from shared.db_models import ModelCatalogueItem, set_model_config_env
 
 logger = logging.getLogger(__name__)
 
@@ -420,20 +420,6 @@ class QueueWorker:
 # ---------------------------------------------------------------------------
 # MultiQueueWorker
 # ---------------------------------------------------------------------------
-
-
-def set_model_config_env(config_entry):
-    _ENV_KEYS = ("LOAD_IN_4BIT", "USE_FAST", "TRUST_REMOTE_CODE", "LOW_CPU_MEM_USAGE")
-
-    # remove any existing values
-    for key in _ENV_KEYS:
-        os.environ.pop(key, None)
-
-    custom_env = config_entry.extra_env
-
-    # insert our custom values
-    for key, value in custom_env.items():
-        os.environ[key] = value
 
 
 class MultiQueueWorker:

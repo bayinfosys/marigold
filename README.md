@@ -22,15 +22,24 @@ bundled example, or a separately-run store such as Qdrant, Chroma, or
 Postgres/pgvector -- with Marigold supplying the embedding vectors via
 `/embed/text` or `/v1/embeddings`.
 
+For a full walkthrough with a worked example, see the
+[setup tutorial](https://marigold.run/examples/setup/). What follows here
+is the reference version.
 
 ## Architecture
 
-Marigold runs as five Docker Compose services: `cache-init` (a one-shot
-container that populates the model cache before anything else starts),
-a Postgres database (queue tables, plus LISTEN/NOTIFY for pub/sub), a
-worker service that polls its assigned queues and runs inference, an
-API service (FastAPI via uvicorn), and open-webui as an example consumer
-of the OpenAI-compatible endpoint.
+Marigold's Docker Compose setup is split across three files:
+
+- `docker-compose.core.yaml` -- the actual services: Postgres (queue
+  tables, plus LISTEN/NOTIFY for pub/sub), `cache-init` (a one-shot
+  container that populates the model cache before anything else starts),
+  a worker service that polls its assigned queues and runs inference, and
+  the API service (FastAPI via uvicorn).
+- `docker-compose.webui.yaml` -- open-webui, as an example consumer of
+  the OpenAI-compatible endpoint.
+- `docker-compose.yaml` -- includes both of the above. This is the file
+  Compose picks up by default, so `docker compose up` on its own gives
+  you the full stack, open-webui included.
 
 ```mermaid
 flowchart TD
@@ -46,7 +55,7 @@ flowchart TD
     API["api service\nFastAPI / uvicorn"]:::svc
     PG[("Postgres\nqueue tables + LISTEN/NOTIFY")]:::q
     WRK["worker service\nQueueWorker / MultiQueueWorker"]:::cp
-    CACHE[/"cache/models\nread-only bind mount"/]:::svc
+    CACHE[/"MARIGOLD_DIR/data/models\nread-only mount into worker"/]:::svc
 
     INIT -->|populates| CACHE
     CLI -->|"POST /{mode}/{task}"| API
@@ -67,7 +76,7 @@ sequenceDiagram
     participant A as api service
     participant P as Postgres
     participant W as worker service
-    participant M as cache/models (read-only mount)
+    participant M as MARIGOLD_DIR/data/models (read-only mount)
 
     C->>A: POST /{mode}/{task}
     A->>P: check results cache (cache hit returns immediately)
@@ -86,45 +95,91 @@ sequenceDiagram
 
 Text and vector outputs are written to and read from Postgres directly.
 Binary outputs (images, audio, depth maps) are written to local disk
-under `OUTPUT_DIR` when `OUTPUT_BACKEND=fs` -- see "Notes" below for
-what is and is not yet retrievable through the API.
+under `MARIGOLD_DIR/data/outputs` -- see "Notes" below for what is and
+is not yet retrievable through the API.
 
-### Model cache
+## `MARIGOLD_DIR`: one directory, nowhere else
 
-Model weights are stored on local disk and mounted read-only into the
-worker container (`MARIGOLD_CACHE_DIR` in `.env`, `./cache/models` by
-default). The cache is populated by the `cache-init` service on
-`docker compose up`, reading whichever YAML file(s) `MODELS_CATALOGUE`
-points at.
+Every piece of state a Marigold setup has -- which models to load, local
+configuration, and everything the running containers produce -- lives
+under one directory, pointed at by the `MARIGOLD_DIR` environment
+variable. Nothing is stored anywhere else: no Docker named volumes, no
+database outside this directory, no state held only inside a container.
 
-### Model catalogue files
+### What you provide
+
+```
+your-setup/
+  models.yaml     -- which models to load
+  local.env       -- environment overrides for this setup
+```
+
+### What gets created
+
+```
+your-setup/
+  data/
+    models/       -- downloaded model weights
+    tmp/          -- offload storage used during inference
+    outputs/      -- binary outputs (images, audio, etc.)
+    webui/        -- open-webui's own state (chat history, uploads,
+                     its internal vector store for document retrieval)
+```
+
+`data/` doesn't need to exist beforehand -- Docker creates it as empty
+directories the first time you run `docker compose up` against a new
+`MARIGOLD_DIR`. Because `data/` is the entire state of the project,
+`rm -rf your-setup/data` resets everything -- models, chat history,
+uploaded documents -- and the next `docker compose up` rebuilds it from
+nothing but `models.yaml` and `local.env`.
+
+`MARIGOLD_DIR` must start with `./`, `../`, or `/`. A bare path with no
+leading `./` is parsed by Compose as a named volume rather than a
+directory on disk, giving you an empty, disconnected volume instead of
+the directory you meant.
+
+### `local.env`
+
+```bash
+# your-setup/local.env
+# Used with: docker compose --env-file your-setup/local.env up
+
+MARIGOLD_DIR=./your-setup
+MODELS_CATALOGUE=/app/marigold/models.yaml
+
+# Only needed if models.yaml includes a gated model.
+HF_TOKEN=
+```
+
+`MODELS_CATALOGUE` is a path *inside the container*, always
+`/app/marigold/...`, since that's where `MARIGOLD_DIR` gets mounted.
+
+### Running air-gapped
+
+Once `data/models` has been populated, every model your setup uses is on
+local disk -- inference makes no external request. The compose files
+set the environment variables needed to keep both Marigold's own
+containers and open-webui from attempting any network call once models
+are cached (`HF_HUB_OFFLINE` on the worker and api services, plus
+open-webui's own offline/telemetry variables), so after the first
+successful run the network connection can be removed entirely.
+
+## Model catalogue files
 
 Model weights can take a long time to download and use significant disk
-space. Rather than one large `models.yaml` covering every model type,
-catalogue files are kept small and task-specific:
+space. Catalogue files are kept small and task-specific rather than one
+large registry:
 
-- `assets/models-starter.yaml` -- one small instruct model, one small
-  text-embedding model. The default `MODELS_CATALOGUE` value; the
-  smallest useful footprint.
-- `assets/models-tutorial-rag.yaml` -- starter pack plus the embedding
-  model used in the local RAG tutorial.
-- `assets/models-tutorial-image-rag.yaml` -- an image-embedding model
-  for the image RAG tutorial.
-- `assets/models-{purpose}-3060.yaml` -- larger, hardware-tier-specific
-  presets for benchmarking and heavier local use.
+- `assets/models-{purpose}-3060.yaml` -- hardware-tier presets built
+  into the repo (instruct, text-embedding, img2txt, txt2img), the
+  default when `MARIGOLD_DIR` is unset.
+- A `models.yaml` inside your own `MARIGOLD_DIR` -- self-contained,
+  named, and reset independently of the built-in presets. This is the
+  pattern each tutorial (`examples/simple-rag/`, and so on) uses.
 
-`MODELS_CATALOGUE` accepts a comma-separated list, so a deployment
-combining several of these (e.g. starter pack plus embeddings) is a
-single environment variable change, not a new file.
-
-### Model selection
-
-The worker reads `MARIGOLD_MODELS`, a comma-separated list of model
-hash IDs, to determine which models it serves. The hashes correspond to
-entries generated from the active `MODELS_CATALOGUE`. There is currently
-no documented step for going from a human-readable model name to its
-hash for the purpose of writing this environment variable by hand.
-
+`MODELS_CATALOGUE` accepts a comma-separated list, so combining a small
+instruct model with an embedding model for RAG is one environment
+variable, not a new file.
 
 ## Model types
 
@@ -144,16 +199,14 @@ hash for the purpose of writing this environment variable by hand.
 | image-text-eval | image + text | alignment score | clip-ViT-B-32 |
 
 `image-embedding` has an implemented handler but no tested catalogue
-entry as of writing; see `assets/models-tutorial-image-rag.yaml` once
-created.
-
+entry as of writing.
 
 ## OpenAI-compatible endpoints
 
 `GET /v1/models`, `POST /v1/chat/completions`, `POST /v1/embeddings` are
 implemented as a synchronous wrapper around Marigold's async submit/poll
 path, for use with unmodified OpenAI-SDK clients (open-webui, LangChain,
-LangGraph).
+LangGraph, Continue.dev, and others).
 
 Two limitations worth knowing before relying on this for anything beyond
 basic chat:
@@ -165,15 +218,16 @@ basic chat:
   format has no field for `tool_call_id`, so a turn with parallel tool
   calls cannot be matched back to the call that produced it.
 
-
 ## Repository structure
 
 ```
 assets/
   models.yaml                    -- full model registry
-  models-starter.yaml            -- minimal default catalogue
-  models-tutorial-*.yaml         -- task-specific catalogues
   models-*-3060.yaml             -- hardware-tier presets
+
+examples/
+  simple-rag/                    -- worked MARIGOLD_DIR example: models.yaml,
+                                     local.env, and everything it produces
 
 package/src/
   api/                           -- API definitions; routes/ is a package
@@ -184,38 +238,30 @@ package/src/
     model_cli.py                 -- model, cache, workflow, and status CLI
 ```
 
-
 ## Prerequisites
 
 - Docker and Docker Compose
 - NVIDIA Container Toolkit (for the GPU worker service)
 - Python 3 with virtualenv (for local tooling)
-- A HuggingFace token (required only for gated models such as
-  meta-llama; set as `HF_TOKEN` for the cache build step)
+- A HuggingFace token, only if you plan to use a gated model such as
+  anything under `meta-llama`
 
-
-## Deployment
-
-```bash
-# 1. Copy and adjust local configuration
-cp .env.example .env
-
-# 2. Start the stack -- cache-init populates the cache on first run
-docker compose up
-```
-
-`MODELS_CATALOGUE` (default: `assets/models-starter.yaml`) determines
-which models are downloaded and served. Override it for a larger
-catalogue, e.g.:
+## Running it
 
 ```bash
-MODELS_CATALOGUE=assets/models-starter.yaml,assets/models-tutorial-rag.yaml \
-  docker compose up
+git clone https://github.com/bayinfosys/marigold
+cd marigold
+docker compose --env-file your-setup/local.env up
 ```
 
-To pick up changes after adding or removing models from the active
-catalogue file, restart with `docker compose up --build`.
+The first run downloads the models listed in `models.yaml`; this is the
+only point in the process requiring an internet connection. `cache-init`
+completes before the worker and API start -- expected, they wait on it
+deliberately.
 
+Confirm it worked: `GET /v1/models` at `http://localhost:8000/docs`
+should list your models; `http://localhost:3000` (open-webui) should
+show an empty chat history on a genuinely fresh `MARIGOLD_DIR`.
 
 ## Handler architecture
 
@@ -252,15 +298,14 @@ Subclasses implement only `_run()`.
 
 ### Adding a model
 
-1. Add an entry to the relevant `assets/models-*.yaml` file.
+1. Add an entry to the relevant `assets/models-*.yaml` file, or your own
+   `MARIGOLD_DIR/models.yaml`.
 2. If the type is new, create a handler file in `package/src/models/`
    following the existing pattern; if the type exists, the model is
    served by the existing handler.
 3. Register the new handler import in `models/load_all()`.
-4. Run `make models/validate`, then `make cache/local` to verify the
-   model caches and loads correctly.
-5. Restart: `docker compose up --build`.
-
+4. Run `make models/validate`, then restart against the new catalogue
+   to verify the model caches and loads correctly.
 
 ## Authentication
 
@@ -268,19 +313,14 @@ No API key is required. Requests are accepted from any caller; the
 caller is identified by an optional `X-User-Id` header, defaulting to
 `local-user` (see `auth.py`, `get_authorizer()`).
 
-
 ## Notes
 
-- Local model cache size varies by catalogue file; run `make cache/inspect`
-  to see per-model sizes for whichever catalogue is active.
-- The meta-llama model requires a HuggingFace token with access granted
-  at huggingface.co/meta-llama. Without a token it is skipped during
-  caching.
 - Binary output persistence to local disk (images, audio, depth maps) is
-  implemented on write: `write_binary_output()` writes to `OUTPUT_DIR`
-  when `OUTPUT_BACKEND=fs`. Retrieval through the API is not yet
-  implemented -- `GET /output/{mode}/{task}/{message_id}/{field}`
+  implemented on write: `write_binary_output()` writes to
+  `MARIGOLD_DIR/data/outputs` when `OUTPUT_BACKEND=fs`. Retrieval through
+  the API is not yet implemented -- `GET /output/{mode}/{task}/{message_id}/{field}`
   currently returns 501 regardless of backend. The file is on disk;
   fetching it back over HTTP is not yet wired up.
+- Marigold has no vector store of its own; see "Architecture" above.
 - `img2mesh` (3D mesh reconstruction from images) is declared as a stub
   and not yet implemented.

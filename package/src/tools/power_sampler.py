@@ -1,4 +1,3 @@
-import json
 import logging
 import threading
 from contextlib import contextmanager
@@ -20,27 +19,35 @@ def get_memory_usage() -> int:
 
 
 def get_vram_usage() -> int:
-    try:
-        if torch.cuda.is_available():
-            return torch.cuda.memory_allocated()
+    if not torch.cuda.is_available():
         return 0
+    try:
+        return sum(torch.cuda.memory_allocated(i) for i in range(torch.cuda.device_count()))
     except Exception:
         return 0
 
 
 def get_vram_state() -> dict:
-    """Capture current VRAM state for all GPU devices.
+    """Capture current VRAM state across every visible GPU device.
 
     Returns zeros if CUDA is unavailable or the query fails.
     Queries fresh each call so values reflect current state at
-    the point of measurement.
+    the point of measurement. Aggregates across all devices -- a
+    single mem_get_info(0) call missed anything resident on a
+    second GPU, the same gap get_vram_usage had before it summed
+    across devices.
     """
     if not torch.cuda.is_available():
         return {"free_vram_b": 0, "total_vram_b": 0, "usable_vram_b": 0}
     try:
-        free, total = torch.cuda.mem_get_info(0)
-        usable = int(free * 0.90)
-        return {"free_vram_b": free, "total_vram_b": total, "usable_vram_b": usable}
+        free_total = 0
+        total_total = 0
+        for i in range(torch.cuda.device_count()):
+            free, total = torch.cuda.mem_get_info(i)
+            free_total += free
+            total_total += total
+        usable = int(free_total * 0.90)
+        return {"free_vram_b": free_total, "total_vram_b": total_total, "usable_vram_b": usable}
     except Exception as e:
         logger.warning("failed to get VRAM info: %s", e)
         return {"free_vram_b": 0, "total_vram_b": 0, "usable_vram_b": 0}
@@ -118,6 +125,12 @@ def check_model_vram(model_name: str, model):
 
     Dispatches parameter extraction via _extract_named_parameters. Raises
     NotImplementedError for unhandled model backing types.
+
+    Note: this only distinguishes "cpu"/"meta" from "cuda" -- it does not
+    check which CUDA device a parameter landed on, since a tensor split
+    across cuda:0 and cuda:1 is equally fine for this check. It exists to
+    catch CPU/disk offload, not to report device placement; get_vram_state
+    and get_vram_usage are the multi-GPU-aware reporting functions.
     """
     named_params = _extract_named_parameters(model_name, model)
 
@@ -169,31 +182,39 @@ class PowerSampler:
     sub-second interval instead of visibility_timeout's, and a read instead
     of a write. Captures device state at the time of the request, not a
     property of the request itself -- under concurrency > 1 on a worker
-    that ran requests in parallel, a sample reflects whatever the whole GPU
-    was doing at that instant, the same caveat as vram_usage_bytes.
+    that ran requests in parallel, a sample reflects whatever both GPUs
+    were doing at that instant, the same caveat as vram_usage_bytes.
+
+    Holds one NVML handle per visible device and sums power draw across
+    all of them each tick -- a single-handle reading previously missed
+    anything drawn by a second GPU entirely.
     """
 
     def __init__(self, interval: float = 0.1):
         self._interval = interval
         self._stop = threading.Event()
-        self._readings: list[int] = []  # milliwatts
-        self._nvml_handle = None
+        self._readings: list[int] = []  # milliwatts, summed across all GPUs per tick
+        self._nvml_handles: list = []
 
         if torch.cuda.is_available():
             try:
                 pynvml.nvmlInit()
-                # FIXME: adjust for multi-GPU setup
-                self._nvml_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+                self._nvml_handles = [
+                    pynvml.nvmlDeviceGetHandleByIndex(i)
+                    for i in range(torch.cuda.device_count())
+                ]
             except Exception as e:
                 logger.warning("NVML init failed, power sampling disabled: %s", e)
 
     def _run(self):
         while not self._stop.wait(timeout=self._interval):
-            if self._nvml_handle:
+            if self._nvml_handles:
                 try:
-                    self._readings.append(
-                        pynvml.nvmlDeviceGetPowerUsage(self._nvml_handle)
+                    total_mw = sum(
+                        pynvml.nvmlDeviceGetPowerUsage(handle)
+                        for handle in self._nvml_handles
                     )
+                    self._readings.append(total_mw)
                 except Exception as e:
                     logger.warning("power sample failed: %s", e)
 
@@ -220,7 +241,8 @@ class PowerSampler:
         self._stop.clear()
 
         if torch.cuda.is_available():
-            torch.cuda.reset_peak_memory_stats()
+            for i in range(torch.cuda.device_count()):
+                torch.cuda.reset_peak_memory_stats(i)
             self.vram_usage = get_vram_usage()
         else:
             self.vram_usage = 0
@@ -235,7 +257,10 @@ class PowerSampler:
             thread.join(timeout=2)
 
         if torch.cuda.is_available():
-            self.max_vram_usage = torch.cuda.max_memory_allocated()
+            self.max_vram_usage = sum(
+                torch.cuda.max_memory_allocated(i)
+                for i in range(torch.cuda.device_count())
+            )
         else:
             self.max_vram_usage = 0
 
@@ -254,9 +279,10 @@ class PowerSampler:
 
     def shutdown(self):
         """nvmlShutdown is expensive; called per model load/unload, not per
-        inference request.
+        inference request. It shuts down the NVML library as a whole, not
+        per-handle, so this is unaffected by holding multiple handles.
         """
-        if self._nvml_handle is not None:
+        if self._nvml_handles:
             try:
                 pynvml.nvmlShutdown()
             except Exception:

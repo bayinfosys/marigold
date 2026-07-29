@@ -8,7 +8,7 @@ anywhere outside this module.
 All items use boto3.client("dynamodb") wire format via to_dynamo_item().
 Never use boto3.resource or Table objects with these items.
 """
-
+import os
 import json
 import time
 from hashlib import md5 as _md5
@@ -22,6 +22,21 @@ from .enums import ModelType, ModelProvider
 
 
 _DEFAULT_TTL_OFFSET = 86400 * 30  # 30 days
+
+
+_ENV_KEYS = ("LOAD_IN_4BIT", "USE_FAST", "TRUST_REMOTE_CODE", "LOW_CPU_MEM_USAGE")
+
+
+def set_model_config_env(config_entry: "ModelCatalogueItem") -> None:
+    """Apply a catalogue entry's extra_env to the process environment,
+    clearing any previous entry's values first. Shared between worker.py
+    (serve time) and model_cache_shared.py (cache-init time) so both load
+    a model under the same settings.
+    """
+    for key in _ENV_KEYS:
+        os.environ.pop(key, None)
+    for key, value in config_entry.extra_env.items():
+        os.environ[key] = value
 
 
 class ResultsItem(DBItem, BaseModel):
@@ -202,8 +217,6 @@ class ModelCatalogueItem(DBItem, BaseModel):
     input: str
     output: str
     timeout: int = 180
-    gpu_tier: str
-    gpu_units: int = 1
     memory_size: int = 2048
     extra_env: dict = {}
     description: str = ""

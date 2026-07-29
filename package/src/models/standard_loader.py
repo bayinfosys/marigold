@@ -114,6 +114,12 @@ def standard_loader(
     through to ModelClass.from_pretrained(), e.g. attn_implementation.
     They have no effect on the tokenizer load.
     """
+    # double check the envvars here, so we don't rely on the caller.
+    use_fast = use_fast or os.getenv("USE_FAST", "").lower() in ("1", "true")
+    remote_code = remote_code or os.getenv("TRUST_REMOTE_CODE", "").lower() == "true"
+    load_in_4bit = load_in_4bit or os.getenv("LOAD_IN_4BIT", "").lower() in ("1", "true")
+    low_cpu_mem_usage = low_cpu_mem_usage or os.getenv("LOW_CPU_MEM_USAGE", "true").lower() in ("1", "true")
+
     T0 = clock()
 
     try:
@@ -134,9 +140,7 @@ def standard_loader(
     logger.info("loaded '%s' tokenizer in %0.2fs", modelname, clock() - T0)
     T0 = clock()
 
-    # double check the envvar here, so we don't rely on the caller.
-    load_in_4bit = load_in_4bit or os.getenv("LOAD_IN_4BIT", "").lower() in ("1", "true")
-
+    # quantise the model as required
     quantization_config = BitsAndBytesConfig(load_in_4bit=True, llm_int8_enable_fp32_cpu_offload=True) if load_in_4bit else None
 
     try:

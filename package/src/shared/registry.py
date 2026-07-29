@@ -138,18 +138,11 @@ class BaseModelHandler(ABC):
         self.modelname = modelname
         cache_dir = os.getenv("CACHE_DIR", "/mnt/efs/cache")
 
-        loader_kwargs = {
-            "load_in_4bit":      os.getenv("LOAD_IN_4BIT",     "").lower() in ("1", "true"),
-            "use_fast":          os.getenv("USE_FAST",          "").lower() in ("1", "true"),
-            "remote_code":       os.getenv("TRUST_REMOTE_CODE", "").lower() == "true",
-            "low_cpu_mem_usage": os.getenv("LOW_CPU_MEM_USAGE", "true").lower() in ("1", "true"),
-        }
-
         spec = _SPECS[self._model_type.value]  # set by decorator
         T = clock()
 
         try:
-            result = spec.loader(self.modelname, cache_dir, **loader_kwargs)
+            result = spec.loader(self.modelname, cache_dir)
         except Exception as e:
             logger.exception("%s an exception on load", self.modelname)
             raise

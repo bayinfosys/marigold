@@ -67,6 +67,8 @@ from typing import Optional
 from shared.db_models import ModelCatalogueItem
 from models.catalogue import load_catalogue_from_yaml
 
+from pydantic import ValidationError
+
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -328,6 +330,31 @@ def _elapsed(created_at: str) -> str:
 # ---------------------------------------------------------------------------
 # Local model commands
 # ---------------------------------------------------------------------------
+
+def validate_models() -> CommandResult:
+    """Validate every configured models.yaml against the live catalogue
+    schema (ModelCatalogueItem) and check for duplicate (name, type)
+    pairs. Cheap and side-effect-free -- unlike download-weights or
+    test-models, this never touches HuggingFace or the GPU.
+    """
+    try:
+        ctx = ModelCatalogueContext.load()
+    except ValidationError as e:
+        raise CliError("schema validation failed:\n%s" % e)
+
+    seen: dict[tuple[str, str], str] = {}
+    duplicates = []
+    for m in ctx.models:
+        key = (m.name, m.type.value)
+        if key in seen:
+            duplicates.append({"name": m.name, "type": m.type.value})
+        seen[key] = m.source_file
+
+    result = {
+        "model_count": len(ctx.models),
+        "duplicates": duplicates,
+    }
+    return result, not duplicates
 
 
 def download_weights(model_name_filter: Optional[str]) -> CommandResult:
@@ -978,6 +1005,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tm.add_argument("model_name", nargs="?", default=None)
 
+    # validate models.yaml
+    sub.add_parser("validate", help="validate models.yaml against the schema")
+
     # build-catalogue
     bc = sub.add_parser(
         "build-catalogue", help="merge models.yaml with cache state for S3"
@@ -1064,6 +1094,9 @@ def main():
 
         elif args.command == "test-models":
             result, success = test_models(args.model_name)
+
+        elif args.command == "validate":
+            result, success = validate_models()
 
         elif args.command == "build-catalogue":
             result, success = build_public_catalogue(
