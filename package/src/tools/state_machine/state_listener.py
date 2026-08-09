@@ -19,7 +19,7 @@ import boto3
 from dynawrap.backends.dynamodb import DynamoDBBackend
 
 from shared.db_models import ResultsItem, WorkerEvent, InstanceEvent
-from shared.sns_models import EventType, LifecycleEvent
+from shared.schedule_models import EventType, LifecycleEvent
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))

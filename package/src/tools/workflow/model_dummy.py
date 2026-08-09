@@ -1,7 +1,7 @@
 """
 workflow/model_dummy.py -- Dummy model Lambda.
 
-Triggered by SQS messages on the dummy model queue. Handles three
+Triggered by messages on the dummy model queue. Handles three
 method values in model_inputs:
 
     echo    returns all model_inputs fields unchanged
@@ -16,6 +16,11 @@ invokes the executor.
 Environment variables
 ---------------------
 WORKFLOW_STEPS_TABLE    DynamoDB table name for step records
+
+FIXME (aws-removal): the write path below (_dynawrap.save) assumed a
+DynamoDBBackend built directly from a boto3 client. That construction
+has been stripped -- _dynawrap is a stub until the workflow package
+has a backend-agnostic persistence layer to inject instead.
 """
 
 import json
@@ -23,17 +28,19 @@ import logging
 import os
 from datetime import datetime, timezone
 
-import boto3
-from dynawrap.backends.dynamodb import DynamoDBBackend
-from shared.sqs_models import MarigoldSQSMessage
+from shared.schedule_models import MarigoldMessage
 
 from .models import WorkflowStep, step_id
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))
 
-_ddb = boto3.client("dynamodb")
-_dynawrap = DynamoDBBackend(_ddb)
+# TODO: replace with an injected dynawrap DBBackend (Postgres or
+# whatever main.py wires up), passed into this module rather than
+# constructed here -- mirrors receiver_logic.py/results_cache.py,
+# which already take an injected backend instead of building one
+# from a boto3 client at import time.
+_dynawrap = None
 
 STEPS_TABLE = os.environ["WORKFLOW_STEPS_TABLE"]
 
@@ -50,7 +57,7 @@ def _compute_output(method: str, model_inputs: dict) -> dict:
 
 
 def _handle_message(body: dict) -> None:
-    msg = MarigoldSQSMessage.model_validate(body)
+    msg = MarigoldMessage.model_validate(body)
 
     method = msg.model_inputs.get("method", "echo")
     payload = {k: v for k, v in msg.model_inputs.items() if k != "method"}
@@ -79,6 +86,10 @@ def _handle_message(body: dict) -> None:
         completed_at=now,
         output=json.dumps(model_output),
     )
+
+    # FIXME: _dynawrap is None until the backend is injected -- this
+    # raises AttributeError if actually called, which is expected for
+    # now (see module docstring).
     _dynawrap.save(STEPS_TABLE, completed_step)
 
     logger.info(
@@ -91,6 +102,13 @@ def _handle_message(body: dict) -> None:
 
 
 def handler(event, context):
+    """
+    TODO (aws-removal): this signature and body assume an SQS-triggered
+    Lambda invocation (event["Records"], each with a "body" string).
+    A local equivalent needs the same shape QueueWorker already uses in
+    worker.py -- a loop over queue_backend.receive() rather than a
+    Records list handed in by the runtime.
+    """
     for record in event["Records"]:
         try:
             body = json.loads(record["body"])

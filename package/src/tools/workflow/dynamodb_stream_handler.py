@@ -10,25 +10,37 @@ No runfox dependency. No DynamoDB writes.
 Environment variables
 ---------------------
 WORKFLOW_EXECUTOR_FUNCTION  name or ARN of the executor Lambda
+
+FIXME (aws-removal): this whole file's premise -- a stream subscription
+firing on a table write -- has no direct local equivalent. Options for
+the backend-agnostic rebuild: (a) PostgresNotificationBackend once it
+exists, publishing a "step complete" event that a listener consumes and
+calls executor.handler() directly, in-process, rather than invoking it
+as a separate function; or (b) skip the trigger entirely and have
+whatever writes the WorkflowStep completion record (model_dummy.py,
+worker.py-equivalent) call the executor directly itself. (b) is
+probably simpler unless there's a reason to decouple "step wrote" from
+"workflow advanced" the way DynamoDB Streams did.
+
+_extract_result_payload and _extract_user_id below are already dead
+code independent of the AWS question -- handler() uses
+_dynawrap.from_stream_record() instead of either of them. Not touched
+here; flagging since it's easy to miss.
 """
 
 import json
 import logging
 import os
 
-import boto3
-from dynawrap.backends.dynamodb import DynamoDBBackend
-
 from .models import WorkflowStep
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))
 
-lambda_client = boto3.client("lambda")
-_ddb = boto3.client("dynamodb")
-_dynawrap = DynamoDBBackend(_ddb)
+# TODO: inject a dynawrap DBBackend rather than constructing one here.
+_dynawrap = None
 
-WORKFLOW_EXECUTOR_FUNCTION = os.environ["WORKFLOW_EXECUTOR_FUNCTION"]
+WORKFLOW_EXECUTOR_FUNCTION = os.environ.get("WORKFLOW_EXECUTOR_FUNCTION", "")
 
 
 def _extract_result_payload(new_image: dict) -> dict:
@@ -37,6 +49,8 @@ def _extract_result_payload(new_image: dict) -> dict:
 
     The output field is stored as a JSON string in the DynamoDB item.
     Returns an empty dict if the field is absent or unparseable.
+
+    NOTE: unused by handler() below -- see module docstring.
     """
     output_str = new_image.get("output", {}).get("S", "{}")
     try:
@@ -52,12 +66,12 @@ def _extract_user_id(new_image: dict) -> str:
 
     PK format: USER#{user_id}#WORKFLOW#{workflow_id}
     Strips the USER# prefix and takes the first component.
+
+    NOTE: unused by handler() below -- see module docstring.
     """
     pk = new_image.get("pk", {}).get("S", "")
     if not pk.startswith("USER#"):
         raise ValueError(f"unexpected PK format: {pk!r}")
-    # PK is USER#{user_id}#WORKFLOW#{workflow_id}
-    # split on # and take index 1
     parts = pk.split("#")
     if len(parts) < 4:
         raise ValueError(f"PK has too few components: {pk!r}")
@@ -65,12 +79,17 @@ def _extract_user_id(new_image: dict) -> str:
 
 
 def handler(event, context):
+    """
+    TODO (aws-removal): event["Records"] is DynamoDB Streams' shape.
+    See module docstring for the two rebuild options.
+    """
     logger.info("stream handler received %d records", len(event["Records"]))
     for record in event["Records"]:
         if record["eventName"] not in ("INSERT", "MODIFY"):
             continue
 
         try:
+            # FIXME: _dynawrap is None until injected.
             step = _dynawrap.from_stream_record(record, WorkflowStep)
         except ValueError as e:
             logger.info("skipping record: %s", e)
@@ -97,8 +116,9 @@ def handler(event, context):
             step.run_id,
         )
 
-        lambda_client.invoke(
-            FunctionName=WORKFLOW_EXECUTOR_FUNCTION,
-            InvocationType="Event",
-            Payload=json.dumps(payload),
+        # FIXME: lambda_client removed -- see module docstring for the
+        # replacement (call executor.handler() directly, or route
+        # through the notification backend once it exists).
+        logger.warning(
+            "executor invocation not implemented locally: %s", payload
         )

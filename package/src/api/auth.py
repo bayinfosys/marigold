@@ -26,23 +26,12 @@ def _local_authorizer():
 
 
 def get_authorizer():
-    """Return the appropriate authorizer for the current environment.
-
-    On AWS: returns APIKeyAuthorizer which produces the correct OpenAPI
-    security scheme for API Gateway. The function body never executes.
+    """Return the authorizer for the current environment.
 
     Locally: returns a FastAPI dependency that accepts any request and
     returns a User with id from X-User-Id header or 'local-user'.
     """
-    if os.getenv("MARIGOLD_DATABASE_URL") and not os.getenv("AWS_EXECUTION_ENV"):
-        return _local_authorizer()
-
-    from fastapi_aws import APIKeyAuthorizer
-
-    return APIKeyAuthorizer(
-        authorizer_name="${apikey_authorizer_name}",
-        header_names=["x-api-key"],
-    )
+    return _local_authorizer()
 
 
 apikey_auth = get_authorizer()

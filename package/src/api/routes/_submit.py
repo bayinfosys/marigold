@@ -24,15 +24,13 @@ logger = logging.getLogger(__name__)
 async def _submit(
     request: Request, user_id: str, body: dict, model_type: ModelType
 ) -> JSONResponse:
-    """Call handle_submission with backends from app.state.
-
-    Returns a JSONResponse with the appropriate status code. On AWS
-    this function is never called -- API Gateway intercepts first.
-    """
+    """Call handle_submission with backends from app.state."""
     table_backend = request.app.state.table_backend
     queue_backend = request.app.state.queue_backend
+    notification_backend = request.app.state.notification_backend
     results_cache = request.app.state.results_cache
     table = request.app.state.model_catalogue_table
+    topic = request.app.state.topic
 
     code, resp = handle_submission(
         user_id=user_id,
@@ -41,9 +39,9 @@ async def _submit(
         catalogue_backend=table_backend,
         catalogue_table=table,
         queue_backend=queue_backend,
-        notification_backend=None,
+        notification_backend=notification_backend,
         results_cache=results_cache,
-        topic=None, # s.topic,
+        topic=topic,
     )
 
     return JSONResponse(status_code=code, content=resp)

@@ -1,17 +1,5 @@
 """Marigold API -- FastAPI application entry point.
 
-On AWS
-------
-API Gateway intercepts every request at the integration layer using the
-AWS-specific decorator metadata on each route. The FastAPI function bodies
-never execute. The lifespan hook detects the Lambda environment and skips
-backend construction entirely.
-
-The openapi.json produced by this app is uploaded to S3 and used by
-Terraform to configure API Gateway integrations. Generate it with:
-
-    python3 -m api.export_openapi > assets/openapi.json
-
 Locally
 -------
 uvicorn runs this app directly. The lifespan hook constructs Postgres
@@ -24,9 +12,6 @@ replica of the submission and polling paths.
 Environment variables
 ---------------------
 Both:
-    MODELS_CONFIG_PATH        path to models_config.json (local)
-    MODELS_CONFIG_S3_OBJECT   S3 key for models_config.json (AWS)
-    AWS_S3_ASSETS_BUCKET_NAME S3 bucket (AWS)
     LIFECYCLE_TOPIC           notification topic name (default: lifecycle)
     RESULTS_TABLE             results cache table name
 
@@ -42,7 +27,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from models.catalogue import load_catalogue_from_yaml, save_models
+from models.catalogue import load_catalogue_from_yaml, reconcile_catalogue
 
 from api.routes import router
 
@@ -53,10 +38,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _is_lambda() -> bool:
-    return bool(os.getenv("AWS_EXECUTION_ENV") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
 
 
 def _build_local_backends(app: FastAPI) -> None:
@@ -86,10 +67,13 @@ def _build_local_backends(app: FastAPI) -> None:
     yaml_files = [t for x in model_catalogue_yamls.split(",") for t in glob.glob(x)]
     logger.info("found %i model definition files", len(yaml_files))
 
+    # load the catalogue items
     model_catalogue_items = load_catalogue_from_yaml(yaml_files)
     logger.info("found %i models", len(model_catalogue_items))
     PostgresBackend.create_table(conn, model_catalogue_table)
-    save_models(table_backend, model_catalogue_table, model_catalogue_items)
+    # reconcile the catalogue against the database
+    added, pruned = reconcile_catalogue(table_backend, model_catalogue_table, model_catalogue_items)
+    logger.info("catalogue reconciled: %d added, %d pruned", len(added), len(pruned))
 
     # set application state for the api
     app.state.queue_backend = queue_backend
@@ -109,13 +93,7 @@ def _build_local_backends(app: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if _is_lambda():
-        logger.info("Lambda environment detected -- skipping backend construction")
-        app.state.queue_backend = None
-        app.state.notification_backend = None
-        app.state.results_cache = None
-        app.state.topic = None
-    elif os.getenv("MARIGOLD_DATABASE_URL"):
+    if os.getenv("MARIGOLD_DATABASE_URL"):
         _build_local_backends(app)
     else:
         logger.critical("neither Lambda environment nor MARIGOLD_DATABASE_URL detected")

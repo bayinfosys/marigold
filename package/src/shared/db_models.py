@@ -17,7 +17,7 @@ from typing import ClassVar, Optional
 from dynawrap import DBItem
 from pydantic import BaseModel, computed_field
 
-from .sns_models import LifecycleEvent
+from .schedule_models import LifecycleEvent
 from .enums import ModelType, ModelProvider
 
 
@@ -64,86 +64,6 @@ class ResultsItem(DBItem, BaseModel):
             offset_seconds if offset_seconds is not None else cls.default_ttl_offset
         )
         return int(time.time()) + offset
-
-
-class WorkflowStep(DBItem, BaseModel):
-    """
-    Observability record for one dispatched workflow step.
-
-    Written by SQSRunner.dispatch() with status='dispatched'.
-    Updated by the ECS worker with status='complete' on success.
-    Read by the step detail API endpoints.
-
-    A retry increments run_id and produces a new record (new SK).
-    The step detail endpoint returns all runs ordered by run_id.
-
-    PK and SK are derived from the workflow execution context carried
-    in the SQS message. step_id is md5(op) -- never constructed raw.
-
-    This is defined by the runfox library integration
-    """
-
-    pk_pattern: ClassVar[str] = "USER#{user_id}#WORKFLOW#{workflow_id}"
-    sk_pattern: ClassVar[str] = "EXEC#{execution_id}#STEP#{step_id}#RUN#{run_id}"
-
-    user_id: str
-    workflow_id: str
-    execution_id: str
-    op: str
-    step_id: str
-    run_id: int
-    model_type: str
-    model_name: str
-    status: str
-    submitted_at: str
-    completed_at: Optional[str] = None
-    output: Optional[str] = None
-
-    @classmethod
-    def from_dispatch(
-        cls,
-        user_id: str,
-        workflow_id: str,
-        execution_id: str,
-        op: str,
-        run_id: int,
-        model_type: str,
-        model_name: str,
-        submitted_at: str,
-    ) -> "WorkflowStep":
-        return cls(
-            user_id=user_id,
-            workflow_id=workflow_id,
-            execution_id=execution_id,
-            op=op,
-            step_id=cls.make_step_id(op),
-            run_id=run_id,
-            model_type=model_type,
-            model_name=model_name,
-            status="dispatched",
-            submitted_at=submitted_at,
-        )
-
-    def complete(self, output: dict, completed_at: str) -> "WorkflowStep":
-        return self.model_copy(
-            update={
-                "status": "complete",
-                "output": json.dumps(output),
-                "completed_at": completed_at,
-            }
-        )
-
-    def fail(self, completed_at: str) -> "WorkflowStep":
-        return self.model_copy(
-            update={
-                "status": "failed",
-                "completed_at": completed_at,
-            }
-        )
-
-    @staticmethod
-    def make_step_id(op: str) -> str:
-        return _md5(op.encode()).hexdigest()
 
 
 class WorkerEvent(DBItem, BaseModel):

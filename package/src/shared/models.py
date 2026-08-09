@@ -37,23 +37,6 @@ class ModelDescription(BaseModel):
     outputs: List[ModelModalities]
 
 
-class ModelDispatch(BaseModel):
-    """Runtime routing config for a model, loaded by the polling lambda from S3.
-
-    Contains only what is needed at dispatch time. Handler selection and
-    environment configuration are resolved by Terraform at task-definition time.
-    """
-
-    queue_url: str
-    task_definition: str
-    family: str
-    model_type: str
-    service_name: str
-    msg_per_instance: int = 10  # default number of messages each instance can handle
-    max_workers: int = 100  # default is large!
-
-
-ModelDispatchRoutes = Dict[str, ModelDispatch]
 ListModelsResponse = List[ModelDescription]
 
 
@@ -96,13 +79,13 @@ class OutputMimeType(str, Enum):
 
 
 class OutputReference(BaseModel):
-    """Reference to a binary output stored in S3.
+    """Reference to a binary output.
 
     Returned in model responses in place of inline binary data.
     Key schema: outputs/{model_type}/{message_id}/{field_name}
     """
 
-    path: str = Field(..., description="S3 object key")
+    path: str = Field(..., description="object key")
     mimetype: str = Field(..., description="MIME type of the stored object")
 
 
@@ -124,6 +107,14 @@ class InstructMessageContentType(str, Enum):
 
 
 class InstructMessageImageContent(BaseModel):
+    """image: str = Field(..., description="base64 encoded image prompt")
+
+    NOTE: accepted by this schema but not implemented. models/instruct.py
+    never decodes or forwards image content -- its loader
+    (AutoModelForCausalLM + AutoTokenizer) has no vision capability. For
+    image input today, use /gen/img2txt (single image + prompt, no chat
+    history) instead. See TODO.md, "No multimodal chat".
+    """
     image: str = Field(..., description="base64 encoded image prompt")
 
 

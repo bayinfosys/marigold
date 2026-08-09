@@ -13,7 +13,7 @@ message_body_fn strips control fields, renders prompt templates,
 from hashlib import md5
 
 from runfox.results import DispatchJob
-from shared.sqs_models import MarigoldSQSMessage
+from shared.schedule_models import MarigoldMessage
 
 
 def make_queue_url_fn(queue_map: dict):
@@ -70,7 +70,7 @@ def make_message_body_fn(user_id: str):
                 "prompt": prompt_template.format(**template_vars),
             }
 
-        msg = MarigoldSQSMessage(
+        msg = MarigoldMessage(
             user_id=user_id,
             message_id=f"WORKFLOW#{workflow_execution_id}#{job.op}#{job.run_id}",
             model_type=model_type,

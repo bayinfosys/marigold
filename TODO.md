@@ -845,3 +845,17 @@ Open:
     unconfigured home routers
   - whether bootstrap seed needs more than one box/region, now lower
     priority since it is not the sole distribution path
+
+
+## Known gaps
+
+- **No multimodal chat.** `/gen/img2txt` handles single-image-plus-prompt
+  captioning/VQA (working). `/gen/instruct` handles text-only chat, including
+  structured/JSON output (working). There is no way to hold a conversation
+  that includes image content, or to reference an image across turns --
+  `InstructMessageImageContent` exists in the request schema but
+  `models/instruct.py` never decodes or forwards it; the loader
+  (AutoModelForCausalLM + AutoTokenizer) has no vision capability at all.
+  Building this means a vision-aware loader and _run() in instruct.py, not
+  just retyping a catalogue entry -- see shared/models.py's note on
+  InstructMessageImageContent.

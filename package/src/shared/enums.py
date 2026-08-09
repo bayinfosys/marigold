@@ -26,8 +26,8 @@ class ModelProvider(str, Enum):
 class ModelType(StrEnum):
     """Unique identifier for each task type.
 
-    Values are stable strings stored in DynamoDB, S3 key prefixes, ECS
-    task environment variables, and models.yaml. Do not rename values
+    Values are stable strings stored in the persistence layer,
+    environment variables, and models.yaml. Do not rename values
     without a coordinated migration of all stored data.
     """
 
@@ -90,7 +90,7 @@ class OutputMimeType(Enum):
     @property
     def storage(self) -> str:
         if self.value.startswith(("image/", "audio/", "video/", "model/")):
-            return "s3"
+            return "fs"
         return "dynamodb"
 
 

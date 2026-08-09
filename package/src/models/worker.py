@@ -6,9 +6,7 @@ deletes the message.
 
 The worker has no knowledge of why a job was submitted -- whether it came
 from a direct API call or a workflow step. It writes the result to
-results_cache and publishes a REQUEST_COMPLETE lifecycle event. Downstream
-consumers (state_listener on AWS, listener_logic locally) handle any
-further routing.
+results_cache and publishes a REQUEST_COMPLETE lifecycle event.
 
 QueueWorker
 -----------
@@ -34,8 +32,7 @@ import torch
 from backend.messaging.base import NotificationBackend, QueueBackend
 from pydantic import ValidationError
 from shared.registry import _SPECS
-from shared.sns_models import EventType, LifecycleEvent
-from shared.sqs_models import MarigoldSQSMessage
+from shared.schedule_models import MarigoldMessage, EventType, LifecycleEvent
 from tools.polling.results_cache import ResultsCache
 from tools.power_sampler import (ModelVRAMError, PowerSampler,
                                  check_model_vram, get_vram_state)
@@ -84,10 +81,11 @@ class QueueWorker:
     seconds have elapsed since the last message, then calls model.unload()
     and returns. idle_timeout=-1 polls indefinitely (local development).
 
-    The worker writes results via results_cache when injected (local path)
-    or via outputs.update_results_table() on AWS. It publishes lifecycle
-    events for all state transitions. It has no knowledge of workflows --
-    workflow step handling is the responsibility of the state machine.
+    The worker writes results via results_cache.
+
+    It publishes lifecycle events for all state transitions. It has no
+    knowledge of workflows -- workflow step handling is the responsibility
+    of the state machine.
 
     Args:
         queue:                Queue name or identifier.
@@ -100,9 +98,7 @@ class QueueWorker:
         topic:                Notification topic name.
         idle_timeout:         Seconds to keep polling after queue empties.
                               -1 means poll indefinitely.
-        results_cache:        Optional ResultsCache for direct result writes.
-                              None on AWS -- falls back to
-                              outputs.update_results_table().
+        results_cache:        ResultsCache for direct result writes.
     """
 
     def __init__(
@@ -115,8 +111,8 @@ class QueueWorker:
         notification_backend: NotificationBackend,
         visibility_timeout: int,
         topic: str,
+        results_cache: ResultsCache,
         idle_timeout: int = None,
-        results_cache: ResultsCache = None,
     ):
         self.queue = queue
         self.model_name = model_name
@@ -128,6 +124,10 @@ class QueueWorker:
         self.topic = topic
         self.idle_timeout = idle_timeout if idle_timeout is not None else IDLE_TIMEOUT
         self.results_cache = results_cache
+
+        if self.results_cache is None:
+            raise NotImplementedError("results_cache is now required")
+
         self._power_sampler = PowerSampler()
 
         self._base_payload = {
@@ -206,26 +206,12 @@ class QueueWorker:
         Local path (results_cache injected):
             Calls results_cache.write_result() which updates the existing
             queued row to status=complete with the result payload.
-
-        AWS path (results_cache is None):
-            Delegates to outputs.update_results_table() which writes to
-            DynamoDB using the module-level client.
         """
-        if self.results_cache is not None:
-            self.results_cache.write_result(user_id, message_id, response)
-        else:
-            from shared.outputs import update_results_table
-
-            update_results_table(user_id, message_id, response)
+        self.results_cache.write_result(user_id, message_id, response)
 
     def _write_error(self, user_id: str, message_id: str, error: str) -> None:
         """Write an error status to the results backend."""
-        if self.results_cache is not None:
-            self.results_cache.write_error(user_id, message_id, error)
-        else:
-            from shared.outputs import update_results_table
-
-            update_results_table(user_id, message_id, {"error": error}, status="error")
+        self.results_cache.write_error(user_id, message_id, error)
 
     # ---------------------------------------------------------------------------
     # Heartbeat
@@ -256,8 +242,8 @@ class QueueWorker:
     # Message handling
     # ---------------------------------------------------------------------------
 
-    def _get_message(self) -> tuple[MarigoldSQSMessage | None, str | None]:
-        """Dequeue one message and parse it as a MarigoldSQSMessage.
+    def _get_message(self) -> tuple[MarigoldMessage | None, str | None]:
+        """Dequeue one message and parse it as a MarigoldMessage.
 
         Malformed messages are deleted immediately and (None, None) returned.
         """
@@ -269,7 +255,7 @@ class QueueWorker:
             return None, None
 
         try:
-            sqs_msg = MarigoldSQSMessage.model_validate(payload)
+            sqs_msg = MarigoldMessage.model_validate(payload)
         except ValidationError as e:
             logger.error("malformed message, discarding: %s", e)
             self.queue_backend.delete(self.queue, receipt_handle)
@@ -283,7 +269,7 @@ class QueueWorker:
         )
         return sqs_msg, receipt_handle
 
-    def _process_message(self, sqs_msg: MarigoldSQSMessage) -> None:
+    def _process_message(self, sqs_msg: MarigoldMessage) -> None:
         """Run inference for one message and write results.
 
         Routing errors, validation failures, and inference exceptions are
@@ -441,7 +427,7 @@ class MultiQueueWorker:
         idle_timeout:         Passed to each QueueWorker. Default 0 so the
                               worker exits immediately on empty queue and the
                               next model can be loaded promptly.
-        results_cache:        Optional ResultsCache for direct result writes.
+        results_cache:        ResultsCache for direct result writes.
     """
 
     def __init__(
@@ -451,8 +437,8 @@ class MultiQueueWorker:
         notification_backend: NotificationBackend,
         visibility_timeout: int,
         topic: str,
+        results_cache: ResultsCache,
         idle_timeout: int = 0,
-        results_cache: ResultsCache = None,
     ):
         self.model_catalogue = model_catalogue
         self.queue_backend = queue_backend
@@ -462,6 +448,9 @@ class MultiQueueWorker:
         self.idle_timeout = idle_timeout
         self.results_cache = results_cache
 
+        if self.results_cache is None:
+            raise NotImplementedError("results_cache is now always required")
+
     def _pick_entry(self) -> dict | None:
         """Return the entry with the highest queue depth, or None if all empty."""
         depths = [
@@ -470,6 +459,35 @@ class MultiQueueWorker:
         ]
         best_entry, best_depth = max(depths, key=lambda t: t[1])
         return best_entry if best_depth > 0 else None
+
+    def _fail_queue(self, entry: ModelCatalogueItem, error: str) -> None:
+        """Drain every message currently sitting in entry's queue and write
+        an error result for each, rather than leaving them stuck at
+        status=queued forever.
+
+        Called when the model itself can't be loaded -- QueueWorker's
+        constructor never gets far enough to receive a message at all, so
+        without this, whatever was already queued for this model is never
+        touched again: no error, no deletion, just permanently invisible.
+        """
+        drained = 0
+        while True:
+            payload, receipt_handle = self.queue_backend.receive(entry.queue_name, self.visibility_timeout)
+            if payload is None:
+                break
+
+            try:
+                msg = MarigoldMessage.model_validate(payload)
+                self.results_cache.write_error(msg.user_id, msg.message_id, error)
+            except Exception:
+                logger.exception("failed to write error result while draining '%s'", entry.queue_name)
+            finally:
+                self.queue_backend.delete(entry.queue_name, receipt_handle)
+
+            drained += 1
+
+        if drained:
+            logger.warning("drained and failed %d message(s) from '%s' after load failure", drained, entry.queue_name)
 
     def run(self) -> None:
         """Sweep queues, load, drain, unload, repeat indefinitely."""
@@ -508,12 +526,15 @@ class MultiQueueWorker:
                 )
             except ModelVRAMError as e:
                 logger.exception("model '%s' failed VRAM check: %s", entry.name, e)
+                self._fail_queue(entry, f"model failed VRAM check: {e}")
                 # remove this model from this worker
+                # FIXME: this needs removing (or marking) in the postgres catalogue also
                 self.model_catalogue = [m for m in self.model_catalogue if m.hash != entry.hash]
                 # FIXME: do we continue here, or just exit?
                 continue
             except Exception as e:
                 logger.exception("failed to load model '%s': %s -- skipping", entry.name, e)
+                self._fail_queue(entry, f"model failed to load: {e}")
                 self.model_catalogue = [m for m in self.model_catalogue if m.hash != entry.hash]
                 continue
 

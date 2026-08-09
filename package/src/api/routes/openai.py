@@ -44,9 +44,8 @@ import logging
 import time
 from typing import Literal
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, APIRouter
 from fastapi.responses import StreamingResponse
-from fastapi_aws import AWSAPIRouter
 from models.catalogue import get_models_by_type
 from pydantic import BaseModel
 from shared.enums import ModelType
@@ -54,7 +53,7 @@ from tools.state_machine.receiver_logic import handle_status, handle_submission
 
 logger = logging.getLogger(__name__)
 
-router = AWSAPIRouter()
+router = APIRouter()
 
 _POLL_INTERVAL = 0.5  # seconds between polls
 _MAX_WAIT = 300  # seconds before timing out

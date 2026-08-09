@@ -22,7 +22,7 @@ from typing import Any
 import torch
 from transformers import BitsAndBytesConfig
 
-from shared.sns_models import EventType, LifecycleEvent
+from shared.schedule_models import EventType, LifecycleEvent
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")

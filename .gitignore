@@ -9,3 +9,5 @@ assets/*.tfvars
 
 html/dist/
 html/_data/
+
+*.env

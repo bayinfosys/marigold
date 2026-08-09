@@ -1,8 +1,10 @@
 """
 Workflow persistence models.
 
-DynamoDB item definitions for the workflow execution path.
-All classes are dynawrap DBItem subclasses and pydantic BaseModels.
+Item definitions for the workflow execution path -- dynawrap DBItem
+subclasses (pydantic BaseModels underneath), so the same key-pattern
+mechanism as shared/db_models.py applies here without any AWS-specific
+assumption in the class definitions themselves.
 
 Key formats and table schemas are defined in CONTRACTS.md.
 
@@ -10,6 +12,13 @@ Utilities
 ---------
 step_id(op)                      md5 hex digest of a step op string
 parse_workflow_execution_id(s)   splits workflow_execution_id into (workflow_id, execution_id)
+
+NOTE: WorkflowStep previously lived in shared/db_models.py. It has been
+moved here since this package (workflow) is its only consumer -- keeping
+it in the shared module left a DynamoDB-only class with zero callers
+once the AWS state machine was removed from master. See make_step_id
+below and the module-level step_id() function -- these are currently
+duplicate implementations of the same hash; worth collapsing to one.
 """
 
 import hashlib
@@ -20,8 +29,6 @@ from dynawrap import DBItem
 from pydantic import BaseModel
 from runfox.backend.models import WorkflowRecord
 
-from shared.db_models import WorkflowStep
-
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
@@ -29,11 +36,11 @@ from shared.db_models import WorkflowStep
 
 def step_id(op: str) -> str:
     """
-    Produce a DynamoDB key component from a user-supplied op string.
+    Produce a DynamoDB-style key component from a user-supplied op string.
 
     op values are user-provided and may contain the # delimiter or other
-    characters that are unsafe in DynamoDB key expressions. The MD5 digest
-    is deterministic, fixed-length, and delimiter-free.
+    characters that are unsafe in key expressions. The MD5 digest is
+    deterministic, fixed-length, and delimiter-free.
     """
     return hashlib.md5(op.encode()).hexdigest()
 
@@ -52,6 +59,92 @@ def parse_workflow_execution_id(workflow_execution_id: str) -> tuple[str, str]:
             f"unrecognised workflow_execution_id format: {workflow_execution_id!r}"
         )
     return parts[0], parts[1]
+
+
+# ---------------------------------------------------------------------------
+# WorkflowStep  (moved from shared/db_models.py -- see module note above)
+# ---------------------------------------------------------------------------
+
+
+class WorkflowStep(DBItem, BaseModel):
+    """
+    Observability record for one dispatched workflow step.
+
+    Written by SQSRunner.dispatch() with status='dispatched'.
+    Updated by the worker with status='complete' on success.
+    Read by the step detail API endpoints.
+
+    A retry increments run_id and produces a new record (new SK).
+    The step detail endpoint returns all runs ordered by run_id.
+
+    PK and SK are derived from the workflow execution context carried
+    in the message. step_id is md5(op) -- never constructed raw.
+    """
+
+    pk_pattern: ClassVar[str] = "USER#{user_id}#WORKFLOW#{workflow_id}"
+    sk_pattern: ClassVar[str] = "EXEC#{execution_id}#STEP#{step_id}#RUN#{run_id}"
+
+    user_id: str
+    workflow_id: str
+    execution_id: str
+    op: str
+    step_id: str
+    run_id: int
+    model_type: str
+    model_name: str
+    status: str
+    submitted_at: str
+    completed_at: Optional[str] = None
+    output: Optional[str] = None
+
+    @classmethod
+    def from_dispatch(
+        cls,
+        user_id: str,
+        workflow_id: str,
+        execution_id: str,
+        op: str,
+        run_id: int,
+        model_type: str,
+        model_name: str,
+        submitted_at: str,
+    ) -> "WorkflowStep":
+        return cls(
+            user_id=user_id,
+            workflow_id=workflow_id,
+            execution_id=execution_id,
+            op=op,
+            step_id=cls.make_step_id(op),
+            run_id=run_id,
+            model_type=model_type,
+            model_name=model_name,
+            status="dispatched",
+            submitted_at=submitted_at,
+        )
+
+    def complete(self, output: dict, completed_at: str) -> "WorkflowStep":
+        return self.model_copy(
+            update={
+                "status": "complete",
+                "output": json.dumps(output),
+                "completed_at": completed_at,
+            }
+        )
+
+    def fail(self, completed_at: str) -> "WorkflowStep":
+        return self.model_copy(
+            update={
+                "status": "failed",
+                "completed_at": completed_at,
+            }
+        )
+
+    @staticmethod
+    def make_step_id(op: str) -> str:
+        return _md5(op.encode()).hexdigest()  # NOTE: duplicates step_id() above
+
+
+from hashlib import md5 as _md5  # noqa: E402  -- see NOTE on make_step_id
 
 
 # ---------------------------------------------------------------------------
@@ -91,9 +184,9 @@ class WorkflowExecution(DBItem, BaseModel):
     Execution state for one run of a workflow template.
 
     One record per execution. Created at submission time. Updated in place
-    after each advance() call by the executor Lambda. runfox_state is the
-    sole store of WorkflowRecord state and is opaque to all layers except
-    DynamoDBStore and the executor Lambda.
+    after each advance() call by the executor. runfox_state is the sole
+    store of WorkflowRecord state and is opaque to all layers except the
+    runfox Store implementation and the executor.
 
     Table:  WORKFLOW_STATE_TABLE
     PK:     USER#{user_id}

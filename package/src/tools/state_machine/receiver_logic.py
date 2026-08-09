@@ -5,8 +5,7 @@ from backend.messaging.base import NotificationBackend, QueueBackend
 from dynawrap.backends.postgres import PostgresBackend
 from models.catalogue import get_model
 from shared.enums import ModelType
-from shared.sns_models import EventType
-from shared.sqs_models import MarigoldSQSMessage
+from shared.schedule_models import MarigoldMessage, EventType, LifecycleEvent
 from tools.polling.results_cache import ResultsCache
 
 logger = logging.getLogger(__name__)
@@ -53,7 +52,7 @@ def handle_submission(
     results_cache.create(user_id, message_id, status="queued")
     logger.info("[%s/%s] queued for model '%s'", user_id, message_id, model_name)
 
-    msg = MarigoldSQSMessage(
+    msg = MarigoldMessage(
         user_id=user_id,
         message_id=message_id,
         model_type=model.type,
@@ -71,7 +70,6 @@ def handle_submission(
         return 500, {"status": "error", "message": "internal error"}
 
     try:
-        from shared.sns_models import LifecycleEvent
         event = LifecycleEvent(
             event_type=EventType.REQUEST_QUEUED,
             model_name=model_name,

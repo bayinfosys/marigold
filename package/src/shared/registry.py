@@ -116,9 +116,7 @@ def model_spec(
 class BaseModelHandler(ABC):
     """Base class for all model handlers.
 
-    Subclasses must implement _run(). The SQSWorker calls process() with
-    the raw request dict from the SQS message body and expects a Pydantic
-    BaseModel instance in return.
+    Subclasses must implement _run().
 
     process() validates the raw request dict against the ModelSpec's
     request_model and passes the typed result to _run(). Subclasses do not

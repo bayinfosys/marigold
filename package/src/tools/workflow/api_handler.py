@@ -25,6 +25,19 @@ WORKFLOW_TASKS_TABLE        DynamoDB table for runfox SQSRunner tasks
 AWS_S3_ASSETS_BUCKET_NAME   S3 bucket containing models_config.json
 MODELS_CONFIG_S3_OBJECT     S3 key for models_config.json
 QUEUE_URL_DUMMY             SQS queue URL for the dummy model
+
+FIXME (aws-removal): this whole file is API Gateway proxy-integration
+shaped (event["resource"], event["httpMethod"], mk_resp building a
+raw {"statusCode": ..., "body": ...} dict). Once integrated with the
+rest of Marigold's API, this probably becomes a set of FastAPI routes
+using APIRouter like gen.py/users.py/etc, rather than a router dict
+matched by hand -- get_userid_from_event/mk_resp were doing the job
+auth.py's apikey_auth Security dependency and FastAPI's own response
+model already do elsewhere in this codebase.
+
+get_userid_from_event/mk_resp come from shared/lambda_proxy.py, which
+travels with this package for now (it's the workflow branch's own
+dependency, not deleted -- see the note in the earlier review).
 """
 
 import hashlib
@@ -33,11 +46,8 @@ import logging
 import os
 from datetime import datetime, timezone
 
-import boto3
 import runfox as rfx
 import yaml
-from dynawrap.backends.dynamodb import DynamoDBBackend
-from runfox.backend.aws import DynamoDBStore, SQSRunner
 from runfox.results import Complete, Dispatch, Halt
 from shared.lambda_proxy import get_userid_from_event, mk_resp
 
@@ -48,27 +58,21 @@ from .runner import make_message_body_fn, make_queue_url_fn
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))
 
-template_table = os.environ["WORKFLOW_TEMPLATE_TABLE"]
-state_table = os.environ["WORKFLOW_STATE_TABLE"]
-steps_table = os.environ["WORKFLOW_STEPS_TABLE"]
+template_table = os.environ.get("WORKFLOW_TEMPLATE_TABLE", "")
+state_table = os.environ.get("WORKFLOW_STATE_TABLE", "")
+steps_table = os.environ.get("WORKFLOW_STEPS_TABLE", "")
 
-_ddb = boto3.client("dynamodb")
-_dynawrap = DynamoDBBackend(_ddb)
-
-s3 = boto3.client("s3")
+# TODO: inject a dynawrap DBBackend rather than constructing one here.
+_dynawrap = None
 
 
 def _load_queue_map() -> dict:
-    bucket = os.environ["AWS_S3_ASSETS_BUCKET_NAME"]
-    key = os.environ["MODELS_CONFIG_S3_OBJECT"]
-    obj = s3.get_object(Bucket=bucket, Key=key)
-    config = json.loads(obj["Body"].read())
-    queue_map = {k: v["queue_url"] for k, v in config.items()}
-
+    # TODO: build this from models.catalogue / models.yaml instead of
+    # an S3-hosted models_config.json. Identical duplicate of this
+    # function exists in executor.py -- fix both or collapse to one.
     dummy_name = "dummy"
     dummy_md5 = hashlib.md5(dummy_name.encode()).hexdigest()
-    queue_map[dummy_md5] = os.environ["QUEUE_URL_DUMMY"]
-    return queue_map
+    return {dummy_md5: os.environ.get("QUEUE_URL_DUMMY", "")}
 
 
 QUEUE_MAP = _load_queue_map()
@@ -77,17 +81,12 @@ QUEUE_MAP = _load_queue_map()
 def _make_backend(user_id: str) -> rfx.Backend:
     """Construct a runfox Backend for workflow state management.
 
-    This is distinct from the module-level dynawrap DynamoDBBackend used
-    for WorkflowTemplate, WorkflowExecution, and WorkflowStep operations.
+    FIXME (aws-removal): SQSRunner/DynamoDBStore removed -- unreachable
+    until runfox has non-AWS Store/Runner implementations. See the
+    same FIXME in executor.py.
     """
-    return rfx.Backend(
-        store=DynamoDBStore(table=os.environ["WORKFLOW_STATE_TABLE"]),
-        runner=SQSRunner(
-            tasks_table=os.environ["WORKFLOW_TASKS_TABLE"],
-            queue_url=make_queue_url_fn(QUEUE_MAP),
-            message_body_fn=make_message_body_fn(user_id),
-        ),
-    )
+    logger.warning("no local runfox backend implemented yet")
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +141,7 @@ def handle_create_template(user_id: str, event: dict) -> dict:
         created_at=now,
     )
 
+    # FIXME: _dynawrap is None until injected.
     _dynawrap.save(template_table, record)
 
     return mk_resp(
@@ -156,6 +156,7 @@ def handle_create_template(user_id: str, event: dict) -> dict:
 
 
 def handle_list_templates(user_id: str, event: dict) -> dict:
+    # FIXME: _dynawrap is None until injected.
     items = list(_dynawrap.query(template_table, WorkflowTemplate, user_id=user_id))
 
     return mk_resp(
@@ -176,6 +177,7 @@ def handle_list_templates(user_id: str, event: dict) -> dict:
 def handle_get_template(user_id: str, event: dict) -> dict:
     workflow_id = _path_params(event)["workflow_id"]
 
+    # FIXME: _dynawrap is None until injected.
     item = _dynawrap.get(
         template_table, WorkflowTemplate, user_id=user_id, workflow_id=workflow_id
     )
@@ -203,6 +205,7 @@ def handle_run_workflow(user_id: str, event: dict) -> dict:
     body = _body(event)
     inputs = body.get("inputs", {})
 
+    # FIXME: _dynawrap is None until injected.
     template = _dynawrap.get(
         template_table, WorkflowTemplate, user_id=user_id, workflow_id=workflow_id
     )
@@ -285,6 +288,7 @@ def handle_get_execution(user_id: str, event: dict) -> dict:
     workflow_id = params["workflow_id"]
     execution_id = params["execution_id"]
 
+    # FIXME: _dynawrap is None until injected.
     execution = _dynawrap.get(
         state_table,
         WorkflowExecution,
@@ -328,6 +332,7 @@ def handle_cancel_execution(user_id: str, event: dict) -> dict:
     workflow_id = params["workflow_id"]
     execution_id = params["execution_id"]
 
+    # FIXME: _dynawrap is None until injected.
     execution = _dynawrap.get(
         state_table,
         WorkflowExecution,
@@ -362,6 +367,7 @@ def handle_list_steps(user_id: str, event: dict) -> dict:
     workflow_id = params["workflow_id"]
     execution_id = params["execution_id"]
 
+    # FIXME: _dynawrap is None until injected.
     items = list(
         _dynawrap.query(
             steps_table,
@@ -404,6 +410,7 @@ def handle_get_step(user_id: str, event: dict) -> dict:
     execution_id = params["execution_id"]
     sid = params["step_id"]
 
+    # FIXME: _dynawrap is None until injected.
     items = list(
         _dynawrap.query(
             steps_table,

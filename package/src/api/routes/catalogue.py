@@ -9,15 +9,15 @@ the local filesystem if MODELS_JSON_PATH is set.
 import json
 import os
 
-from fastapi import Request, Security
+from fastapi import Request, Security, APIRouter
 from fastapi.responses import JSONResponse
-from fastapi_aws import APIKeyAuthorizer, AWSAPIRouter
 from api.auth import apikey_auth
 
 from shared.enums import ModelType
 from models.catalogue import get_all_models
 
-router = AWSAPIRouter()
+
+router = APIRouter()
 
 
 @router.get("/models")
