@@ -1,3 +1,12 @@
+# huggingface stuff
+transformers
+sentence-transformers
+bitsandbytes
+accelerate
+sentencepiece
+protobuf
+einops
 # diffusers sometimes needs to be the latest from github for brand new models
 diffusers
 # git+https://github.com/huggingface/diffusers.git
+pydub

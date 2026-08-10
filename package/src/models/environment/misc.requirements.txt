@@ -1,6 +1,0 @@
-# misc support libraries
-pydantic
-pydub
-pyyaml
-#runfox
-boto3

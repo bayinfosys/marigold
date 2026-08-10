@@ -2,6 +2,4 @@
 # ensure we have torchvision and other torch libraries here
 torch
 torchvision
-
-
 pynvml

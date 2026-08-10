@@ -1,0 +1,7 @@
+# base.requirements.txt
+pydantic
+pyyaml
+psycopg2-binary
+dynawrap
+pillow
+httpx

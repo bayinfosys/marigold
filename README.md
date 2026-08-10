@@ -304,8 +304,16 @@ Subclasses implement only `_run()`.
    following the existing pattern; if the type exists, the model is
    served by the existing handler.
 3. Register the new handler import in `models/load_all()`.
-4. Run `make models/validate`, then restart against the new catalogue
-   to verify the model caches and loads correctly.
+4. Validate the catalogue before restarting:
+
+```bash
+   docker compose run --rm cache-init python3 -m tools.model_cli validate
+```
+
+   Checks the schema and flags duplicate (name, type) entries; touches
+   neither HuggingFace nor the GPU. Then restart against the new
+   catalogue to verify the model caches and loads correctly.
+
 
 ## Authentication
 

@@ -1,7 +1,7 @@
 services:
 
   cache-init:
-    image: marigold/environment:${TAG:-latest}   # CPU image -- see note below, not *-gpu
+    image: ${CACHE_IMAGE:-ghcr.io/bayinfosys/marigold-cache}:${TAG:-latest}
     command: ["python3", "-m", "tools.model_cli", "download-weights"]
     environment:
       MARIGOLD_MODEL_CATALOGUE_YAMLS: ${MODELS_CATALOGUE:-/app/marigold/models.yaml}
@@ -33,17 +33,15 @@ services:
 
 
   worker:
-    image: marigold/worker:${TAG:-latest}-gpu
+    image: ${WORKER_IMAGE:-ghcr.io/bayinfosys/marigold-worker}:${TAG:-latest}-gpu
 
     environment:
       MARIGOLD_VERSION: ${TAG:-latest}
       MARIGOLD_DATABASE_URL: postgresql://${POSTGRES_USER:-marigold}:${POSTGRES_PASSWORD:-marigold}@postgres:5432/${POSTGRES_DB:-marigold}
-      MARIGOLD_MODEL_CATALOGUE_YAMLS: ${MODELS_CATALOGUE:-/app/assets/models-instruct-3060.yaml}
       SQS_VISIBILITY_TIMEOUT: "300"
       MARIGOLD_QUEUE_IDLE_TIMEOUT: "${IDLE_TIMEOUT:-120}"
       LIFECYCLE_TOPIC: lifecycle
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # huggingface cache -- must match the mount point
       CACHE_DIR: /models
       REMOTE_CODE: "0"
       USE_FAST: "0"
@@ -74,9 +72,8 @@ services:
               count: all
               capabilities: [gpu]
 
-
   api:
-    image: marigold/worker:${TAG:-latest}
+    image: ${API_IMAGE:-ghcr.io/bayinfosys/marigold-api}:${TAG:-latest}
     command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     ports:
       - "${API_PORT:-8000}:8000"

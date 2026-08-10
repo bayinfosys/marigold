@@ -1,34 +1,41 @@
 """Usage tracking and metrics.
 
 record_usage() is the single call site for all handler modules. It
-builds a ModelUsageStats, writes to the configured metrics backend,
-and returns the stats for inclusion in the handler response.
-
-Both metrics backends (DynamoDB and SQS) use UsageItem as the canonical
-data shape. The SQS path serialises the full UsageItem dict so that a
-downstream consumer can reconstruct and persist it without data loss.
+builds a ModelUsageStats, writes to the usage table, and returns the
+stats for inclusion in the handler response.
 """
 
 import logging
 import os
-import json
 
-import boto3
-from botocore.exceptions import NoRegionError
-from dynawrap.backends.dynamodb import DynamoDBBackend
+import psycopg2
+from dynawrap.backends.postgres import PostgresBackend
 
 from shared.enums import ModelType
 from shared.usage_models import ModelUsageStats, UsageItem
 
 logger = logging.getLogger(__name__)
 
-try:
-    _ddb = boto3.client("dynamodb")
-    _dynawrap = DynamoDBBackend(_ddb)
-except NoRegionError:
-    logger.warning("aws unavailable")
-    _ddb = None
-    _dynawrap = None
+_dynawrap = None
+
+
+def _get_backend():
+    """Lazily connect on first use.
+
+    Deliberately not connected at import time: usage.py is imported by
+    every handler module, which means it is also imported during
+    cache-init's models.load_all() call -- before Postgres exists in
+    the compose startup order. write_usage() is never actually called
+    from that path, so the connection only needs to succeed once a
+    real inference request needs to record usage.
+    """
+    global _dynawrap
+    if _dynawrap is None:
+        dsn = os.environ["MARIGOLD_DATABASE_URL"]
+        conn = psycopg2.connect(dsn)
+        conn.autocommit = True
+        _dynawrap = PostgresBackend(conn)
+    return _dynawrap
 
 
 def build_usage(
@@ -60,47 +67,12 @@ def write_usage(item: UsageItem) -> None:
     update_metrics(item)
 
 
-def _update_metrics_dynamodb(item: UsageItem):
-    table = os.environ["DYNAMODB_USAGE_TABLE"]
+def update_metrics(item: UsageItem):
+    table = os.getenv("MARIGOLD_USAGE_TABLE", "usage")
     try:
-        _dynawrap.save(table, item)
+        _get_backend().save(table, item)
     except Exception as e:
         logger.exception(
             "[%s/%s] failed to write metrics to '%s' [%s]",
             item.user_id, item.operation, table, str(e),
-        )
-
-
-def _update_metrics_sqs(item: UsageItem):
-    sqs_client = boto3.client("sqs")
-    queue_url = os.getenv("METRICS_QUEUE_URL")
-
-    if not queue_url:
-        logger.warning("METRICS_QUEUE_URL not set, metrics not logged")
-        return
-
-    try:
-        response = sqs_client.send_message(
-            QueueUrl=queue_url,
-            MessageBody=item.model_dump_json(),
-        )
-        logger.info(
-            "metrics sent to '%s' [%s]", queue_url, response["MessageId"]
-        )
-    except Exception as e:
-        logger.error(
-            "failed to send metrics to '%s' [%s]", queue_url, str(e)
-        )
-
-
-def update_metrics(item: UsageItem):
-    if "DYNAMODB_USAGE_TABLE" in os.environ:
-        _update_metrics_dynamodb(item)
-    elif "METRICS_QUEUE_URL" in os.environ:
-        _update_metrics_sqs(item)
-    else:
-        logger.warning(
-            "[%s/%s] no metrics backend configured",
-            item.user_id,
-            item.operation,
         )

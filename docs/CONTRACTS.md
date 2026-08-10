@@ -23,13 +23,21 @@ one that underperforms -- and eventually community-visible quality signals.
 
 ### models.yaml is the single source of truth
 
-All infrastructure, API routes, the public model catalogue, and the ECS task
-definitions are generated from assets/models.yaml. The YAML is committed;
-generated artefacts are either committed as reference or regenerated at deploy
-time. Any drift between the YAML and a generated artefact is a build error,
-caught by make models/validate before deployment.
+The API routes, the model catalogue, and the Postgres catalogue table are
+all derived from models.yaml. The file lives under MARIGOLD_DIR, outside
+the repository -- it is not committed, generated, or regenerated at deploy
+time. `reconcile_catalogue` syncs the catalogue table against it on every
+API startup: add-if-missing, deactivate-if-removed, untouched-if-matched.
 
-Adding a model is a YAML change. The infrastructure follows.
+Before restarting against a changed models.yaml, validate it:
+
+    docker compose run --rm cache-init python3 -m tools.model_cli validate
+
+This checks the schema and flags duplicate (name, type) entries without
+touching HuggingFace or the GPU. It is a manual pre-restart check, not an
+automated CI/CD gate -- there is no build step models.yaml passes through.
+
+Adding a model is a YAML change. The catalogue follows on next restart.
 
 ### The registry is the handler contract
 
