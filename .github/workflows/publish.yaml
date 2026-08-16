@@ -38,17 +38,18 @@ jobs:
       - name: push master
         if: github.ref == 'refs/heads/master'
         run: |
-          docker tag $(make -s print/${{ matrix.target }}-image):${{ github.sha }}${{ matrix.tag_suffix }} \
-            $(make -s print/${{ matrix.target }}-image):master${{ matrix.tag_suffix }}
-          docker push $(make -s print/${{ matrix.target }}-image):master${{ matrix.tag_suffix }}
+          IMAGE=$(make -s print/${{ matrix.target }}-image)
+          docker tag $IMAGE:${{ github.sha }}${{ matrix.tag_suffix }} $IMAGE:master${{ matrix.tag_suffix }}
+          docker push $IMAGE:master${{ matrix.tag_suffix }}
 
       - name: push latest + version tag
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          TAG=${{ github.ref_name }} make push/${{ matrix.target }}
-          docker tag $(make -s print/${{ matrix.target }}-image):${{ github.ref_name }}${{ matrix.tag_suffix }} \
-            $(make -s print/${{ matrix.target }}-image):latest${{ matrix.tag_suffix }}
-          docker push $(make -s print/${{ matrix.target }}-image):latest${{ matrix.tag_suffix }}
+          IMAGE=$(make -s print/${{ matrix.target }}-image)
+          docker tag $IMAGE:${{ github.sha }}${{ matrix.tag_suffix }} $IMAGE:${{ github.ref_name }}${{ matrix.tag_suffix }}
+          docker tag $IMAGE:${{ github.sha }}${{ matrix.tag_suffix }} $IMAGE:latest${{ matrix.tag_suffix }}
+          docker push $IMAGE:${{ github.ref_name }}${{ matrix.tag_suffix }}
+          docker push $IMAGE:latest${{ matrix.tag_suffix }}
 
   publish:
     needs: containers
