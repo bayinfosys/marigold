@@ -12,13 +12,16 @@ jobs:
     strategy:
       matrix:
         target: [api, cache, worker, worker-gpu]
+        include:
+          - target: worker-gpu
+            tag_suffix: "-gpu"
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # setuptools_scm needs full history, not a shallow clone
+          fetch-depth: 0
 
       - uses: docker/login-action@v3
         with:
@@ -35,17 +38,17 @@ jobs:
       - name: push master
         if: github.ref == 'refs/heads/master'
         run: |
-          docker tag $(make -s print/${{ matrix.target }}-image):${{ github.sha }} \
-            $(make -s print/${{ matrix.target }}-image):master
-          docker push $(make -s print/${{ matrix.target }}-image):master
+          docker tag $(make -s print/${{ matrix.target }}-image):${{ github.sha }}${{ matrix.tag_suffix }} \
+            $(make -s print/${{ matrix.target }}-image):master${{ matrix.tag_suffix }}
+          docker push $(make -s print/${{ matrix.target }}-image):master${{ matrix.tag_suffix }}
 
       - name: push latest + version tag
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           TAG=${{ github.ref_name }} make push/${{ matrix.target }}
-          docker tag $(make -s print/${{ matrix.target }}-image):$TAG \
-            $(make -s print/${{ matrix.target }}-image):latest
-          docker push $(make -s print/${{ matrix.target }}-image):latest
+          docker tag $(make -s print/${{ matrix.target }}-image):${{ github.ref_name }}${{ matrix.tag_suffix }} \
+            $(make -s print/${{ matrix.target }}-image):latest${{ matrix.tag_suffix }}
+          docker push $(make -s print/${{ matrix.target }}-image):latest${{ matrix.tag_suffix }}
 
   publish:
     needs: containers
