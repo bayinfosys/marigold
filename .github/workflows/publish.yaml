@@ -26,6 +26,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: install setuptools_scm
+        run: pip install setuptools_scm
+
       - name: build
         run: make build/${{ matrix.target }} TAG=${{ github.sha }}
 
