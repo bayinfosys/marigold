@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "setuptools_scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bayis-marigold"
+dynamic = ["version"]
+requires-python = ">=3.12"
+dependencies = ["pyyaml", "pydantic", "dynawrap"]
+
+[project.scripts]
+marigold = "cli.main:main"
+
+[tool.setuptools_scm]
+# version is derived from git tags, same source the Makefile's
+# TAG := $(shell git describe --tags) already reads -- one number,
+# not two things to keep in sync by hand.
+local_scheme = "no-local-version"
+
+[tool.setuptools]
+package-dir = {"" = "package/src"}
+packages = ["api", "backend", "models", "shared", "tools", "evals", "cli", "compose"]
+
+[tool.setuptools.package-data]
+compose = ["*.yaml", "Dockerfile", "environment/*.txt"]
