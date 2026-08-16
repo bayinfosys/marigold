@@ -453,6 +453,9 @@ class MultiQueueWorker:
 
     def _pick_entry(self) -> dict | None:
         """Return the entry with the highest queue depth, or None if all empty."""
+        if not self.model_catalogue:
+            return None
+
         depths = [
             (m, self.queue_backend.depth(m.queue_name))
             for m in self.model_catalogue

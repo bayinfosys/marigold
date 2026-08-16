@@ -7,7 +7,8 @@ HF_TOKEN ?=
 
 # TAG is derived from the current git tag.
 # Override on the command line: make TAG=v0.3.0 plan
-TAG ?= $(shell git describe --tags)
+#TAG ?= $(shell git describe --tags)
+TAG ?= $(shell python3 -m setuptools_scm)
 
 ifeq ($(TAG),)
   $(error TAG is not set -- ensure a git tag exists or pass TAG= explicitly)
@@ -60,3 +61,39 @@ build/worker-gpu:
 
 .PHONY: build
 build: build/api build/cache build/worker build/worker-gpu
+
+
+# ---------------------------------------------------------------------------
+# push targets, alongside the existing build/* ones
+# ---------------------------------------------------------------------------
+
+.PHONY: push/api
+push/api:
+	docker push $(API_IMAGE):$(TAG)
+
+.PHONY: push/cache
+push/cache:
+	docker push $(CACHE_IMAGE):$(TAG)
+
+.PHONY: push/worker
+push/worker:
+	docker push $(WORKER_IMAGE):$(TAG)
+
+.PHONY: push/worker-gpu
+push/worker-gpu:
+	docker push $(WORKER_IMAGE):$(TAG)-gpu
+
+.PHONY: push
+push: push/api push/cache push/worker push/worker-gpu
+
+
+
+.PHONY: print/api-image print/cache-image print/worker-image print/worker-gpu-image
+print/api-image:
+	@echo $(API_IMAGE)
+print/cache-image:
+	@echo $(CACHE_IMAGE)
+print/worker-image:
+	@echo $(WORKER_IMAGE)
+print/worker-gpu-image:
+	@echo $(WORKER_IMAGE)

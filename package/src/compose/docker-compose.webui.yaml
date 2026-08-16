@@ -11,7 +11,8 @@ services:
       - RAG_EMBEDDING_ENGINE=openai
       - RAG_OPENAI_API_BASE_URL=http://api:8000/v1
       - RAG_OPENAI_API_KEY=${WEBUI_DUMMY_KEY:-marigold}
-      - RAG_EMBEDDING_MODEL=sentence-transformers/all-minilm-l6-v2
+      - RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL:-sentence-transformers/all-minilm-l6-v2}
+      - RAG_RERANKING_MODEL=${RAG_RERANKING_MODEL:-}
       - OFFLINE_MODE=true
       - HF_HUB_OFFLINE=1
       - ANONYMIZED_TELEMETRY=False
@@ -20,7 +21,7 @@ services:
       - RAG_EMBEDDING_MODEL_AUTO_UPDATE=false
       - RAG_RERANKING_MODEL_AUTO_UPDATE=false
     volumes:
-      - ${MARIGOLD_DIR:-./assets}/data/webui:/app/backend/data
+      - ${MARIGOLD_CACHE_DIR:-./assets}/data/webui:/app/backend/data
     depends_on:
       postgres:
         condition: service_healthy
