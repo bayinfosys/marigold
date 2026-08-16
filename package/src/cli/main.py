@@ -195,10 +195,19 @@ def _models_catalogue_yamls(config: dict) -> str:
     return ",".join(f"/app/marigold/{name}" for name in names)
 
 
+def _default_tag() -> str:
+    """PyPI versions never carry the 'v' prefix -- PEP 440 normalizes
+    it away regardless of what setuptools_scm was given, same as every
+    major PyPI package (requests, django, numpy all tag v-prefixed on
+    GitHub, publish un-prefixed to PyPI). Container tags and git tags
+    both keep the 'v', so it's added back here rather than stripped
+    everywhere else."""
+    return f"v{_package_version()}"
+
+
 def _compose_env(deployment_dir: Path, config: dict) -> dict:
     env = dict(os.environ)
-
-    env["TAG"] = config.get("deployment", {}).get("tag", _package_version())
+    env["TAG"] = config.get("deployment", {}).get("tag", _default_tag())
 
     env["MARIGOLD_PACKAGE_DIR"] = str(deployment_dir)
     env["MARIGOLD_MODEL_CATALOGUE_YAMLS"] = _models_catalogue_yamls(config)
@@ -241,6 +250,7 @@ def _run_compose(deployment_dir: Path, config: dict, extra_args: list[str], env:
 # output the current configuration
 # ---------------------------------------------------------------------------
 
+
 def _print_effective_config(deployment_dir: Path, config: dict, env: dict):
     """Print the current config to stderr.
 
@@ -253,6 +263,8 @@ def _print_effective_config(deployment_dir: Path, config: dict, env: dict):
     print("marigold: effective configuration", file=sys.stderr)
     print(f"  package dir      : {deployment_dir}", file=sys.stderr)
     print(f"  system config    : {system_path} ({found})", file=sys.stderr)
+    print(f"  marigold version : {_package_version()}", file=sys.stderr)
+    print(f"  image tag        : {env.get('TAG')}", file=sys.stderr)
     print(f"  compose files    : {config.get('deployment', {}).get('compose_files', ['core'])}", file=sys.stderr)
     print(f"  cache dir        : {env.get('MARIGOLD_CACHE_DIR')}", file=sys.stderr)
     print(f"  database url     : {env.get('MARIGOLD_DATABASE_URL', '(compose default)')}", file=sys.stderr)
