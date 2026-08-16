@@ -5,16 +5,21 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "bayis-marigold"
 dynamic = ["version"]
+description = "Self-hosted, open source inference platform for open-weight models. Typed async API, on your own hardware."
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = ["pyyaml", "pydantic", "dynawrap"]
+
+[project.urls]
+Homepage = "https://marigold.run"
+Repository = "https://github.com/bayinfosys/marigold"
+Examples = "https://github.com/bayinfosys/marigold-examples"
+Issues = "https://github.com/bayinfosys/marigold/issues"
 
 [project.scripts]
 marigold = "cli.main:main"
 
 [tool.setuptools_scm]
-# version is derived from git tags, same source the Makefile's
-# TAG := $(shell git describe --tags) already reads -- one number,
-# not two things to keep in sync by hand.
 local_scheme = "no-local-version"
 
 [tool.setuptools]
