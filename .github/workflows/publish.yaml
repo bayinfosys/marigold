@@ -1,0 +1,72 @@
+# .github/workflows/release.yaml
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+    branches: [master]
+
+jobs:
+  containers:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [api, cache, worker, worker-gpu]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # setuptools_scm needs full history, not a shallow clone
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: build
+        run: make build/${{ matrix.target }} TAG=${{ github.sha }}
+
+      - name: push master
+        if: github.ref == 'refs/heads/master'
+        run: |
+          docker tag $(make -s print/${{ matrix.target }}-image):${{ github.sha }} \
+            $(make -s print/${{ matrix.target }}-image):master
+          docker push $(make -s print/${{ matrix.target }}-image):master
+
+      - name: push latest + version tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG=${{ github.ref_name }} make push/${{ matrix.target }}
+          docker tag $(make -s print/${{ matrix.target }}-image):$TAG \
+            $(make -s print/${{ matrix.target }}-image):latest
+          docker push $(make -s print/${{ matrix.target }}-image):latest
+
+  publish:
+    needs: containers
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: release
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Build
+        run: python -m build
+
+      - name: Publish
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: twine upload dist/*
