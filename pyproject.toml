@@ -19,7 +19,7 @@ local_scheme = "no-local-version"
 
 [tool.setuptools]
 package-dir = {"" = "package/src"}
-packages = ["api", "backend", "models", "shared", "tools", "evals", "cli", "compose"]
+packages = ["api", "backend", "models", "shared", "tools", "cli", "compose"]
 
 [tool.setuptools.package-data]
 compose = ["*.yaml", "Dockerfile", "environment/*.txt"]
