@@ -1,5 +1,8 @@
 # Marigold
 
+[![PyPI](https://img.shields.io/pypi/v/bayis-marigold)](https://pypi.org/project/bayis-marigold/)
+[![GitHub tag](https://img.shields.io/github/v/tag/bayinfosys/marigold)](https://github.com/bayinfosys/marigold/tags)
+
 A typed inference protocol over neural network models. Typed operations --
 a capability class, model, and input set -- produce immutable results which can be chained together into workflows.
 
