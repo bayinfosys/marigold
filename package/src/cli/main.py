@@ -212,6 +212,9 @@ def _compose_env(deployment_dir: Path, config: dict) -> dict:
     env["MARIGOLD_PACKAGE_DIR"] = str(deployment_dir)
     env["MARIGOLD_MODEL_CATALOGUE_YAMLS"] = _models_catalogue_yamls(config)
 
+    if "HF_TOKEN" in os.environ:
+        print("using HF_TOKEN from env")
+
     # Cache location is a host/system concern, not a package one.
     # config is already the merged system+package result, so this is
     # just: use whatever it resolved to, or a hardcoded last resort if

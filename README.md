@@ -25,6 +25,11 @@ For a full walkthrough with a worked example, see the
 [setup tutorial](https://marigold.run/tutorials/setup.html). What follows
 here is the reference version.
 
+## Status
+
+Early stage. Interfaces, config format, and the CLI may change without notice.
+Issues and questions are welcome; for a pull request, open an issue first to discuss the change before writing code.
+
 ## Prerequisites
 
 - Docker and Docker Compose
@@ -285,3 +290,6 @@ Subclasses implement only `_run()`.
 ## Authentication
 
 No API key is required. Requests are accepted from any caller; the caller is identified by an optional `X-User-Id` header, defaulting to `local-user` (see `auth.py`, `get_authorizer()`).
+
+This is designed for use on localhost or within a private network.
+Marigold does not provide its own authentication layer -- if you expose it beyond that boundary, put your own auth in front of it.

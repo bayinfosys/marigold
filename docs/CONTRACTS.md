@@ -90,8 +90,18 @@ and execution strategy, not a description of model origin.
                 includes EFS volume mount.
 
   tools         Callable functions with typed inputs and outputs. No weights,
-                no EFS mount, no cache builder step. The ECS task is a
-                sandboxed execution environment. Current members: http.
+                no cache builder step. Handled in a sandboxed execution
+                environment, isolated from the workflow coordinator process.
+                Current members: http.
+
+                model_name is a namespaced string: {namespace}.{tool}, e.g.
+                marigold.httpx, marigold.playwright. The namespace identifies
+                the maintaining party; there is no central registry enforcing
+                uniqueness beyond convention. Implementations are Python
+                only for now. Other languages and non-function interfaces
+                (HTTP, JSON-RPC) are not yet supported and would require an
+                interface descriptor on the tool contract before dispatch
+                could branch on them; deferred.
 
   ollama        Weights served by a local Ollama instance. No EFS mount.
                 Handler calls the Ollama HTTP API. Not yet implemented.
@@ -567,3 +577,28 @@ Access patterns:
         SK begins_with DATE#{date}#OP#{operation}
 
 dynawrap item: UsageItem in shared/db_models.py
+
+---
+
+## Memory tool contract
+
+model_type: memory
+provider:   tools
+
+model_name examples: marigold.postgres, marigold.faiss
+
+Request and response fields are backend-specific and defined per
+model_name, same as model_name selects between HuggingFace weights under
+a shared model_type. Common shape: a query (text, vector, or structured
+filter) in, a ranked or filtered result set out.
+
+Retrieval, not decision-making, per PRINCIPLES.md "All computation is
+model inference" -- the tool step returns candidate facts; a downstream
+inference step acts on them. A memory tool step must not itself apply a
+similarity threshold to gate workflow branching; that gating belongs in
+an eval-backed model step, not in the retrieval tool.
+
+Depends on the Vector store decision for Marigold itself (TASKS.md,
+Engineering) -- marigold.postgres as a memory tool is only meaningful
+once that decision (pgvector on the existing instance vs. a dedicated
+service) is made; this contract does not presuppose either answer.

@@ -44,10 +44,43 @@ The consequence is that every decision is inspectable, reproducible, and
 improvable by replacing or retraining the model.
 
 This principle governs decision-making within the protocol. It does not
-preclude tool steps -- HTTP calls, compute steps, and other non-inference
-operations -- which handle data flow and external communication. The
-distinction is that tool steps do not make decisions; they move or retrieve
-data that inference steps then act on.
+preclude tool steps -- HTTP calls, compute steps, memory and retrieval
+lookups, and other non-inference operations -- which handle data flow and
+external communication. The distinction is that tool steps do not make
+decisions; they move or retrieve data that inference steps then act on. A
+similarity search returning candidate results is retrieval; a step that
+turns a similarity score into a workflow branch on its own, without an
+eval-backed model step in between, is a decision wearing a retrieval step's
+clothing, and does not belong at the tool layer.
+
+---
+
+## A typed operation's concept is separate from its implementation
+
+model_type names a concept: a capability class such as img2txt, http, or
+memory. model_name, together with provider, names one implementation of
+that concept. Two model_names under the same model_type are interchangeable
+from a workflow's point of view -- a workflow step that declares
+model_type: img2txt does not change shape whether model_name selects a
+3B-parameter model or a 7B one.
+
+This is why provider is not a description of model origin but a dispatch
+key for loading and execution strategy. huggingface, aws-bedrock, and
+ollama all name strategies for obtaining and running learned weights.
+tools names a fourth strategy with no weights at all: a deterministic,
+typed, callable implementation of a concept, executed the same way as any
+other typed operation -- queued, dispatched, results persisted -- but
+sourced from code rather than a training run.
+
+The consequence: reaching outside the protocol for live data (an HTTP
+response, a screenshot, a database query) does not require a special case
+in the workflow layer. It requires a new model_type, or a new model_name
+under an existing one, exactly as adding a new inference model does.
+Whatever guarantees apply to a typed operation's caching and reproducibility
+follow from its provider, not from its model_type -- a tools-provider
+operation is not cacheable the way a fixed set of weights is, because its
+output depends on the state of the world at call time, not on an artefact
+that can be hashed once and reused.
 
 ---
 
