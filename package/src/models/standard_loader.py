@@ -12,7 +12,7 @@ The standard_loader handles the common AutoTokenizer/AutoProcessor +
 AutoModel pattern. Model-type-specific loaders import the correct
 transformer classes and delegate to standard_loader.
 """
-
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -30,6 +30,25 @@ logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")
 
 class ModelNotFoundError(Exception):
     pass
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+    """Read a boolean environment variable.
+
+    Truthy: 1, true, yes, on (case-insensitive). Anything else set is
+    false. Absent or empty returns the default, so a caller-supplied
+    value survives an unset variable.
+
+    Environment wins over the caller when set, which is what makes
+    extra_env in models.yaml effective without every loader growing a
+    kwargs path.
+    """
+    raw = os.getenv(name, "").strip().lower()
+
+    if not raw:
+        return default
+
+    return raw in ("1", "true", "yes", "on")
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +103,99 @@ class ModelLoaderResult:
     model_size_bytes: int = 0
     load_time_ms: int = 0
 
+# ---------------------------------------------------------------------------
+# Shared functions for diffusers
+# ---------------------------------------------------------------------------
+
+def _pipeline_footprint(pipe) -> int:
+    """Memory footprint of a pipeline's denoising component.
+
+    DiT architectures expose .transformer; older unet architectures
+    expose .unet. Neither is guaranteed to exist.
+    """
+    for attr in ("transformer", "unet"):
+        component = getattr(pipe, attr, None)
+        if component is None:
+            continue
+        try:
+            return component.get_memory_footprint()
+        except AttributeError:
+            continue
+    return 0
+
+
+def load_diffusion_pipeline(
+    modelname: str,
+    cache_dir: str = None,
+    quant_config = None,
+    **load_overrides,
+) -> ModelLoaderResult:
+    """Load a diffusers DiffusionPipeline.
+
+    Shared by txt2img, txt2vid, img2vid and vid2vid. The pipeline class is
+    determined by the model config at load time, not by this function.
+
+    Three placement paths:
+      quantised   -- per-component .to(), since bitsandbytes leaves
+                     components on cpu when no device_map is given
+      multi-gpu   -- device_map="balanced"
+      single/cpu  -- .to(target)
+
+    DIFFUSERS_DEVICE_MAP: json mapping component name to device string,
+    e.g. '{"transformer": "cuda:0", "text_encoder": "cuda:1"}'. Components
+    absent from the map default to cuda:0. Quantised path only.
+    """
+    from diffusers import DiffusionPipeline
+
+    has_cuda  = torch.cuda.is_available()
+    gpu_count = torch.cuda.device_count() if has_cuda else 0
+    dtype     = torch.float16 if has_cuda else torch.float32
+    local_files_only = env_flag("HF_HUB_OFFLINE", True)
+
+    logger.info(
+        "loading '%s' -- cuda=%s gpus=%d dtype=%s quantised=%s",
+        modelname, has_cuda, gpu_count, dtype, quant_config is not None,
+    )
+
+    T0 = clock()
+
+    load_kwargs = dict(
+        cache_dir        = cache_dir,
+        torch_dtype      = dtype,
+        local_files_only = local_files_only,
+        **load_overrides,
+    )
+
+    if quant_config is not None:
+        load_kwargs["quantization_config"] = quant_config
+        pipe = DiffusionPipeline.from_pretrained(modelname, **load_kwargs)
+
+        explicit_map = {}
+        env_map = os.getenv("DIFFUSERS_DEVICE_MAP", "").strip()
+        if env_map:
+            explicit_map = json.loads(env_map)
+
+        for name, component in pipe.components.items():
+            if isinstance(component, torch.nn.Module):
+                component.to(explicit_map.get(name, "cuda:0"))
+
+    elif gpu_count > 1:
+        load_kwargs["device_map"] = "balanced"
+        pipe = DiffusionPipeline.from_pretrained(modelname, **load_kwargs)
+
+    else:
+        target = "cuda" if has_cuda else "cpu"
+        pipe = DiffusionPipeline.from_pretrained(modelname, **load_kwargs).to(target)
+
+    load_time = int((clock() - T0) * 1000)
+    logger.info("loaded '%s' pipeline in %0.2fs", modelname, load_time / 1000.0)
+
+    return ModelLoaderResult(
+        processor        = None,
+        model            = pipe,
+        model_size_bytes = _pipeline_footprint(pipe),
+        load_time_ms     = load_time,
+    )
 
 # ---------------------------------------------------------------------------
 # Standard loader
@@ -115,10 +227,10 @@ def standard_loader(
     They have no effect on the tokenizer load.
     """
     # double check the envvars here, so we don't rely on the caller.
-    use_fast = use_fast or os.getenv("USE_FAST", "").lower() in ("1", "true")
-    remote_code = remote_code or os.getenv("TRUST_REMOTE_CODE", "").lower() == "true"
-    load_in_4bit = load_in_4bit or os.getenv("LOAD_IN_4BIT", "").lower() in ("1", "true")
-    low_cpu_mem_usage = low_cpu_mem_usage or os.getenv("LOW_CPU_MEM_USAGE", "true").lower() in ("1", "true")
+    use_fast = env_flag("USE_FAST", use_fast)
+    remote_code = env_flag("TRUST_REMOTE_CODE", remote_code)
+    load_in_4bit = env_flag("LOAD_IN_4BIT", load_in_4bit)
+    low_cpu_mem_usage = env_flag("LOW_CPU_MEM_USAGE", low_cpu_mem_usage)
 
     T0 = clock()
 

@@ -11,7 +11,7 @@ from api.models import (
 )
 from api.routes._submit import _submit
 from api.auth import apikey_auth
-from shared.enums import ModelType
+from shared.enums import ModelType, ModelMode
 
 router = APIRouter()
 
@@ -22,7 +22,7 @@ router = APIRouter()
     response_model=SubmissionResponse,
 )
 async def eval_text(request: Request, body: EvalTextRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump(), ModelType.TEXT_EVAL)
+    return await _submit(request, user.id, body.model_dump(), ModelType.TEXT_EVAL, ModelMode.EVAL)
 
 
 @router.post(
@@ -31,7 +31,7 @@ async def eval_text(request: Request, body: EvalTextRequest, user=Security(apike
     response_model=SubmissionResponse,
 )
 async def eval_text_similarity(request: Request, body: TextSimilarityRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump(), ModelType.TEXT_SIMILARITY)
+    return await _submit(request, user.id, body.model_dump(), ModelType.TEXT_SIMILARITY, ModelMode.EVAL)
 
 
 @router.post(
@@ -40,7 +40,7 @@ async def eval_text_similarity(request: Request, body: TextSimilarityRequest, us
     response_model=SubmissionResponse,
 )
 async def eval_image(request: Request, body: EvalImageRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump(), ModelType.IMAGE_EVAL)
+    return await _submit(request, user.id, body.model_dump(), ModelType.IMAGE_EVAL, ModelMode.EVAL)
 
 
 @router.post(
@@ -49,4 +49,4 @@ async def eval_image(request: Request, body: EvalImageRequest, user=Security(api
     response_model=SubmissionResponse,
 )
 async def eval_image_text(request: Request, body: ImageTextEvalRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump(), ModelType.IMAGE_SIMILARITY)
+    return await _submit(request, user.id, body.model_dump(), ModelType.IMAGE_SIMILARITY, ModelMode.EVAL)

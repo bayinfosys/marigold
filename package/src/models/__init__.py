@@ -42,7 +42,8 @@ def load_all():
     """
     from models import http  # noqa: F401
     from models import txt2audio  # noqa: F401
-    from models import (depth, image_embed, image_eval,  # noqa: F401
-                        image_text_eval, img2mask, img2txt, instruct,
-                        text_embed, text_eval, text_similarity, tts, txt2img)
     from models import asr
+    from models import (depth, image_embed, image_eval,  # noqa: F401
+                        image_text_eval, img2mask, img2txt, img2vid,
+                        instruct, text_embed, text_eval, text_similarity,
+                        tts, txt2img, txt2vid)

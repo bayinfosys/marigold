@@ -5,9 +5,9 @@ receiver_logic.handle_submission with app.state backends, return the
 appropriate HTTP response.
 
 This module provides _submit() to avoid repeating that pattern in every
-route file. model_type is supplied by the caller -- it is fixed by which
-route was hit (/gen/instruct is always ModelType.INSTRUCT), not derived
-from the request body.
+route file. model_type and mode are supplied by the caller -- both are
+fixed by which route was hit (/gen/instruct is always GEN + INSTRUCT),
+not derived from the request body or the request path.
 """
 
 import logging
@@ -15,14 +15,18 @@ import logging
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from shared.enums import ModelType
+from shared.enums import ModelMode, ModelType
 from tools.state_machine.receiver_logic import handle_submission
 
 logger = logging.getLogger(__name__)
 
 
 async def _submit(
-    request: Request, user_id: str, body: dict, model_type: ModelType
+    request: Request,
+    user_id: str,
+    body: dict,
+    model_type: ModelType,
+    mode: ModelMode = ModelMode.GEN,
 ) -> JSONResponse:
     """Call handle_submission with backends from app.state."""
     table_backend = request.app.state.table_backend
@@ -44,4 +48,14 @@ async def _submit(
         topic=topic,
     )
 
-    return JSONResponse(status_code=code, content=resp)
+    headers = {}
+
+    # Location points at the poll route for this job, so a client never has
+    # to know how /output/ paths are assembled. Only meaningful when a job
+    # exists: error responses carry no message_id.
+    if code < 400 and "message_id" in resp:
+        headers["Location"] = (
+            f"/output/{mode.value}/{model_type.value}/{resp['message_id']}"
+        )
+
+    return JSONResponse(status_code=code, content=resp, headers=headers)

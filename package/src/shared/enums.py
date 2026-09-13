@@ -43,6 +43,7 @@ class ModelType(StrEnum):
     TEXT_EVAL        = "text-eval"
     TEXT_SIMILARITY  = "text-similarity"
     IMAGE_EVAL       = "image-eval"
+    IMAGE_SIMILARITY = "image-similarity"
     IMAGE_TEXT_EVAL  = "image-text-eval"
     HTTP             = "http"
     # --- audio ---
@@ -51,6 +52,7 @@ class ModelType(StrEnum):
     TXT2VID          = "txt2vid"
     IMG2VID          = "img2vid"
     VID2TXT          = "vid2txt"
+    VID2VID          = "vid2vid"
     # --- embodied / robot ---
     OBS2ACT          = "obs2act"
     # --- 3d ---
@@ -101,3 +103,18 @@ class ModelModalities(Enum):
     VIDEO     = "video"
     EMBEDDING = "embedding"
     MESH      = "mesh"
+
+
+class StatusCode(StrEnum):
+    """Why a job ended in error.
+
+    Stored in the results record and returned in the poll envelope. The
+    HTTP status of a poll is always 200 for a terminal job; this is how a
+    client distinguishes a request that failed from a model that cannot
+    run here.
+    """
+
+    OK                = "ok"
+    UNSPECIFIED       = "unspecified"
+    MODEL_LOAD_FAILED = "model_load_failed"
+    INFERENCE_FAILED  = "inference_failed"

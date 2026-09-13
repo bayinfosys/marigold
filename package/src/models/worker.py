@@ -26,6 +26,7 @@ import logging
 import os
 import threading
 import time
+import socket
 from contextlib import contextmanager
 
 import torch
@@ -39,6 +40,7 @@ from tools.power_sampler import (ModelVRAMError, PowerSampler,
 from shared.usage_models import UsageItem
 from shared.usage import write_usage
 from shared.db_models import ModelCatalogueItem, set_model_config_env
+from shared.enums import StatusCode
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +115,7 @@ class QueueWorker:
         topic: str,
         results_cache: ResultsCache,
         idle_timeout: int = None,
+        worker_id: str = None,
     ):
         self.queue = queue
         self.model_name = model_name
@@ -124,16 +127,23 @@ class QueueWorker:
         self.topic = topic
         self.idle_timeout = idle_timeout if idle_timeout is not None else IDLE_TIMEOUT
         self.results_cache = results_cache
+        self.worker_id = worker_id or os.getenv("MARIGOLD_WORKER_ID") or socket.gethostname()
+        self.hostname = socket.gethostname()
+
+        logger.info("[%s] worker started on %s", self.worker_id, self.hostname)
 
         if self.results_cache is None:
             raise NotImplementedError("results_cache is now required")
 
         self._power_sampler = PowerSampler()
 
+        # TODO: this should be a pydantic model
         self._base_payload = {
             "model_name": model_name,
             "model_type": model_type,
             "model_hash": model_hash,
+            "worker_id": self.worker_id,
+            "hostname": self.hostname,
         }
 
         self._publish(EventType.MODEL_LOADING)
@@ -209,7 +219,7 @@ class QueueWorker:
         """
         self.results_cache.write_result(user_id, message_id, response)
 
-    def _write_error(self, user_id: str, message_id: str, error: str) -> None:
+    def _write_error(self, user_id, message_id, error, code=StatusCode.UNSPECIFIED) -> None:
         """Write an error status to the results backend."""
         self.results_cache.write_error(user_id, message_id, error)
 
@@ -322,6 +332,10 @@ class QueueWorker:
             usage_update = sampler.as_usage_fields()
             # FIXME: we need to capture this is power sampler
             #usage_update["cpu_offload_bytes"] = self._cpu_offload_bytes
+            usage_update["worker_id"] = self.worker_id
+            usage_update["hostname"] = self.hostname
+            usage_update["application_id"] = sqs_msg.model_inputs.get("application_id") or ""
+
             result = result.model_copy(update={"usage": result.usage.model_copy(update=usage_update)})
 
             item = UsageItem.from_model_stats(

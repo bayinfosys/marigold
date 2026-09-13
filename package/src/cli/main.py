@@ -165,6 +165,23 @@ def _resolve_deployment_target(target: str) -> Path:
     raise FileNotFoundError(f"deployment directory not found: {target}")
 
 
+CACHE_SUBDIRS = {
+    "models":  "data/models",
+    "tmp":     "data/tmp",
+    "outputs": "data/outputs",
+}
+
+
+def _cache_paths(cache_dir: Path) -> dict[str, Path]:
+    """Absolute host paths for everything under the cache root.
+
+    The single definition of the layout. Compose receives these as
+    environment variables rather than composing paths itself, so the
+    host and the containers cannot disagree.
+    """
+    return {name: cache_dir / rel for name, rel in CACHE_SUBDIRS.items()}
+
+
 # ---------------------------------------------------------------------------
 # compose invocation
 # ---------------------------------------------------------------------------
@@ -196,13 +213,13 @@ def _models_catalogue_yamls(config: dict) -> str:
 
 
 def _default_tag() -> str:
-    """PyPI versions never carry the 'v' prefix -- PEP 440 normalizes
-    it away regardless of what setuptools_scm was given, same as every
-    major PyPI package (requests, django, numpy all tag v-prefixed on
-    GitHub, publish un-prefixed to PyPI). Container tags and git tags
-    both keep the 'v', so it's added back here rather than stripped
-    everywhere else."""
-    return f"v{_package_version()}"
+    """The image tag is the PyPI version, unprefixed.
+
+    The Docker build takes its tag from the Python version, and PEP 440
+    normalises away any 'v', so the two agree only when nothing adds one
+    back.
+    """
+    return _package_version()
 
 
 def _compose_env(deployment_dir: Path, config: dict) -> dict:
@@ -220,7 +237,10 @@ def _compose_env(deployment_dir: Path, config: dict) -> dict:
     # just: use whatever it resolved to, or a hardcoded last resort if
     # neither layer set one at all (e.g. no system config written yet).
     cache_dir = config.get("cache", {}).get("dir", str(DEFAULT_CACHE_DIR))
-    env["MARIGOLD_CACHE_DIR"] = cache_dir
+    env["MARIGOLD_CACHE_DIR"] = str(cache_dir)
+
+    for name, path in _cache_paths(Path(cache_dir)).items():
+        env[f"MARIGOLD_{name.upper()}_DIR"] = str(path)
 
     # Same principle for database.url -- only set it if some config
     # layer explicitly provided one. Left unset otherwise, so
@@ -329,102 +349,49 @@ def cmd_deployment_logs(args):
 # independent of any deployment
 # ---------------------------------------------------------------------------
 
-def _resolve_models_yaml_paths(raw_paths: list[str]) -> list[Path]:
-    paths = []
-    for path_str in raw_paths:
-        p = Path(path_str).resolve()
-        if not p.exists():
-            print(f"models.yaml not found: {p}", file=sys.stderr)
-            sys.exit(1)
-        paths.append(p)
-    return paths
-
-
-def cmd_cache_validate(args):
-    from models.catalogue import load_catalogue_from_yaml
-
-    paths = _resolve_models_yaml_paths(args.models_yaml)
-    items = load_catalogue_from_yaml([str(p) for p in paths])
-
-    print(f"\n{len(items)} model(s) valid across {len(paths)} file(s):")
-    for item in items:
-        print(f"  {item.type.value}/{item.name}")
-
-    # load_catalogue_from_yaml logs (via the `logging` module, now
-    # configured in main()) any entry that failed validation or was
-    # duplicated -- those already printed above this summary, to stderr.
-    sys.exit(0)
-
-
-def _stitch_models_yaml(paths: list[Path]) -> str:
-    """Concatenate multiple models.yaml files' `models:` lists into one
-    temporary file, returning its path.
-
-    Structural only -- reads the fixed top-level `models:` key and
-    concatenates the raw lists, doesn't touch individual entries. Real
-    validation already happened in cmd_cache_populate before this is
-    called; this just gets the (already-known-valid) content into a
-    single file the container can mount at one fixed path.
-
-    Caller is responsible for deleting the returned path once done.
-    """
-    merged = []
-    for path in paths:
-        with open(path) as f:
-            data = yaml.safe_load(f) or {}
-        merged.extend(data.get("models", []))
-
-    tmp = tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yaml", delete=False, prefix="marigold-catalogue-"
-    )
-    yaml.safe_dump({"models": merged}, tmp)
-    tmp.close()
-    return tmp.name
-
 
 def cmd_cache_populate(args):
-    from models.catalogue import load_catalogue_from_yaml
+    """Populate the model cache for a package.
 
-    paths = _resolve_models_yaml_paths(args.models_yaml)
+    Runs cache-init through the same compose invocation `deployment
+    start` uses, so the image tag, cache dir and catalogue paths are
+    resolved once. No dependency graph, so no compose dependency
+    timeout: this streams the container's own output and exits with
+    its status.
+    """
+    deployment_dir = _resolve_deployment_target(args.target)
+    config = _load_config(deployment_dir)
+    env = _compose_env(deployment_dir, config)
 
-    # Fail fast on the host, with a real error, before any container
-    # spins up -- rather than a stitched file that only fails once
-    # cache-init gets around to it.
-    load_catalogue_from_yaml([str(p) for p in paths])
-
-    system_config = _load_toml(_system_config_path())
-    env = dict(os.environ)
-    env["TAG"] = system_config.get("deployment", {}).get("tag", _package_version())
-    env["MARIGOLD_CACHE_DIR"] = str(_cache_dir_from_system_config())
-    env["MARIGOLD_PACKAGE_DIR"] = str(paths[0].parent)  # satisfies cache-init's unused /app/marigold mount
-    env.setdefault("HF_TOKEN", "")
-
-    stitched_path = _stitch_models_yaml(paths)
-    container_path = "/app/marigold-refs/models.yaml"
-    env["MARIGOLD_MODEL_CATALOGUE_YAMLS"] = container_path
+    print(f"marigold: cache dir = {env['MARIGOLD_CACHE_DIR']}", file=sys.stderr)
+    print(f"marigold: catalogue = {env['MARIGOLD_MODEL_CATALOGUE_YAMLS']}", file=sys.stderr)
+    print(f"marigold: image tag = {env['TAG']}", file=sys.stderr)
 
     command = ["python3", "-m", "tools.model_cli", "download-weights"]
     if args.prune:
+        print("marigold: pruning models absent from this package", file=sys.stderr)
         command.append("--prune")
 
-    print(f"marigold: cache dir = {env['MARIGOLD_CACHE_DIR']}", file=sys.stderr)
-    print(f"marigold: catalogue = {', '.join(str(p) for p in paths)} (stitched)", file=sys.stderr)
-    print(f"marigold: prune = {args.prune}", file=sys.stderr)
-
-    cmd = _compose_base_cmd(["core"]) + [
-        "run", "--rm",
-        "-v", f"{stitched_path}:{container_path}:ro",
-        "cache-init", *command,
-    ]
-    try:
-        result = subprocess.run(cmd, env=env)
-    finally:
-        os.unlink(stitched_path)
-    sys.exit(result.returncode)
+    returncode = _run_compose(
+        deployment_dir, config,
+        ["run", "--rm", "--no-deps", "cache-init", *command],
+        env=env,
+    )
+    sys.exit(returncode)
 
 
 def _dir_size_bytes(path: Path) -> int:
-    return sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
+    """Bytes on disk under path.
+
+    The HuggingFace cache stores content once in blobs/ and links to it
+    from snapshots/. Path.is_file() follows symlinks, so counting them
+    reports double the real size.
+    """
+    return sum(
+        p.stat().st_size
+        for p in path.rglob("*")
+        if p.is_file() and not p.is_symlink()
+    )
 
 
 def _hf_cache_dirname_to_model_name(dirname: str) -> str:
@@ -440,7 +407,7 @@ def _hf_cache_dirname_to_model_name(dirname: str) -> str:
 
 def cmd_cache_inspect(args):
     cache_dir = _cache_dir_from_system_config()
-    models_dir = cache_dir / "data" / "models"
+    models_dir = _cache_paths(cache_dir)["models"]
 
     if not models_dir.exists():
         print(f"cache dir  : {cache_dir}", file=sys.stderr)
@@ -503,10 +470,7 @@ def build_parser() -> argparse.ArgumentParser:
         p.set_defaults(func=fn)
 
     logs_p = dep_sub.add_parser("logs", help="tail logs from the deployment")
-    logs_p.add_argument(
-        "target", nargs="?", default=".",
-        help="deployment directory, or <host>.<package_name> (not yet implemented)",
-    )
+    logs_p.add_argument("target", nargs="?", default=".", help="deployment directory, or <host>.<package_name> (not yet implemented)")
     logs_p.add_argument("service", nargs="?", default=None, help="restrict to one service")
     logs_p.add_argument("--no-follow", action="store_true", help="print current logs and exit, don't tail")
     logs_p.set_defaults(func=cmd_deployment_logs)
@@ -514,33 +478,18 @@ def build_parser() -> argparse.ArgumentParser:
     cache = sub.add_parser("cache", help="manage the shared model cache")
     cache_sub = cache.add_subparsers(dest="cache_command", required=True)
 
-    validate_p = cache_sub.add_parser(
-        "validate", help="check one or more models.yaml files load cleanly"
-    )
-    validate_p.add_argument("models_yaml", nargs="+", help="one or more models.yaml files")
-    validate_p.set_defaults(func=cmd_cache_validate)
-
-    populate_p = cache_sub.add_parser(
-        "populate", help="download missing models, optionally prune unwanted ones"
-    )
-    populate_p.add_argument(
-        "models_yaml", nargs="+",
-        help="one or more models.yaml files -- their union is the wanted set",
-    )
-    populate_p.add_argument(
-        "--prune", action="store_true",
-        help="remove cached models not present in any given models.yaml",
-    )
+    # populate the cache
+    populate_p = cache_sub.add_parser("populate", help="download the models a package declares")
+    populate_p.add_argument("target", nargs="?", default=".", help="deployment directory")
+    populate_p.add_argument("--prune", action="store_true", help="remove cached models this package does not declare")
     populate_p.set_defaults(func=cmd_cache_populate)
 
-    inspect_p = cache_sub.add_parser(
-        "inspect", help="list cached models, disk usage, and cache location"
-    )
+    # inspect the cache
+    inspect_p = cache_sub.add_parser("inspect", help="list cached models, disk usage, and cache location")
     inspect_p.set_defaults(func=cmd_cache_inspect)
 
-    seed_p = cache_sub.add_parser(
-        "seed", help="share cached models with the network via torrent (not yet implemented)"
-    )
+    # seed the cache to torrents
+    seed_p = cache_sub.add_parser("seed", help="share cached models with the network via torrent (not yet implemented)")
     seed_p.set_defaults(func=cmd_cache_stub)
 
     pkg = sub.add_parser("package", help="manage Marigold packages (not yet implemented)")

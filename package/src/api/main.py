@@ -75,6 +75,10 @@ def _build_local_backends(app: FastAPI) -> None:
     added, pruned = reconcile_catalogue(table_backend, model_catalogue_table, model_catalogue_items)
     logger.info("catalogue reconciled: %d added, %d pruned", len(added), len(pruned))
 
+    # create the model queues for us to write on
+    for item in model_catalogue_items:
+        queue_backend.create_queue(item.queue_name)
+
     # create the usage table
     PostgresBackend.create_table(conn, os.getenv("MARIGOLD_USAGE_TABLE", "usage"))
 

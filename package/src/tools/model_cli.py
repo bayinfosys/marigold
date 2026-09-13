@@ -357,16 +357,20 @@ def validate_models() -> CommandResult:
     return result, not duplicates
 
 
-def download_weights(model_name_filter: Optional[str]) -> CommandResult:
-    """Download and cache model weights from HuggingFace to the EFS cache."""
+def download_weights(model_name_filter: Optional[str], prune: bool = False) -> CommandResult:
+    """Download and cache model weights from HuggingFace.
+
+    prune is opt-in. Inferring it from the absence of a name filter
+    meant a routine population deleted every model outside the current
+    catalogue, on a cache whose purpose is outliving deployments.
+    """
     from tools.model_cache_shared import run_build
 
     ctx = ModelCatalogueContext.load(model_name_filter)
     hf_token = os.environ.get("HF_TOKEN", "")
 
-    build_result = run_build(
-        ctx.models, ctx.cache_path, hf_token, prune=model_name_filter is None
-    )
+    build_result = run_build(ctx.models, ctx.cache_path, hf_token, prune=prune)
+
     result = {
         "cached": build_result.cached,
         "pruned": build_result.pruned,

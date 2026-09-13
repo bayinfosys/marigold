@@ -98,7 +98,12 @@ def handle_status(
 
     if status in ("complete", "error"):
         result = results_cache.get_response(user_id, full_id)
-        return 200, {"status": status, "message_id": message_id, "result": result}
+        return 200, {
+            "status": status,
+            "message_id": message_id,
+            "code": results_cache.get_code(user_id, full_id),
+            "result": result,
+        }
     elif status:
         return 202, {"status": status, "message_id": message_id}
     else:

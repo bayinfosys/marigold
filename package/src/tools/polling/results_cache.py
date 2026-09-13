@@ -1,7 +1,12 @@
 import json
+import logging
 
 from dynawrap.backends.base import DBBackend
 from shared.db_models import ResultsItem
+from shared.enums import StatusCode
+
+
+logger = logging.getLogger(__name__)
 
 
 class ResultsCache:
@@ -15,11 +20,12 @@ class ResultsCache:
         self._backend = backend
         self._table = table
 
-    def create(self, user_id: str, message_id: str, status: str = "queued") -> None:
+    def create(self, user_id: str, message_id: str, status: str = "queued", status_code: StatusCode = StatusCode.OK) -> None:
         item = ResultsItem(
             user_id=user_id,
             job_id=message_id,
             status=status,
+            code=status_code,
             ttl=ResultsItem.make_ttl(),
         )
         self._backend.save(self._table, item)
@@ -44,6 +50,19 @@ class ResultsCache:
             return {}
         return json.loads(item.response)
 
+    def get_code(self, user_id: str, message_id: str) -> str | None:
+        """Failure code for a job, or None.
+
+        Stub. ResultsItem has no code field, so nothing is stored to read:
+        write_error records only the free-text error string. Returns None
+        for every record, which is correct for a job that did not fail and
+        honest for one that did.
+
+        To implement: add `code` to ResultsItem, take it as a parameter on
+        write_error with a default, and return item.code here.
+        """
+        return StatusCode.OK
+
     def update_status(self, user_id: str, message_id: str, status: str) -> None:
         item = self._backend.get(
             self._table,
@@ -65,7 +84,6 @@ class ResultsCache:
         if item is None:
             return
         self._backend.delete(self._table, item)
-
 
     def write_result(self, user_id: str, message_id: str, response: dict) -> None:
         item = self._backend.get(self._table, ResultsItem, user_id=user_id, job_id=message_id)

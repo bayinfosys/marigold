@@ -42,6 +42,8 @@ import logging
 import os
 import sys
 
+from models import load_all as load_all_model_handlers
+
 logger = logging.getLogger(__name__)
 
 
@@ -115,11 +117,10 @@ def _load_catalogue(conn, table: str) -> list:
 def sqs_handler():
     """ECS task entry point for a single model. Unchanged -- out of scope."""
     from backend.messaging.sqs_sns import SNSNotificationBackend, SQSQueueBackend
-    from models import load_all
     from models.worker import QueueWorker
     from shared.registry import _SPECS
 
-    load_all()
+    load_all_model_handlers()
 
     config = _load_models_config()
     hashes = _resolve_model_hashes(config)
@@ -189,21 +190,23 @@ def local_handler():
     from backend.messaging.local import LocalNotificationBackend
     from backend.messaging.postgres import PostgresQueueBackend
     from dynawrap.backends.postgres import PostgresBackend
-    from models import load_all
     from models.worker import MultiQueueWorker, QueueWorker
     from tools.polling.results_cache import ResultsCache
+    from tools.environment import collect_environment
 
-    load_all()
+    load_all_model_handlers()
 
     dsn = os.environ["MARIGOLD_DATABASE_URL"]
     visibility_timeout = int(os.getenv("SQS_VISIBILITY_TIMEOUT", "300"))
     topic = os.getenv("LIFECYCLE_TOPIC", "lifecycle")
     results_table = os.getenv("MARIGOLD_RESULTS_TABLE", "results")
     models_table = os.getenv("MARIGOLD_MODEL_CATALOGUE_TABLE", "models")
+    workers_table = os.getenv("MARIGOLD_WORKERS_TABLE", "workers")
 
     conn = psycopg2.connect(dsn)
     conn.autocommit = True
 
+    # load the requested model defintions from the catalogue
     catalogue = _load_catalogue(conn, models_table)
     #logger.info("catalogue: %s", str(catalogue))
     for idx, model in enumerate(catalogue):
@@ -217,9 +220,23 @@ def local_handler():
     PostgresBackend.create_table(conn, results_table)
     results_cache = ResultsCache(results_backend, results_table)
 
+    # collect environment info about this worker
+    environment = collect_environment()
+    PostgresBackend.create_table(conn, workers_table)
+    results_backend.save(workers_table, environment)
+
+    logger.info(
+        "worker environment: id='%s' host='%s' cuda=%s devices=%s",
+        environment.worker_id, environment.hostname,
+        environment.cuda_available, environment.device_names,
+    )
+
+    # create work queues for each model (this operation is idempotent)
     for model in catalogue:
         queue_backend.create_queue(model.queue_name)
 
+    # create the queue workers to pull work off the queue and process
+    # NB: MultiQueueWorker should be able to function with one model
     if len(catalogue) == 1:
         entry = catalogue[0]
         worker = QueueWorker(

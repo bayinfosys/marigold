@@ -5,7 +5,7 @@ from fastapi import Request, Security, APIRouter
 from api.models import EmbedImageRequest, EmbedTextRequest, SubmissionResponse
 from api.routes._submit import _submit
 from api.auth import apikey_auth
-from shared.enums import ModelType
+from shared.enums import ModelType, ModelMode
 
 
 router = APIRouter()
@@ -17,7 +17,7 @@ router = APIRouter()
     response_model=SubmissionResponse,
 )
 async def embed_text(request: Request, body: EmbedTextRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump(), ModelType.TEXT_EMBEDDING)
+    return await _submit(request, user.id, body.model_dump(), ModelType.TEXT_EMBEDDING, ModelMode.EMBED)
 
 
 @router.post(
@@ -26,4 +26,4 @@ async def embed_text(request: Request, body: EmbedTextRequest, user=Security(api
     response_model=SubmissionResponse,
 )
 async def embed_image(request: Request, body: EmbedImageRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump(), ModelType.IMAGE_EMBEDDING)
+    return await _submit(request, user.id, body.model_dump(), ModelType.IMAGE_EMBEDDING, ModelMode.EMBED)

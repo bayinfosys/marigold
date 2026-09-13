@@ -11,10 +11,11 @@ from api.models import (
     TTSRequest,
     Txt2AudioRequest,
     Txt2ImgRequest,
+    Txt2VidRequest,
 )
 from api.routes._submit import _submit
 from api.auth import apikey_auth
-from shared.enums import ModelType
+from shared.enums import ModelType, ModelMode
 
 router = APIRouter()
 
@@ -25,7 +26,7 @@ router = APIRouter()
     response_model=SubmissionResponse,
 )
 async def gen_instruct(request: Request, body: InstructRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump(), ModelType.INSTRUCT)
+    return await _submit(request, user.id, body.model_dump(), ModelType.INSTRUCT, ModelMode.GEN)
 
 
 @router.post(
@@ -34,7 +35,7 @@ async def gen_instruct(request: Request, body: InstructRequest, user=Security(ap
     response_model=SubmissionResponse,
 )
 async def gen_tts(request: Request, body: TTSRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump(), ModelType.TTS)
+    return await _submit(request, user.id, body.model_dump(), ModelType.TTS, ModelMode.GEN)
 
 
 @router.post(
@@ -43,7 +44,7 @@ async def gen_tts(request: Request, body: TTSRequest, user=Security(apikey_auth)
     response_model=SubmissionResponse,
 )
 async def gen_txt2audio(request: Request, body: Txt2AudioRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump(), ModelType.TXT2AUDIO)
+    return await _submit(request, user.id, body.model_dump(), ModelType.TXT2AUDIO, ModelMode.GEN)
 
 
 @router.post(
@@ -52,7 +53,16 @@ async def gen_txt2audio(request: Request, body: Txt2AudioRequest, user=Security(
     response_model=SubmissionResponse,
 )
 async def gen_txt2img(request: Request, body: Txt2ImgRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump(), ModelType.TXT2IMG)
+    return await _submit(request, user.id, body.model_dump(), ModelType.TXT2IMG, ModelMode.GEN)
+
+
+@router.post(
+    "/gen/txt2vid",
+    description="submit a text-to-video generation request",
+    response_model=SubmissionResponse,
+)
+async def gen_txt2vid(request: Request, body: Txt2VidRequest, user=Security(apikey_auth)):
+    return await _submit(request, user.id, body.model_dump(), ModelType.TXT2VID, ModelMode.GEN)
 
 
 @router.post(
@@ -61,7 +71,7 @@ async def gen_txt2img(request: Request, body: Txt2ImgRequest, user=Security(apik
     response_model=SubmissionResponse,
 )
 async def gen_img2txt(request: Request, body: Img2TxtRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump(), ModelType.IMG2TXT)
+    return await _submit(request, user.id, body.model_dump(), ModelType.IMG2TXT, ModelMode.GEN)
 
 
 @router.post(
@@ -70,7 +80,7 @@ async def gen_img2txt(request: Request, body: Img2TxtRequest, user=Security(apik
     response_model=SubmissionResponse,
 )
 async def gen_depth(request: Request, body: DepthRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump(), ModelType.DEPTH)
+    return await _submit(request, user.id, body.model_dump(), ModelType.DEPTH, ModelMode.GEN)
 
 
 @router.post(
@@ -79,4 +89,4 @@ async def gen_depth(request: Request, body: DepthRequest, user=Security(apikey_a
     response_model=SubmissionResponse,
 )
 async def gen_img2mask(request: Request, body: Img2MaskRequest, user=Security(apikey_auth)):
-    return await _submit(request, user.id, body.model_dump(), ModelType.IMG2MASK)
+    return await _submit(request, user.id, body.model_dump(), ModelType.IMG2MASK, ModelMode.GEN)

@@ -12,7 +12,8 @@ import psycopg2
 from dynawrap.backends.postgres import PostgresBackend
 
 from shared.enums import ModelType
-from shared.usage_models import ModelUsageStats, UsageItem
+from api.models import ModelUsageStats
+from shared.usage_models import UsageItem
 
 logger = logging.getLogger(__name__)
 

@@ -30,7 +30,7 @@ from time import perf_counter as clock
 import torch
 
 from api.models import Vid2VidRequest, Vid2VidResponse
-from models.standard_loader import ModelLoaderResult
+from models.standard_loader import ModelLoaderResult, load_diffusion_pipeline
 from shared.enums import ModelMode, ModelType, OutputMimeType
 from shared.outputs import decode_video_frames, frames_to_mp4_bytes
 from shared.registry import BaseModelHandler, OutputField, model_spec
@@ -44,55 +44,8 @@ _DEFAULT_MAX_IN_FRAMES = 24
 
 
 def load_vid2vid(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
-    """Video-to-video via diffusers DiffusionPipeline.
-
-    Identical load path to txt2vid and img2vid. The pipeline class is
-    determined by the model config at load time.
-    """
-    from diffusers import DiffusionPipeline
-
-    has_cuda  = torch.cuda.is_available()
-    gpu_count = torch.cuda.device_count() if has_cuda else 0
-    dtype     = torch.float16 if has_cuda else torch.float32
-    local_files_only = os.getenv("HF_HUB_OFFLINE", "true").lower() != "0"
-
-    logger.info(
-        "loading '%s' -- cuda=%s gpus=%d dtype=%s",
-        modelname, has_cuda, gpu_count, dtype,
-    )
-
-    T0 = clock()
-
-    load_kwargs = dict(
-        cache_dir        = cache_dir,
-        torch_dtype      = dtype,
-        local_files_only = local_files_only,
-    )
-
-    if gpu_count > 1:
-        load_kwargs["device_map"] = "balanced"
-        pipe = DiffusionPipeline.from_pretrained(modelname, **load_kwargs)
-    else:
-        target = "cuda" if has_cuda else "cpu"
-        pipe = DiffusionPipeline.from_pretrained(modelname, **load_kwargs).to(target)
-
-    load_time = int((clock() - T0) * 1000)
-    logger.info("loaded '%s' in %0.2fs", modelname, clock() - T0)
-
-    try:
-        footprint = pipe.transformer.get_memory_footprint()
-    except AttributeError:
-        try:
-            footprint = pipe.unet.get_memory_footprint()
-        except AttributeError:
-            footprint = 0
-
-    return ModelLoaderResult(
-        processor        = None,
-        model            = pipe,
-        model_size_bytes = footprint,
-        load_time_ms     = load_time,
-    )
+    """Text-to-video via diffusers DiffusionPipeline."""
+    return load_diffusion_pipeline(modelname, cache_dir)
 
 
 @model_spec(

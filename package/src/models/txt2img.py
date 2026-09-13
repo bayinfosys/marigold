@@ -9,15 +9,16 @@ and self.pipe (local alias used in _run).
 NUM_STEPS defaults to 10; override per-model via extra_env in models.yaml.
 """
 
+import json
 import logging
 import os
-import json
 from time import perf_counter as clock
 
 import numpy as np
 import torch
 from api.models import Txt2ImgRequest, Txt2ImgResponse
-from models.standard_loader import ModelLoaderResult
+from diffusers.quantizers import PipelineQuantizationConfig
+from models.standard_loader import ModelLoaderResult, load_diffusion_pipeline, env_flag
 from PIL import Image
 from shared.enums import ModelMode, ModelType, OutputMimeType
 from shared.outputs import image_to_png_bytes
@@ -28,7 +29,7 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
 
-def _make_quant_config(modelname: str) -> "PipelineQuantizationConfig | None":
+def _make_quant_config(modelname: str) -> PipelineQuantizationConfig | None:
     """Return a PipelineQuantizationConfig for 4-bit NF4 quantisation.
 
     Components are resolved in order:
@@ -41,10 +42,10 @@ def _make_quant_config(modelname: str) -> "PipelineQuantizationConfig | None":
     transformers components (text_encoder*) receive TransformersBitsAndBytesConfig.
     """
     from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig
-    from diffusers.quantizers import PipelineQuantizationConfig
-    from transformers import BitsAndBytesConfig as TransformersBitsAndBytesConfig
+    from transformers import \
+        BitsAndBytesConfig as TransformersBitsAndBytesConfig
 
-    _DIFFUSERS_COMPONENTS  = {"transformer", "unet", "vae"}
+    _DIFFUSERS_COMPONENTS = {"transformer", "unet", "vae"}
     _TRANSFORMERS_COMPONENTS = {"text_encoder", "text_encoder_2", "text_encoder_3"}
 
     _COMPONENT_DEFAULTS = {
@@ -91,63 +92,17 @@ def _make_quant_config(modelname: str) -> "PipelineQuantizationConfig | None":
 def load_txt2img(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
     """Text-to-image via diffusers DiffusionPipeline.
 
-    Loads in float16 and places on GPU if available, CPU otherwise.
-    Uses device_map="balanced" when accelerate is present and multiple
-    GPUs are available (e.g. g5.12xlarge with 4x A10G).
-
-    Returns a ModelLoaderResult with processor=None. The pipeline is stored
-    in the model field and accessed via self.pipe in the handler.
+    Applies 4-bit NF4 quantisation when LOAD_IN_4BIT is set and a GPU is
+    present. Components are selected by _make_quant_config.
     """
-    from diffusers import DiffusionPipeline
-
-    has_cuda   = torch.cuda.is_available()
-    gpu_count  = torch.cuda.device_count() if has_cuda else 0
-    load_in_4bit     = kwargs.get("load_in_4bit", False)
-    dtype      = torch.float16 if has_cuda else torch.bfloat16
-    local_files_only = os.getenv("HF_HUB_OFFLINE", "true").lower() != "0"
-
-    logger.info("loading '%s' -- cuda=%s gpus=%d dtype=%s", modelname, has_cuda, gpu_count, dtype)
-
-    T0 = clock()
-
-    load_kwargs = dict(
-        cache_dir        = cache_dir,
-        torch_dtype      = dtype,
-        local_files_only = local_files_only,
+    load_in_4bit = env_flag("LOAD_IN_4BIT", kwargs.get("load_in_4bit", False))
+    quant_config = (
+        _make_quant_config(modelname)
+        if (load_in_4bit and torch.cuda.is_available())
+        else None
     )
 
-    quant_config = _make_quant_config(modelname) if (load_in_4bit and has_cuda) else None
-
-    if quant_config is not None:
-        load_kwargs["quantization_config"] = quant_config
-        pipe = DiffusionPipeline.from_pretrained(modelname, **load_kwargs)
-
-        quant_names = set(quant_config.quant_mapping.keys())
-
-        # build per-component target device
-        # DIFFUSERS_DEVICE_MAP: json mapping component name to device string
-        # e.g. '{"transformer": "cuda:0", "text_encoder": "cuda:1"}'
-        # components absent from the map default to cuda:0
-        explicit_map = {}
-        env_map = os.getenv("DIFFUSERS_DEVICE_MAP", "").strip()
-        if env_map:
-            import json
-            explicit_map = json.loads(env_map)
-
-        for name, component in pipe.components.items():
-            if not isinstance(component, torch.nn.Module):
-                continue
-            if name in quant_names:
-                # quantised components: move to their target device
-                # bitsandbytes places them on cpu after from_pretrained
-                # without a device_map; move them explicitly here
-                target = explicit_map.get(name, "cuda:0")
-            else:
-                target = explicit_map.get(name, "cuda:0")
-            component.to(target)
-
-    logger.info("loaded '%s' pipeline in %0.2fs", modelname, clock() - T0)
-    return ModelLoaderResult(processor=None, model=pipe)
+    return load_diffusion_pipeline(modelname, cache_dir, quant_config=quant_config)
 
 
 @model_spec(

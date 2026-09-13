@@ -12,6 +12,7 @@ from typing import Dict, Generic, List, Literal, Optional, TypeVar
 from pydantic import BaseModel, Field, field_validator
 from shared.models import (Embedding, EmbeddingQuantization, InstructMessage,
                            InstructMessages, OutputReference)
+from shared.enums import StatusCode
 
 from enum import Enum
 
@@ -41,6 +42,9 @@ class ModelUsageStats(BaseModel):
     power_watts_peak: float = Field(0.0, description="peak GPU power draw during inference, watts")
     power_watts_mean: float = Field(0.0, description="mean GPU power draw during inference, watts")
     cpu_offload_bytes: int = Field(0, description="model bytes offloaded off-GPU at load time")
+    worker_id: str = Field("", description="identifier of the worker that ran this inference")
+    application_id: str = Field("", description="application that submitted this request")
+    hostname: str = Field("", description="hostname of the instance processing this request")
 
 
 class ModelResponse(BaseModel):
@@ -81,16 +85,24 @@ class SubmissionResponse(BaseModel):
     status: Optional[str] = None
 
 
+
 class PollResponse(BaseModel, Generic[T]):
-    """Returned by all GET /{mode}/{task}/{message_id} endpoints.
+    """Returned by all GET /output/{mode}/{task}/{message_id} endpoints.
+
+    The HTTP status describes the poll, not the job: 202 while pending,
+    200 once terminal, 404 for an unknown message_id. A job that failed
+    is a successful poll, so it returns 200 with status="error".
 
     status is one of: queued, processing, complete, error.
     result is present only when status is complete or error.
+    code is present only when status is error.
     """
 
     status: str
     message_id: str
     result: Optional[T] = None
+    expires_at: Optional[datetime] = None
+    code: StatusCode = StatusCode.OK
 
 
 class DeleteCacheResponse(BaseModel):
@@ -136,6 +148,12 @@ class ModelRequest(BaseModel):
     seed: Optional[int] = Field(None, description="random seed for reproducible outputs")
     nonce: Optional[str] = Field(None, description="cache busting random field")
     encrypt: Optional[EncryptionParams] = Field(None, description="encryption method and key")
+    application_id: Optional[str] = Field(
+        None,
+        description="application that submitted this request; participates in the "
+                    "request hash, so identical requests from different applications "
+                    "are distinct jobs",
+    )
 
     @field_validator("model")
     @classmethod

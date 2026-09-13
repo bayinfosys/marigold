@@ -13,12 +13,13 @@ import json
 import time
 from hashlib import md5 as _md5
 from typing import ClassVar, Optional
+from datetime import datetime
 
 from dynawrap import DBItem
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, Field, computed_field
 
 from .schedule_models import LifecycleEvent
-from .enums import ModelType, ModelProvider
+from .enums import ModelType, ModelProvider, StatusCode
 
 
 _DEFAULT_TTL_OFFSET = 86400 * 30  # 30 days
@@ -55,6 +56,7 @@ class ResultsItem(DBItem, BaseModel):
     user_id: str
     job_id: str
     status: str
+    code: StatusCode = StatusCode.OK
     response: Optional[str] = None
     ttl: Optional[int] = None
 
@@ -64,6 +66,44 @@ class ResultsItem(DBItem, BaseModel):
             offset_seconds if offset_seconds is not None else cls.default_ttl_offset
         )
         return int(time.time()) + offset
+
+
+class WorkerEnvironment(DBItem, BaseModel):
+    """What a worker node is and what it is running on.
+
+    Written once at worker startup, append-only: a restart writes a new
+    record rather than updating, so an inference resolves to the
+    environment that actually ran it. started_at is the sort key, so
+    records for one worker come back in chronological order.
+
+    started_at is an ISO-8601 UTC string rather than a datetime because
+    sort keys compare lexicographically, and a fixed-width ISO string is
+    the only format where that ordering is also chronological. Matches
+    WorkerEvent.timestamp and InstanceEvent.timestamp.
+
+    No TTL. A usage row from six months ago resolving to a deleted
+    environment record loses the provenance this table exists to
+    provide.
+    """
+
+    pk_pattern: ClassVar[str] = "WORKERENV#{worker_id}"
+    sk_pattern: ClassVar[str] = "ENVIRONMENT#{started_at}"
+
+    worker_id:  str = Field(..., description="stable node name: MARIGOLD_WORKER_ID, or hostname")
+    hostname:   str = Field(..., description="what the process reports; a container id unless compose sets it")
+    started_at: str = Field(..., description="ISO-8601 UTC, sortable")
+
+    marigold_version:     str = ""
+    torch_version:        str = ""
+    diffusers_version:    str = ""
+    transformers_version: str = ""
+
+    cuda_available:      bool = False
+    cuda_version:        str = ""
+    driver_version:      str = ""
+    device_count:        int = 0
+    device_names:        list[str] = Field(default_factory=list)
+    device_memory_bytes: list[int] = Field(default_factory=list)
 
 
 class WorkerEvent(DBItem, BaseModel):

@@ -127,3 +127,35 @@ provides no model hosting.
 Dify spans both tables: it has a workflow builder and proxies model APIs.
 It does not host weights, has no typed operation contract, and its
 multi-tenant SaaS use requires a commercial licence.
+
+---
+
+## Self-hosted and local inference
+
+These are what a developer actually evaluates before reaching for a managed
+API. Marigold's positioning is self-hosted, so this is the primary comparison
+set; the managed-provider table above is the alternative a buyer chooses
+*instead* of self-hosting, not a like-for-like peer group.
+
+| Project    | Licence     | Task breadth    | Typed ops | Workflow | Notes                                                        |
+|------------|-------------|-----------------|-----------|----------|--------------------------------------------------------------|
+| vLLM       | Apache 2.0  | LLM only        | No        | No       | The default serving engine. Marigold uses it as a backend rather than competing with it |
+| Ollama     | MIT         | LLM + embed     | No        | No       | Dominant developer mindshare; one-command model pulls; the real acquisition competitor |
+| llama.cpp  | MIT         | LLM only        | No        | No       | CPU and consumer GPU; the floor everything else is measured against |
+| LocalAI    | MIT         | Broad           | No        | No       | OpenAI-compatible API over multiple backends; closest feature overlap |
+| LM Studio  | Proprietary | LLM + embed     | No        | No       | Desktop GUI; non-developer entry point                        |
+| BentoML    | Apache 2.0  | Broad           | Partial   | Yes      | Model serving with pipeline composition; closest structural peer |
+| Ray Serve  | Apache 2.0  | Broad           | No        | Yes      | Distributed serving; heavy operationally                      |
+| Triton     | BSD-3       | Broad           | Partial   | No       | NVIDIA; production-grade; steep configuration cost            |
+
+Marigold's differentiator against this set is the typed operation protocol
+across non-LLM model classes plus application packaging. Against Ollama
+specifically the honest position is that Ollama wins on time-to-first-token
+for a curious developer, and Marigold wins once there is a pipeline rather
+than a chat.
+
+## Adjacent: liability and compliance wrappers
+
+| Company | HQ      | What it is                                            | Overlap with Marigold |
+|---------|---------|-------------------------------------------------------|-----------------------|
+| Pendra  | Cardiff | Contractual liability wrapper around vLLM for regulated buyers | Engine layer only; complementary rather than competing. Marigold as their backend is a live option |
