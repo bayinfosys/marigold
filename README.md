@@ -97,7 +97,6 @@ Cache location and database connection are host-level concerns.
 Independent of any deployment:
 
 ```bash
-marigold cache validate <models.yaml...>    # check files load cleanly, no download
 marigold cache populate <models.yaml...>    # download missing models
 marigold cache inspect                      # list what's cached, sizes, location
 ```
@@ -279,11 +278,7 @@ Subclasses implement only `_run()`.
    following the existing pattern; if the type exists, the model is
    served by the existing handler.
 3. Register the new handler import in `models/load_all()`.
-4. Validate the catalogue before restarting -- no download, no GPU:
 
-   ```bash
-   marigold cache validate path/to/models.yaml
-   ```
 
    Checks the schema and flags duplicate (name, type) entries. Then restart against the new catalogue to verify the model caches and loads correctly.
 

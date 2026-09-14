@@ -1,0 +1,21 @@
+# compose/docker-compose.gpu.yaml
+#
+# Overlay on docker-compose.cpu.yaml. Only the two things that differ from
+# the CPU worker: the image suffix and the device reservation. Every other
+# setting -- environment, volumes, restart policy, dependencies -- is
+# inherited, so there is one place to change them.
+#
+# Requires cpu to be listed first: compose_files = ["core", "cpu", "gpu"]
+
+services:
+  worker:
+    image: ${WORKER_IMAGE:-ghcr.io/bayinfosys/marigold-worker}:${TAG}-gpu
+    environment:
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

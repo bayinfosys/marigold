@@ -88,7 +88,9 @@ push: push/api push/cache push/worker push/worker-gpu
 
 
 
-.PHONY: print/api-image print/cache-image print/worker-image print/worker-gpu-image
+.PHONY: print/tag print/api-image print/cache-image print/worker-image print/worker-gpu-image
+print/tag:
+	@echo $(TAG)
 print/api-image:
 	@echo $(API_IMAGE)
 print/cache-image:

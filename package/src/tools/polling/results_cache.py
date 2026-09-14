@@ -50,18 +50,20 @@ class ResultsCache:
             return {}
         return json.loads(item.response)
 
-    def get_code(self, user_id: str, message_id: str) -> str | None:
-        """Failure code for a job, or None.
+    def get_code(self, user_id: str, message_id: str) -> StatusCode | None:
+        """Status code for a job, or None if the record is absent.
 
-        Stub. ResultsItem has no code field, so nothing is stored to read:
-        write_error records only the free-text error string. Returns None
-        for every record, which is correct for a job that did not fail and
-        honest for one that did.
-
-        To implement: add `code` to ResultsItem, take it as a parameter on
-        write_error with a default, and return item.code here.
+        Written by create() at submission and by write_error() on failure.
+        Distinct from `status`: status says whether the job finished, code
+        says why it ended as it did.
         """
-        return StatusCode.OK
+        item = self._backend.get(
+            self._table,
+            ResultsItem,
+            user_id=user_id,
+            job_id=message_id,
+        )
+        return item.code if item else None
 
     def update_status(self, user_id: str, message_id: str, status: str) -> None:
         item = self._backend.get(
@@ -95,11 +97,13 @@ class ResultsCache:
             "response": json.dumps(response),
         }))
 
-    def write_error(self, user_id: str, message_id: str, error: str) -> None:
+    def write_error(self, user_id: str, message_id: str, error: str,
+                    code: StatusCode = StatusCode.UNSPECIFIED) -> None:
         item = self._backend.get(self._table, ResultsItem, user_id=user_id, job_id=message_id)
         if item is None:
             return
         self._backend.save(self._table, item.model_copy(update={
             "status": "error",
+            "code": code,
             "response": json.dumps({"error": error}),
         }))

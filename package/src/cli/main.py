@@ -52,6 +52,8 @@ DEFAULT_CACHE_DIR = Path.home() / ".marigold" / "cache"
 
 COMPOSE_FILES = {
     "core": "docker-compose.core.yaml",
+    "cpu": "docker-compose.cpu.yaml",
+    "gpu": "docker-compose.gpu.yaml",
     "webui": "docker-compose.webui.yaml",
 }
 
@@ -91,7 +93,12 @@ def _load_toml(path: Path) -> dict:
     if not path.exists():
         return {}
     with open(path, "rb") as f:
-        return tomllib.load(f)
+        try:
+            return tomllib.load(f)
+        except tomllib.TOMLDecodeError as e:
+            logger.exception(f"cannot parse {path}: {e}")
+            print(f"cannot parse {path}: {e}", file=sys.stderr)
+            sys.exit(1)
 
 
 def _merge_config(system: dict, package: dict) -> dict:
@@ -268,6 +275,103 @@ def _run_compose(deployment_dir: Path, config: dict, extra_args: list[str], env:
     result = subprocess.run(cmd, env=env)
     return result.returncode
 
+# ---------------------------------------------------------------------------
+# config subcommands
+# ---------------------------------------------------------------------------
+
+def _resolve_with_source(system: dict, package: dict, section: str, key: str, default):
+    """Resolve one config value and say which layer set it.
+
+    Mirrors _merge_config's precedence: package beats system beats the
+    hardcoded default. Returned separately rather than merged, so `config
+    show` can report provenance -- the thing that makes a surprising
+    value diagnosable.
+    """
+    if key in package.get(section, {}):
+        return package[section][key], "package"
+
+    if key in system.get(section, {}):
+        return system[section][key], "system"
+
+    return default, "default"
+
+
+def cmd_config_path(args):
+    """Print the system config file in use, absolute."""
+    path = _system_config_path()
+    override = os.environ.get("MARIGOLD_CONFIG")
+
+    if override:
+        source = "MARIGOLD_CONFIG"
+    elif path == Path(SYSTEM_CONFIG_NAME):
+        source = "current directory"
+    else:
+        source = "home directory"
+
+    state = "found" if path.exists() else "NOT FOUND"
+
+    print(f"{path.resolve()}  ({source}, {state})")
+    sys.exit(0 if path.exists() else 1)
+
+
+def cmd_config_show(args):
+    """Print resolved configuration with the layer each value came from.
+
+    Takes an optional deployment directory so package-level overrides are
+    visible. Without one, only the system layer and defaults apply.
+    """
+    system_path = _system_config_path()
+    system = _load_toml(system_path)
+
+    package: dict = {}
+    package_path = None
+
+    if args.target is not None:
+        deployment_dir = _resolve_deployment_target(args.target)
+        candidate = deployment_dir / PACKAGE_CONFIG_NAME
+
+        if candidate.exists():
+            package_path = candidate
+            package = _load_toml(candidate)
+
+    print("sources")
+    print(f"  system  : {system_path.resolve()} "
+          f"({'found' if system_path.exists() else 'NOT FOUND'})")
+    print(f"  package : {package_path.resolve() if package_path else '(none)'}")
+
+    cache_dir, cache_src = _resolve_with_source(
+        system, package, "cache", "dir", str(DEFAULT_CACHE_DIR))
+    tag, tag_src = _resolve_with_source(
+        system, package, "deployment", "tag", _default_tag())
+    db_url, db_src = _resolve_with_source(
+        system, package, "database", "url", "(compose default)")
+    compose_files, compose_src = _resolve_with_source(
+        system, package, "deployment", "compose_files", ["core"])
+    models_yaml, models_src = _resolve_with_source(
+        system, package, "deployment", "models_yaml", ["models.yaml"])
+
+    print("\nresolved")
+    print(f"  marigold version : {_package_version()}")
+    print(f"  image tag        : {tag}  [{tag_src}]")
+    print(f"  cache dir        : {cache_dir}  [{cache_src}]")
+    print(f"  database url     : {db_url}  [{db_src}]")
+    print(f"  compose files    : {compose_files}  [{compose_src}]")
+    print(f"  models yaml      : {models_yaml}  [{models_src}]")
+
+    print("\ncache layout")
+    for name, path in _cache_paths(Path(cache_dir)).items():
+        exists = "ok" if path.exists() else "missing"
+        print(f"  {name:<8} : {path}  ({exists})")
+
+    environment = {**system.get("environment", {}), **package.get("environment", {})}
+
+    if environment:
+        print("\nenvironment passthrough")
+        for key, value in sorted(environment.items()):
+            source = "package" if key in package.get("environment", {}) else "system"
+            print(f"  {key} = {value}  [{source}]")
+
+    sys.exit(0)
 
 # ---------------------------------------------------------------------------
 # output the current configuration
@@ -469,6 +573,21 @@ def build_parser() -> argparse.ArgumentParser:
         )
         p.set_defaults(func=fn)
 
+    # config
+    cfg = sub.add_parser("config", help="inspect marigold configuration")
+    cfg_sub = cfg.add_subparsers(dest="config_command", required=True)
+
+    path_p = cfg_sub.add_parser("path", help="print the system config file in use")
+    path_p.set_defaults(func=cmd_config_path)
+
+    show_p = cfg_sub.add_parser("show", help="print resolved config and where each value came from")
+    show_p.add_argument(
+        "target", nargs="?", default=None,
+        help="deployment directory, to include package-level overrides",
+    )
+    show_p.set_defaults(func=cmd_config_show)
+
+    # logs
     logs_p = dep_sub.add_parser("logs", help="tail logs from the deployment")
     logs_p.add_argument("target", nargs="?", default=".", help="deployment directory, or <host>.<package_name> (not yet implemented)")
     logs_p.add_argument("service", nargs="?", default=None, help="restrict to one service")
@@ -507,6 +626,7 @@ def main():
         format="%(levelname)s:%(name)s:%(message)s",
         stream=sys.stderr,
     )
+
     args = build_parser().parse_args()
     args.func(args)
 

@@ -221,7 +221,7 @@ class QueueWorker:
 
     def _write_error(self, user_id, message_id, error, code=StatusCode.UNSPECIFIED) -> None:
         """Write an error status to the results backend."""
-        self.results_cache.write_error(user_id, message_id, error)
+        self.results_cache.write_error(user_id, message_id, error, code)
 
     # ---------------------------------------------------------------------------
     # Heartbeat

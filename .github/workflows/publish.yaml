@@ -32,6 +32,10 @@ jobs:
       - name: install setuptools_scm
         run: pip install setuptools_scm
 
+      - name: derive version
+        id: version
+        run: echo "tag=$(make -s print/tag)" >> "$GITHUB_OUTPUT"
+
       - name: build
         run: make build/${{ matrix.target }} TAG=${{ github.sha }}
 
@@ -46,9 +50,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           IMAGE=$(make -s print/${{ matrix.target }}-image)
-          docker tag $IMAGE:${{ github.sha }}${{ matrix.tag_suffix }} $IMAGE:${{ github.ref_name }}${{ matrix.tag_suffix }}
+          VERSION=${{ steps.version.outputs.tag }}
+          docker tag $IMAGE:${{ github.sha }}${{ matrix.tag_suffix }} $IMAGE:$VERSION${{ matrix.tag_suffix }}
           docker tag $IMAGE:${{ github.sha }}${{ matrix.tag_suffix }} $IMAGE:latest${{ matrix.tag_suffix }}
-          docker push $IMAGE:${{ github.ref_name }}${{ matrix.tag_suffix }}
+          docker push $IMAGE:$VERSION${{ matrix.tag_suffix }}
           docker push $IMAGE:latest${{ matrix.tag_suffix }}
 
   package:
