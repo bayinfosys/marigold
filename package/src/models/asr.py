@@ -62,7 +62,7 @@ def load_asr(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResu
         "automatic-speech-recognition",
         model=modelname,
         cache_dir=cache_dir,
-        torch_dtype=dtype,
+        dtype=dtype,
         device=device,
         local_files_only=local_files_only,
     )

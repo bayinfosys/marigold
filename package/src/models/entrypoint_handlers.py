@@ -96,20 +96,6 @@ def _resolve_model_entries(hashes: list[str], config: dict) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Local / Postgres catalogue resolution -- local_handler only
-# ---------------------------------------------------------------------------
-
-
-def _load_catalogue(conn, table: str) -> list:
-    """Fetch the full active model catalogue from Postgres."""
-    from dynawrap.backends.postgres import PostgresBackend
-    from models.catalogue import get_all_models
-
-    backend = PostgresBackend(conn)
-    return get_all_models(backend, table)
-
-
-# ---------------------------------------------------------------------------
 # AWS / ECS entry point -- unchanged
 # ---------------------------------------------------------------------------
 
@@ -175,23 +161,29 @@ def sqs_handler():
 
 
 def local_handler():
-    """Local development entry point for one or more models.
+    """Local development entry point.
 
-    Constructs Postgres backends from DATABASE_URL. Reads the model
-    catalogue from the models table -- populated separately by the API's
-    startup hook, not by this handler. Creates queue tables and the
-    results table if they do not exist (idempotent).
+    Constructs Postgres backends from MARIGOLD_DATABASE_URL and runs a
+    ModelScheduler against the model catalogue table, which the API's
+    startup hook populates. Creates the results, workers and catalogue
+    tables if they do not exist (idempotent).
 
-    Single entry     -> QueueWorker (idle_timeout=-1).
-    Multiple entries -> MultiQueueWorker (idle_timeout=0, exits each queue
-                        immediately so the next model can be loaded promptly).
+    The scheduler reads the catalogue each sweep, so this handler starts
+    cleanly against an empty or absent catalogue: it sleeps until rows
+    appear, then serves them.
+
+    MARIGOLD_QUEUE_IDLE_TIMEOUT decides how long a model stays resident
+    once its queue empties. 0 releases it immediately, which is what one
+    GPU serving many models wants. A positive value holds it for that
+    many seconds, which suits a small catalogue where reload cost
+    dominates. See the note on -1 in QueueRunner before using it.
     """
     import psycopg2
     from backend.messaging.local import LocalNotificationBackend
     from backend.messaging.postgres import PostgresQueueBackend
     from dynawrap.backends.postgres import PostgresBackend
-    from models.worker import MultiQueueWorker, QueueWorker
-    from tools.polling.results_cache import ResultsCache
+    from models.worker import ModelScheduler
+    from shared.results_cache import ResultsCache
     from tools.environment import collect_environment
 
     load_all_model_handlers()
@@ -206,24 +198,22 @@ def local_handler():
     conn = psycopg2.connect(dsn)
     conn.autocommit = True
 
-    # load the requested model defintions from the catalogue
-    catalogue = _load_catalogue(conn, models_table)
-    #logger.info("catalogue: %s", str(catalogue))
-    for idx, model in enumerate(catalogue):
-        logger.info("[%03i] %s", idx, str(model))
-    logger.info("serving: %s", [m.name for m in catalogue])
-
     queue_backend = PostgresQueueBackend(conn)
     notification_backend = LocalNotificationBackend()
 
-    results_backend = PostgresBackend(conn)
+    db_backend = PostgresBackend(conn)
+
     PostgresBackend.create_table(conn, results_table)
-    results_cache = ResultsCache(results_backend, results_table)
+    results_cache = ResultsCache(db_backend, results_table)
+
+    # the API creates this too; doing it here removes the race when the
+    # worker's first sweep beats the API's startup hook on a fresh volume
+    PostgresBackend.create_table(conn, models_table)
 
     # collect environment info about this worker
     environment = collect_environment()
     PostgresBackend.create_table(conn, workers_table)
-    results_backend.save(workers_table, environment)
+    db_backend.save(workers_table, environment)
 
     logger.info(
         "worker environment: id='%s' host='%s' cuda=%s devices=%s",
@@ -231,35 +221,16 @@ def local_handler():
         environment.cuda_available, environment.device_names,
     )
 
-    # create work queues for each model (this operation is idempotent)
-    for model in catalogue:
-        queue_backend.create_queue(model.queue_name)
+    scheduler = ModelScheduler(
+        catalogue_backend=db_backend,
+        catalogue_table=models_table,
+        queue_backend=queue_backend,
+        notification_backend=notification_backend,
+        visibility_timeout=visibility_timeout,
+        topic=topic,
+        results_cache=results_cache,
+        idle_timeout=int(os.getenv("MARIGOLD_QUEUE_IDLE_TIMEOUT", "0")),
+        worker_id=environment.worker_id,
+    )
 
-    # create the queue workers to pull work off the queue and process
-    # NB: MultiQueueWorker should be able to function with one model
-    if len(catalogue) == 1:
-        entry = catalogue[0]
-        worker = QueueWorker(
-            queue=entry.queue_name,
-            model_name=entry.name,
-            model_type=entry.type,
-            model_hash=entry.hash,
-            queue_backend=queue_backend,
-            notification_backend=notification_backend,
-            visibility_timeout=visibility_timeout,
-            topic=topic,
-            idle_timeout=-1,
-            results_cache=results_cache,
-        )
-    else:
-        worker = MultiQueueWorker(
-            model_catalogue=catalogue,  # requires the worker.py refactor flagged above
-            queue_backend=queue_backend,
-            notification_backend=notification_backend,
-            visibility_timeout=visibility_timeout,
-            topic=topic,
-            idle_timeout=int(os.getenv("MARIGOLD_QUEUE_IDLE_TIMEOUT", "0")),
-            results_cache=results_cache,
-        )
-
-    worker.run()
+    scheduler.run()

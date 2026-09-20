@@ -1,52 +1,177 @@
 """Worker loop for Marigold model inference tasks.
 
-Reads one message at a time from the configured queue backend, validates
-the payload, runs inference, writes the result to the results table, and
-deletes the message.
+Three concerns, one per component.
+
+resident_model
+--------------
+Residency. A context manager that loads a model, verifies it fits in
+VRAM, yields it, and unloads it on the way out. Acquisition and release
+share one scope, so a failure at any point after the weights land still
+unloads them. Load failure leaves the scope as ModelLoadError; anything
+raised while the model is in use propagates unchanged.
+
+QueueRunner
+-----------
+Drainage. One model, one queue. Receives a model it did not load and
+does not own. Polls until idle_timeout seconds have elapsed since the
+last message, then returns. idle_timeout=-1 polls indefinitely.
+
+ModelScheduler
+--------------
+Scheduling. Reads the catalogue each sweep, decides which model should be
+resident, and owns the policy for one that cannot be. A model added while
+this process runs is picked up on the next sweep, and a failure it records
+survives its own restart.
 
 The worker has no knowledge of why a job was submitted -- whether it came
 from a direct API call or a workflow step. It writes the result to
-results_cache and publishes a REQUEST_COMPLETE lifecycle event.
-
-QueueWorker
------------
-Single model, single queue. Loads the model on construction, polls until
-idle_timeout seconds have elapsed since the last message, calls
-model.unload(), then returns. idle_timeout=-1 polls indefinitely.
-
-MultiQueueWorker
-----------------
-Multiple models, multiple queues. Polls all queue depths, loads the model
-with the deepest non-empty queue, constructs a QueueWorker, drains it,
-then sweeps again. Exits when all queues are empty on a full sweep.
+results_cache and publishes lifecycle events.
 """
 
 import json
 import logging
 import os
+import socket
 import threading
 import time
-import socket
 from contextlib import contextmanager
+from typing import Any, Iterator
 
 import torch
 from backend.messaging.base import NotificationBackend, QueueBackend
+from dynawrap.backends.base import DBBackend
 from pydantic import ValidationError
-from shared.registry import _SPECS
-from shared.schedule_models import MarigoldMessage, EventType, LifecycleEvent
-from tools.polling.results_cache import ResultsCache
-from tools.power_sampler import (ModelVRAMError, PowerSampler,
-                                 check_model_vram, get_vram_state)
-from shared.usage_models import UsageItem
-from shared.usage import write_usage
+
+from models.catalogue import get_all_models
 from shared.db_models import ModelCatalogueItem, set_model_config_env
 from shared.enums import StatusCode
+from shared.registry import _SPECS
+from shared.results_cache import ResultsCache
+from shared.schedule_models import EventType, LifecycleEvent, MarigoldMessage
+from shared.usage import write_usage
+from shared.usage_models import UsageItem
+from tools.power_sampler import PowerSampler, check_model_vram, get_vram_state
 
 logger = logging.getLogger(__name__)
 
 _HEARTBEAT_BUFFER = 5  # seconds before timeout to extend visibility
 
 IDLE_TIMEOUT = int(os.getenv("IDLE_TIMEOUT", "180"))
+
+
+class ModelLoadError(Exception):
+    """A model could not be made resident.
+
+    Distinct from an error raised while a resident model is in use: the
+    scheduler marks the catalogue row failed for this one and keeps
+    sweeping for the other.
+    """
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle events
+# ---------------------------------------------------------------------------
+
+
+class LifecyclePublisher:
+    """Publishes LifecycleEvents for one model. Never raises.
+
+    Holds the fields every event for this model carries, so residency and
+    drainage emit identical envelopes without sharing an object.
+    """
+
+    def __init__(
+        self,
+        notification_backend: NotificationBackend,
+        topic: str,
+        model_name: str,
+        model_type: str,
+        model_hash: str,
+        worker_id: str,
+        hostname: str,
+    ):
+        self.notification_backend = notification_backend
+        self.topic = topic
+        self.model_name = model_name
+        self.model_hash = model_hash
+
+        self._base_payload = {
+            "model_name": model_name,
+            "model_type": model_type,
+            "model_hash": model_hash,
+            "worker_id": worker_id,
+            "hostname": hostname,
+        }
+
+    def publish(
+        self, event_type: str, message_id: str = None, payload: dict = None
+    ) -> None:
+        event = LifecycleEvent(
+            event_type=event_type,
+            model_name=self.model_name,
+            model_hash=self.model_hash,
+            message_id=message_id,
+            payload={**self._base_payload, **(payload or {})},
+        )
+
+        try:
+            self.notification_backend.publish(self.topic, event.model_dump())
+        except Exception as e:
+            logger.warning("failed to publish %s: %s", event_type, e)
+
+
+# ---------------------------------------------------------------------------
+# Residency
+# ---------------------------------------------------------------------------
+
+
+@contextmanager
+def resident_model(
+    entry: ModelCatalogueItem, publisher: LifecyclePublisher
+) -> Iterator[Any]:
+    """Make entry's model resident for the duration of the block.
+
+    Raises ModelLoadError if the model cannot be loaded or does not fit,
+    having already released whatever was allocated. The VRAM check
+    failing is an ordinary exit from this scope: the weights that landed
+    before it ran are unloaded on the way out, which is what stops one
+    oversized model from crowding out every model after it.
+    """
+    publisher.publish(EventType.MODEL_LOADING)
+
+    if entry.type not in _SPECS:
+        publisher.publish(
+            EventType.MODEL_LOAD_FAILED, payload={"error": "unknown model_type"}
+        )
+        raise ModelLoadError(
+            "unknown model_type '%s'; registered types: %s"
+            % (entry.type, sorted(_SPECS))
+        )
+
+    spec = _SPECS[entry.type]
+    logger.info(
+        "loading '%s' (%s) via %s",
+        entry.name, entry.type, spec.handler_class.__name__,
+    )
+
+    model = None
+
+    try:
+        try:
+            model = spec.handler_class(entry.name)
+            publisher.publish(EventType.MODEL_LOADED, payload=get_vram_state())
+
+            if torch.cuda.is_available():
+                check_model_vram(entry.name, model)
+        except Exception as e:
+            publisher.publish(EventType.MODEL_LOAD_FAILED, payload={"error": str(e)})
+            raise ModelLoadError(str(e)) from e
+
+        yield model
+
+    finally:
+        if model is not None:
+            model.unload()
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +188,7 @@ def _heartbeat(
 ) -> None:
     """Extend queue visibility timeout periodically until stop is set."""
     interval = max(1, visibility_timeout - _HEARTBEAT_BUFFER)
+
     while not stop.wait(timeout=interval):
         try:
             queue_backend.extend_visibility(queue, receipt_handle, visibility_timeout)
@@ -72,160 +198,71 @@ def _heartbeat(
 
 
 # ---------------------------------------------------------------------------
-# QueueWorker
+# Drainage
 # ---------------------------------------------------------------------------
 
 
-class QueueWorker:
-    """Backend-agnostic worker loop for a single model and queue.
+class QueueRunner:
+    """Drain one queue using a model that is already resident.
 
-    Loads the model on construction. Polls the queue until idle_timeout
-    seconds have elapsed since the last message, then calls model.unload()
-    and returns. idle_timeout=-1 polls indefinitely (local development).
+    Polls until idle_timeout seconds have elapsed since the last message,
+    then returns. idle_timeout=-1 polls indefinitely.
 
-    The worker writes results via results_cache.
-
-    It publishes lifecycle events for all state transitions. It has no
-    knowledge of workflows -- workflow step handling is the responsibility
-    of the state machine.
+    The model is borrowed. Loading and unloading belong to resident_model,
+    so an exception escaping run() leaves the caller's context manager to
+    release it.
 
     Args:
-        queue:                Queue name or identifier.
-        model_name:           HuggingFace model identifier.
-        model_type:           ModelType value, for registry lookup.
-        model_hash:           md5(model_name), for event payloads.
+        model:                A loaded model handler.
+        entry:                Catalogue row for that model.
         queue_backend:        QueueBackend implementation.
-        notification_backend: NotificationBackend implementation.
-        visibility_timeout:   Seconds to hide a dequeued message.
-        topic:                Notification topic name.
-        idle_timeout:         Seconds to keep polling after queue empties.
-                              -1 means poll indefinitely.
+        publisher:            LifecyclePublisher for this model.
         results_cache:        ResultsCache for direct result writes.
+        power_sampler:        Shared PowerSampler, owned by the caller.
+        visibility_timeout:   Seconds to hide a dequeued message.
+        worker_id:            Stable identity of this process.
+        hostname:             Host this process runs on.
+        idle_timeout:         Seconds to keep polling after the queue
+                              empties. -1 means poll indefinitely.
     """
 
     def __init__(
         self,
-        queue: str,
-        model_name: str,
-        model_type: str,
-        model_hash: str,
+        model: Any,
+        entry: ModelCatalogueItem,
         queue_backend: QueueBackend,
-        notification_backend: NotificationBackend,
-        visibility_timeout: int,
-        topic: str,
+        publisher: LifecyclePublisher,
         results_cache: ResultsCache,
+        power_sampler: PowerSampler,
+        visibility_timeout: int,
+        worker_id: str,
+        hostname: str,
         idle_timeout: int = None,
-        worker_id: str = None,
     ):
-        self.queue = queue
-        self.model_name = model_name
-        self.model_type = model_type
-        self.model_hash = model_hash
+        self.model = model
+        self.queue = entry.queue_name
+        self.model_name = entry.name
+        self.model_type = entry.type
         self.queue_backend = queue_backend
-        self.notification_backend = notification_backend
-        self.visibility_timeout = visibility_timeout
-        self.topic = topic
-        self.idle_timeout = idle_timeout if idle_timeout is not None else IDLE_TIMEOUT
+        self.publisher = publisher
         self.results_cache = results_cache
-        self.worker_id = worker_id or os.getenv("MARIGOLD_WORKER_ID") or socket.gethostname()
-        self.hostname = socket.gethostname()
-
-        logger.info("[%s] worker started on %s", self.worker_id, self.hostname)
-
-        if self.results_cache is None:
-            raise NotImplementedError("results_cache is now required")
-
-        self._power_sampler = PowerSampler()
-
-        # TODO: this should be a pydantic model
-        self._base_payload = {
-            "model_name": model_name,
-            "model_type": model_type,
-            "model_hash": model_hash,
-            "worker_id": self.worker_id,
-            "hostname": self.hostname,
-        }
-
-        self._publish(EventType.MODEL_LOADING)
-
-        if model_type not in _SPECS:
-            self._publish(
-                EventType.MODEL_LOAD_FAILED, payload={"error": "unknown model_type"}
-            )
-            raise ValueError(
-                "unknown model_type '%s'; registered types: %s"
-                % (model_type, sorted(_SPECS))
-            )
-
-        spec = _SPECS[model_type]
-        logger.info(
-            "loading '%s' (%s) via %s",
-            model_name,
-            model_type,
-            spec.handler_class.__name__,
-        )
-
-        try:
-            self.model = spec.handler_class(model_name)
-        except Exception as e:
-            self._publish(EventType.MODEL_LOAD_FAILED, payload={"error": str(e)})
-            raise
-
-        self._publish(EventType.MODEL_LOADED, payload=get_vram_state())
+        self.power_sampler = power_sampler
+        self.visibility_timeout = visibility_timeout
+        self.worker_id = worker_id
+        self.hostname = hostname
+        self.idle_timeout = idle_timeout if idle_timeout is not None else IDLE_TIMEOUT
 
         logger.info(
-            "worker ready: version='%s' queue='%s' model='%s' idle_timeout=%is",
+            "runner ready: version='%s' queue='%s' model='%s' idle_timeout=%is",
             os.getenv("BUILD_VERSION", "unknown"),
             self.queue,
             self.model_name,
             self.idle_timeout,
         )
 
-        # validate the load is all in memory and throw if not
-        if torch.cuda.is_available():
-            # this will throw a modelvramerror
-            check_model_vram(model_name, self.model)
-
-    # ---------------------------------------------------------------------------
-    # Notifications
-    # ---------------------------------------------------------------------------
-
-    def _publish(
-        self, event_type: str, message_id: str = None, payload: dict = None
-    ) -> None:
-        """Publish a LifecycleEvent via the notification backend. Never raises."""
-        event = LifecycleEvent(
-            event_type=event_type,
-            model_name=self.model_name,
-            model_hash=self.model_hash,
-            message_id=message_id,
-            payload={**self._base_payload, **(payload or {})},
-        )
-        try:
-            self.notification_backend.publish(self.topic, event.model_dump())
-        except Exception as e:
-            logger.warning("failed to publish %s: %s", event_type, e)
-
-    # ---------------------------------------------------------------------------
-    # Result persistence
-    # ---------------------------------------------------------------------------
-
-    def _write_result(self, user_id: str, message_id: str, response: dict) -> None:
-        """Write the inference result to the appropriate results backend.
-
-        Local path (results_cache injected):
-            Calls results_cache.write_result() which updates the existing
-            queued row to status=complete with the result payload.
-        """
-        self.results_cache.write_result(user_id, message_id, response)
-
-    def _write_error(self, user_id, message_id, error, code=StatusCode.UNSPECIFIED) -> None:
-        """Write an error status to the results backend."""
-        self.results_cache.write_error(user_id, message_id, error, code)
-
-    # ---------------------------------------------------------------------------
+    # -----------------------------------------------------------------------
     # Heartbeat
-    # ---------------------------------------------------------------------------
+    # -----------------------------------------------------------------------
 
     @contextmanager
     def _heartbeat_context(self, receipt_handle: str):
@@ -242,20 +279,22 @@ class QueueWorker:
             daemon=True,
         )
         thread.start()
+
         try:
             yield
         finally:
             stop.set()
             thread.join(timeout=2)
 
-    # ---------------------------------------------------------------------------
+    # -----------------------------------------------------------------------
     # Message handling
-    # ---------------------------------------------------------------------------
+    # -----------------------------------------------------------------------
 
     def _get_message(self) -> tuple[MarigoldMessage | None, str | None]:
         """Dequeue one message and parse it as a MarigoldMessage.
 
-        Malformed messages are deleted immediately and (None, None) returned.
+        Malformed messages are deleted immediately and (None, None)
+        returned.
         """
         payload, receipt_handle = self.queue_backend.receive(
             self.queue, self.visibility_timeout
@@ -265,294 +304,402 @@ class QueueWorker:
             return None, None
 
         try:
-            sqs_msg = MarigoldMessage.model_validate(payload)
+            msg = MarigoldMessage.model_validate(payload)
         except ValidationError as e:
             logger.error("malformed message, discarding: %s", e)
             self.queue_backend.delete(self.queue, receipt_handle)
             return None, None
 
-        logger.info("[%s/%s] dequeued", sqs_msg.user_id, sqs_msg.message_id)
-        self._publish(
+        logger.info("[%s/%s] dequeued", msg.user_id, msg.message_id)
+        self.publisher.publish(
             EventType.REQUEST_DEQUEUED,
-            message_id=sqs_msg.message_id,
-            payload={"user_id": sqs_msg.user_id},
+            message_id=msg.message_id,
+            payload={"user_id": msg.user_id},
         )
-        return sqs_msg, receipt_handle
 
-    def _process_message(self, sqs_msg: MarigoldMessage) -> None:
+        return msg, receipt_handle
+
+    def _report_error(self, msg: MarigoldMessage, error: str) -> None:
+        """Write an error result and publish the matching event."""
+        self.results_cache.write_error(
+            msg.user_id, msg.message_id, error, StatusCode.INFERENCE_FAILED
+        )
+        self.publisher.publish(
+            EventType.REQUEST_ERROR,
+            message_id=msg.message_id,
+            payload={"user_id": msg.user_id, "error": error},
+        )
+
+    def _process_message(self, msg: MarigoldMessage) -> None:
         """Run inference for one message and write results.
 
-        Routing errors, validation failures, and inference exceptions are
-        all caught and reported as REQUEST_ERROR events. The message is
-        always deleted by the caller after this method returns.
+        Routing errors, validation failures and inference exceptions are
+        all caught and reported as REQUEST_ERROR. The message is always
+        deleted by the caller after this method returns.
         """
-        self._publish(
+        self.publisher.publish(
             EventType.REQUEST_PROCESSING,
-            message_id=sqs_msg.message_id,
-            payload={"user_id": sqs_msg.user_id},
+            message_id=msg.message_id,
+            payload={"user_id": msg.user_id},
         )
 
-        if sqs_msg.model_type != self.model_type:
+        if msg.model_type != self.model_type:
             logger.critical(
                 "[%s/%s] routing error: expected model_type '%s', got '%s'",
-                sqs_msg.user_id,
-                sqs_msg.message_id,
-                self.model_type,
-                sqs_msg.model_type,
+                msg.user_id, msg.message_id, self.model_type, msg.model_type,
             )
-            self._publish(
+            self.publisher.publish(
                 EventType.REQUEST_ERROR,
-                message_id=sqs_msg.message_id,
+                message_id=msg.message_id,
                 payload={
-                    "user_id": sqs_msg.user_id,
+                    "user_id": msg.user_id,
                     "error": "model_type_mismatch",
                     "expected": self.model_type,
-                    "got": sqs_msg.model_type,
+                    "got": msg.model_type,
                 },
             )
             return
 
         try:
-            spec = _SPECS[sqs_msg.model_type]
+            spec = _SPECS[msg.model_type]
             request = spec.request_model.model_validate(
-                {**sqs_msg.model_inputs, "model": sqs_msg.model_name}
+                {**msg.model_inputs, "model": msg.model_name}
             )
 
             logger.info(
                 "[%s/%s] processing %s",
-                sqs_msg.user_id,
-                sqs_msg.message_id,
-                json.dumps(request.model_dump()),
+                msg.user_id, msg.message_id, json.dumps(request.model_dump()),
             )
 
-            # track power usage.
-            with self._power_sampler.sample() as sampler:
-                result = self.model.process(sqs_msg.user_id, sqs_msg.message_id, request)
+            with self.power_sampler.sample() as sampler:
+                result = self.model.process(msg.user_id, msg.message_id, request)
 
             usage_update = sampler.as_usage_fields()
-            # FIXME: we need to capture this is power sampler
-            #usage_update["cpu_offload_bytes"] = self._cpu_offload_bytes
+            # FIXME: we need to capture this in power sampler
+            # usage_update["cpu_offload_bytes"] = self._cpu_offload_bytes
             usage_update["worker_id"] = self.worker_id
             usage_update["hostname"] = self.hostname
-            usage_update["application_id"] = sqs_msg.model_inputs.get("application_id") or ""
+            usage_update["application_id"] = msg.model_inputs.get("application_id") or ""
 
-            result = result.model_copy(update={"usage": result.usage.model_copy(update=usage_update)})
-
-            item = UsageItem.from_model_stats(
-                stats=result.usage,
-                user_id=sqs_msg.user_id,
-                model_type=self.model_type,
-                model_name=self.model_name,
+            result = result.model_copy(
+                update={"usage": result.usage.model_copy(update=usage_update)}
             )
-            write_usage(item)
 
-            # update the results db
-            self._write_result(sqs_msg.user_id, sqs_msg.message_id, result.model_dump())
+            write_usage(
+                UsageItem.from_model_stats(
+                    stats=result.usage,
+                    user_id=msg.user_id,
+                    model_type=self.model_type,
+                    model_name=self.model_name,
+                )
+            )
 
-            self._publish(EventType.REQUEST_COMPLETE, message_id=sqs_msg.message_id, payload={"user_id": sqs_msg.user_id})
-            logger.info("[%s/%s] complete", sqs_msg.user_id, sqs_msg.message_id)
+            self.results_cache.write_result(
+                msg.user_id, msg.message_id, result.model_dump()
+            )
+
+            self.publisher.publish(
+                EventType.REQUEST_COMPLETE,
+                message_id=msg.message_id,
+                payload={"user_id": msg.user_id},
+            )
+            logger.info("[%s/%s] complete", msg.user_id, msg.message_id)
 
         except ValidationError as e:
             logger.exception(
-                "[%s/%s] malformed request: %s", sqs_msg.user_id, sqs_msg.message_id, e
+                "[%s/%s] malformed request: %s", msg.user_id, msg.message_id, e
             )
-            self._write_error(sqs_msg.user_id, sqs_msg.message_id, str(e))
-            self._publish(
-                EventType.REQUEST_ERROR,
-                message_id=sqs_msg.message_id,
-                payload={"user_id": sqs_msg.user_id, "error": str(e)},
-            )
+            self._report_error(msg, str(e))
 
         except Exception as e:
             logger.exception(
-                "[%s/%s] inference failed: %s", sqs_msg.user_id, sqs_msg.message_id, e
+                "[%s/%s] inference failed: %s", msg.user_id, msg.message_id, e
             )
-            self._write_error(sqs_msg.user_id, sqs_msg.message_id, str(e))
-            self._publish(
-                EventType.REQUEST_ERROR,
-                message_id=sqs_msg.message_id,
-                payload={"user_id": sqs_msg.user_id, "error": str(e)},
-            )
+            self._report_error(msg, str(e))
 
-    # ---------------------------------------------------------------------------
+    # -----------------------------------------------------------------------
     # Run loop
-    # ---------------------------------------------------------------------------
+    # -----------------------------------------------------------------------
 
     def run(self) -> None:
-        """Poll the queue and process messages until idle_timeout elapses.
-
-        idle_timeout=-1 polls indefinitely.
-        Calls model.unload() before returning regardless of exit reason.
-        """
-        self._publish(EventType.WORKER_STARTED)
+        """Poll the queue and process messages until idle_timeout elapses."""
+        self.publisher.publish(EventType.WORKER_STARTED)
         last_message_at = time.monotonic()
 
-        try:
-            while True:
-                sqs_msg, receipt_handle = self._get_message()
+        while True:
+            msg, receipt_handle = self._get_message()
 
-                if sqs_msg is None:
-                    idle_s = time.monotonic() - last_message_at
-                    if self.idle_timeout >= 0 and (
-                        self.idle_timeout == 0 or idle_s >= self.idle_timeout
-                    ):
-                        logger.info("idle for %.0fs, exiting", idle_s)
-                        self._publish(EventType.WORKER_EXITING)
-                        break
-                    self._publish(EventType.WORKER_IDLE)
-                    continue
+            if msg is None:
+                idle_s = time.monotonic() - last_message_at
 
-                try:
-                    with self._heartbeat_context(receipt_handle):
-                        self._process_message(sqs_msg)
-                except Exception as e:
-                    logger.exception("unhandled error processing message: %s", e)
-                finally:
-                    self.queue_backend.delete(self.queue, receipt_handle)
+                if self.idle_timeout >= 0 and (
+                    self.idle_timeout == 0 or idle_s >= self.idle_timeout
+                ):
+                    logger.info("idle for %.0fs, exiting", idle_s)
+                    self.publisher.publish(EventType.WORKER_EXITING)
+                    break
 
-                last_message_at = time.monotonic()
+                self.publisher.publish(EventType.WORKER_IDLE)
+                continue
 
-        finally:
-            self.model.unload()
-            self._power_sampler.shutdown()
+            try:
+                with self._heartbeat_context(receipt_handle):
+                    self._process_message(msg)
+            except Exception as e:
+                logger.exception("unhandled error processing message: %s", e)
+            finally:
+                self.queue_backend.delete(self.queue, receipt_handle)
+
+            last_message_at = time.monotonic()
 
 
 # ---------------------------------------------------------------------------
-# MultiQueueWorker
+# Scheduling
 # ---------------------------------------------------------------------------
 
 
-class MultiQueueWorker:
-    """Multi-queue worker for single-GPU local development.
+class ModelScheduler:
+    """Decide which model is resident, and handle the ones that cannot be.
 
-    Polls all queue depths in a sweep, loads the model for the deepest
-    non-empty queue, constructs a QueueWorker to drain it, then sweeps
-    again. QueueWorker.run() calls model.unload() before returning.
+    Each sweep reads the catalogue, creates any queue it has not created
+    before, drains the queues of models an earlier sweep marked failed,
+    then makes the deepest non-empty queue's model resident and hands it
+    to a QueueRunner.
 
-    Sleeps between sweeps when all queues are empty, then checks again.
+    The catalogue is read rather than injected, so a model added while
+    this process runs is picked up on the next sweep and a failure this
+    process records survives its own restart.
 
     Args:
-        model_catalogue:        List of model catalogue items, each containing:
-                                model_hash, queue_name, model_name, model_type
+        catalogue_backend:    DBBackend holding the model catalogue.
+        catalogue_table:      Catalogue table name.
         queue_backend:        Shared QueueBackend instance.
         notification_backend: Shared NotificationBackend instance.
-        visibility_timeout:   Passed to each QueueWorker.
+        visibility_timeout:   Passed to each QueueRunner.
         topic:                Notification topic name.
-        idle_timeout:         Passed to each QueueWorker. Default 0 so the
-                              worker exits immediately on empty queue and the
-                              next model can be loaded promptly.
         results_cache:        ResultsCache for direct result writes.
+        idle_timeout:         Passed to each QueueRunner. Default 0 so the
+                              runner returns on an empty queue and the
+                              next model can be loaded promptly.
+        sweep_interval:       Seconds to sleep when every queue is empty.
+        worker_id:            Overrides MARIGOLD_WORKER_ID and hostname.
     """
 
     def __init__(
         self,
-        model_catalogue: list[ModelCatalogueItem],
+        catalogue_backend: DBBackend,
+        catalogue_table: str,
         queue_backend: QueueBackend,
         notification_backend: NotificationBackend,
         visibility_timeout: int,
         topic: str,
         results_cache: ResultsCache,
         idle_timeout: int = 0,
+        sweep_interval: int = 10,
+        worker_id: str = None,
     ):
-        self.model_catalogue = model_catalogue
+        self.catalogue_backend = catalogue_backend
+        self.catalogue_table = catalogue_table
         self.queue_backend = queue_backend
         self.notification_backend = notification_backend
         self.visibility_timeout = visibility_timeout
         self.topic = topic
-        self.idle_timeout = idle_timeout
         self.results_cache = results_cache
+        self.idle_timeout = idle_timeout
+        self.sweep_interval = sweep_interval
+
+        self.hostname = socket.gethostname()
+        self.worker_id = (
+            worker_id or os.getenv("MARIGOLD_WORKER_ID") or self.hostname
+        )
+
+        self._known_queues: set[str] = set()
+        self._power_sampler = PowerSampler()
 
         if self.results_cache is None:
             raise NotImplementedError("results_cache is now always required")
 
-    def _pick_entry(self) -> dict | None:
-        """Return the entry with the highest queue depth, or None if all empty."""
-        if not self.model_catalogue:
-            return None
+        logger.info("[%s] scheduler started on %s", self.worker_id, self.hostname)
 
-        depths = [
-            (m, self.queue_backend.depth(m.queue_name))
-            for m in self.model_catalogue
-        ]
-        best_entry, best_depth = max(depths, key=lambda t: t[1])
-        return best_entry if best_depth > 0 else None
+    # -----------------------------------------------------------------------
+    # Catalogue
+    # -----------------------------------------------------------------------
+
+    def _catalogue(self) -> list[ModelCatalogueItem]:
+        """Read the catalogue fresh, failed entries included."""
+        return get_all_models(self.catalogue_backend, self.catalogue_table)
+
+    def _publisher_for(self, entry: ModelCatalogueItem) -> LifecyclePublisher:
+        return LifecyclePublisher(
+            notification_backend=self.notification_backend,
+            topic=self.topic,
+            model_name=entry.name,
+            model_type=entry.type,
+            model_hash=entry.hash,
+            worker_id=self.worker_id,
+            hostname=self.hostname,
+        )
+
+    def _ensure_queues(self, catalogue: list[ModelCatalogueItem]) -> None:
+        """Create the queue for any entry this process has not seen.
+
+        Queue creation belongs to whatever writes the catalogue row. This
+        is repair: it makes the invariant true again for a row that
+        arrived by another route, at one statement per queue per process.
+        """
+        for entry in catalogue:
+            if entry.queue_name in self._known_queues:
+                continue
+
+            self.queue_backend.create_queue(entry.queue_name)
+            self._known_queues.add(entry.queue_name)
+
+    def _mark_failed(self, entry: ModelCatalogueItem, reason: str) -> None:
+        """Record a load failure against the catalogue row.
+
+        The API reads this to reject further submissions with 409, and the
+        next sweep reads it to drain anything queued in the meantime.
+        """
+        self.catalogue_backend.save(
+            self.catalogue_table,
+            entry.model_copy(update={"failed_reason": reason}),
+        )
+        logger.warning("marked '%s/%s' failed: %s", entry.type.value, entry.name, reason)
+
+    # -----------------------------------------------------------------------
+    # Draining a queue whose model cannot load
+    # -----------------------------------------------------------------------
 
     def _fail_queue(self, entry: ModelCatalogueItem, error: str) -> None:
-        """Drain every message currently sitting in entry's queue and write
-        an error result for each, rather than leaving them stuck at
-        status=queued forever.
+        """Drain entry's queue, writing an error result for each message.
 
-        Called when the model itself can't be loaded -- QueueWorker's
-        constructor never gets far enough to receive a message at all, so
-        without this, whatever was already queued for this model is never
-        touched again: no error, no deletion, just permanently invisible.
+        Without this, whatever was queued before the load failed is never
+        touched again: no error, no deletion, permanently invisible to
+        the client that submitted it.
         """
+        publisher = self._publisher_for(entry)
         drained = 0
+
         while True:
-            payload, receipt_handle = self.queue_backend.receive(entry.queue_name, self.visibility_timeout)
+            payload, receipt_handle = self.queue_backend.receive(
+                entry.queue_name, self.visibility_timeout
+            )
+
             if payload is None:
                 break
 
             try:
                 msg = MarigoldMessage.model_validate(payload)
-                self.results_cache.write_error(msg.user_id, msg.message_id, error)
+                self.results_cache.write_error(
+                    msg.user_id, msg.message_id, error, StatusCode.MODEL_LOAD_FAILED
+                )
+                publisher.publish(
+                    EventType.REQUEST_ERROR,
+                    message_id=msg.message_id,
+                    payload={"user_id": msg.user_id, "error": error},
+                )
             except Exception:
-                logger.exception("failed to write error result while draining '%s'", entry.queue_name)
+                logger.exception(
+                    "failed to write error result while draining '%s'", entry.queue_name
+                )
             finally:
                 self.queue_backend.delete(entry.queue_name, receipt_handle)
 
             drained += 1
 
         if drained:
-            logger.warning("drained and failed %d message(s) from '%s' after load failure", drained, entry.queue_name)
+            logger.warning(
+                "drained and failed %d message(s) from '%s' after load failure",
+                drained, entry.queue_name,
+            )
+
+    # -----------------------------------------------------------------------
+    # Selection
+    # -----------------------------------------------------------------------
+
+    def _pick_entry(
+        self, entries: list[ModelCatalogueItem]
+    ) -> ModelCatalogueItem | None:
+        """Return the entry with the deepest queue, or None if all empty."""
+        if not entries:
+            return None
+
+        depths = [(m, self.queue_backend.depth(m.queue_name)) for m in entries]
+        best_entry, best_depth = max(depths, key=lambda t: t[1])
+
+        return best_entry if best_depth > 0 else None
+
+    # -----------------------------------------------------------------------
+    # Run loop
+    # -----------------------------------------------------------------------
 
     def run(self) -> None:
         """Sweep queues, load, drain, unload, repeat indefinitely."""
-        logger.info("MultiQueueWorker starting: %d queues", len(self.model_catalogue))
+        logger.info("ModelScheduler starting")
 
-        while True:
-            entry = self._pick_entry()
+        serving: set[str] = set()
 
-            if entry is None:
-                logger.info("all queues empty, sleeping")
-                time.sleep(10)
-                continue
+        try:
+            while True:
+                catalogue = self._catalogue()
+                self._ensure_queues(catalogue)
 
-            logger.info(
-                "selected model '%s' (%s) from queue '%s'",
-                entry.name,
-                entry.type,
-                entry.queue_name,
-            )
+                healthy = [m for m in catalogue if m.failed_reason is None]
+                failed = [m for m in catalogue if m.failed_reason is not None]
 
-            # insert the custom envvars into the runtime
-            set_model_config_env(entry)
+                current = {m.hash for m in healthy}
+                if current != serving:
+                    logger.info(
+                        "serving %d model(s): %s",
+                        len(healthy), sorted(m.name for m in healthy),
+                    )
+                    serving = current
 
-            try:
-                worker = QueueWorker(
-                    queue=entry.queue_name,
-                    model_name=entry.name,
-                    model_type=entry.type,
-                    model_hash=entry.hash,
-                    queue_backend=self.queue_backend,
-                    notification_backend=self.notification_backend,
-                    visibility_timeout=self.visibility_timeout,
-                    topic=self.topic,
-                    idle_timeout=self.idle_timeout,
-                    results_cache=self.results_cache,
+                for entry in failed:
+                    if self.queue_backend.depth(entry.queue_name) > 0:
+                        self._fail_queue(entry, entry.failed_reason)
+
+                entry = self._pick_entry(healthy)
+
+                if entry is None:
+                    logger.debug("all queues empty, sleeping")
+                    time.sleep(self.sweep_interval)
+                    continue
+
+                logger.info(
+                    "selected model '%s' (%s) from queue '%s'",
+                    entry.name, entry.type, entry.queue_name,
                 )
-            except ModelVRAMError as e:
-                logger.exception("model '%s' failed VRAM check: %s", entry.name, e)
-                self._fail_queue(entry, f"model failed VRAM check: {e}")
-                # remove this model from this worker
-                # FIXME: this needs removing (or marking) in the postgres catalogue also
-                self.model_catalogue = [m for m in self.model_catalogue if m.hash != entry.hash]
-                # FIXME: do we continue here, or just exit?
-                continue
-            except Exception as e:
-                logger.exception("failed to load model '%s': %s -- skipping", entry.name, e)
-                self._fail_queue(entry, f"model failed to load: {e}")
-                self.model_catalogue = [m for m in self.model_catalogue if m.hash != entry.hash]
-                continue
 
-            worker.run()
+                set_model_config_env(entry)
+                publisher = self._publisher_for(entry)
+
+                try:
+                    with resident_model(entry, publisher) as model:
+                        QueueRunner(
+                            model=model,
+                            entry=entry,
+                            queue_backend=self.queue_backend,
+                            publisher=publisher,
+                            results_cache=self.results_cache,
+                            power_sampler=self._power_sampler,
+                            visibility_timeout=self.visibility_timeout,
+                            worker_id=self.worker_id,
+                            hostname=self.hostname,
+                            idle_timeout=self.idle_timeout,
+                        ).run()
+
+                except ModelLoadError as e:
+                    logger.exception("failed to load '%s': %s", entry.name, e)
+                    self._fail_queue(entry, str(e))
+                    self._mark_failed(entry, str(e))
+
+                except Exception as e:
+                    # A resident model that dies mid-drain says nothing
+                    # about the model: the queue backend going away would
+                    # do this to every model in turn, and marking each one
+                    # failed would disable the catalogue over a few sweeps.
+                    logger.exception("runner for '%s' died: %s", entry.name, e)
+
+        finally:
+            self._power_sampler.shutdown()

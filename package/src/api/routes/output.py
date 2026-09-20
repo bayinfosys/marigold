@@ -4,7 +4,7 @@ from fastapi import Request, Security, APIRouter
 from fastapi.responses import JSONResponse
 
 from api.models import DeleteCacheResponse, PollResponse
-from tools.state_machine.receiver_logic import handle_delete, handle_status
+from shared.receiver_logic import handle_delete, handle_status
 from api.auth import apikey_auth
 
 router = APIRouter()

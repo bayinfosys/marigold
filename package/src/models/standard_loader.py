@@ -161,7 +161,7 @@ def load_diffusion_pipeline(
 
     load_kwargs = dict(
         cache_dir        = cache_dir,
-        torch_dtype      = dtype,
+        dtype      = dtype,
         local_files_only = local_files_only,
         **load_overrides,
     )

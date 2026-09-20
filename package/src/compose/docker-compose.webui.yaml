@@ -25,5 +25,3 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      cache-init:
-        condition: service_completed_successfully

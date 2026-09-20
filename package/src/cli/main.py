@@ -43,6 +43,8 @@ from importlib.metadata import PackageNotFoundError, version
 from importlib.resources import files
 from pathlib import Path
 
+from shared.model_cache import cache_dir_bytes
+
 import yaml
 
 PACKAGE_CONFIG_NAME = "marigold.toml"
@@ -409,21 +411,21 @@ def cmd_deployment_start(args):
     _print_effective_config(deployment_dir, config, env)
 
     returncode = _run_compose(deployment_dir, config, ["up", "-d", "--remove-orphans"], env=env)
+
     if returncode != 0:
         sys.exit(returncode)
-
-    print("marigold: waiting on cache-init (first run may download models -- this can take a while)")
-    _run_compose(deployment_dir, config, ["logs", "-f", "cache-init"], env=env)
 
     returncode = _run_compose(
         deployment_dir, config,
         ["up", "-d", "--wait", "--wait-timeout", "120"],
         env=env,
     )
+
     if returncode == 0:
         print(f"\nmarigold: deployment started ({deployment_dir})")
         print("  marigold deployment logs   -- follow logs")
         print("  marigold deployment status -- check container state")
+
     sys.exit(returncode)
 
 
@@ -434,6 +436,8 @@ def cmd_deployment_stop(args):
 
 
 def cmd_deployment_status(args):
+    # TODO: after printing ps, compare running image tags against the resolved tag
+    # and print a line per service that differs
     deployment_dir = _resolve_deployment_target(args.target)
     config = _load_config(deployment_dir)
     sys.exit(_run_compose(deployment_dir, config, ["ps"]))
@@ -484,20 +488,6 @@ def cmd_cache_populate(args):
     sys.exit(returncode)
 
 
-def _dir_size_bytes(path: Path) -> int:
-    """Bytes on disk under path.
-
-    The HuggingFace cache stores content once in blobs/ and links to it
-    from snapshots/. Path.is_file() follows symlinks, so counting them
-    reports double the real size.
-    """
-    return sum(
-        p.stat().st_size
-        for p in path.rglob("*")
-        if p.is_file() and not p.is_symlink()
-    )
-
-
 def _hf_cache_dirname_to_model_name(dirname: str) -> str:
     """'models--org--name' -> 'org/name', HuggingFace's own cache
     directory convention. Not verified against an actual cache
@@ -523,7 +513,7 @@ def cmd_cache_inspect(args):
     for child in sorted(models_dir.iterdir()):
         if not child.is_dir():
             continue
-        size = _dir_size_bytes(child)
+        size = cache_dir_bytes(child)
         total_bytes += size
         entries.append((_hf_cache_dirname_to_model_name(child.name), size))
 
@@ -628,7 +618,15 @@ def main():
     )
 
     args = build_parser().parse_args()
-    args.func(args)
+
+    try:
+        args.func(args)
+    except KeyboardInterrupt:
+        print("\nmarigold: interrupted", file=sys.stderr)
+        sys.exit(130)
+    except (FileNotFoundError, NotImplementedError, ValueError) as e:
+        print(f"marigold: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

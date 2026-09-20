@@ -82,49 +82,11 @@ def load_catalogue_from_yaml(paths: list[str]) -> list[ModelCatalogueItem]:
     return items
 
 
-def reconcile_catalogue(backend: DBBackend, table: str, declared: list[ModelCatalogueItem]) -> tuple[list[ModelCatalogueItem], list[ModelCatalogueItem]]:
-    """Sync the catalogue table to declared (the current yaml).
-
-    Three cases, by (name, type) identity via .hash:
-        in declared only  -> added
-        in table only     -> pruned (active=False)
-        in both           -> untouched, entirely -- not re-saved at all.
-                              This is what lets a worker's active=False
-                              from a load failure survive indefinitely
-                              across restarts and config syncs.
-                              Re-enabling a previously-broken model is
-                              a deliberate action (fix it, then flip
-                              active back explicitly), never automatic.
-
-    Returns (added, pruned) for logging.
-    """
-    existing = {item.hash: item for item in get_all_models(backend, table)}
-    declared_by_hash = {item.hash: item for item in declared}
-
-    to_add = [item for h, item in declared_by_hash.items() if h not in existing]
-    to_prune = [item for h, item in existing.items() if h not in declared_by_hash and item.active]
-
-    for item in to_add:
-        backend.save(table, item)
-        logger.info("added catalogue entry: %s/%s", item.type.value, item.name)
-
-    for item in to_prune:
-        backend.save(table, item.model_copy(update={"active": False}))
-        logger.warning("pruned catalogue entry: %s/%s", item.type.value, item.name)
-
-    return to_add, to_prune
-
-
-def get_models_by_type(
-    backend: DBBackend, table: str, model_type: ModelType, active_only: bool = True
-) -> list[ModelCatalogueItem]:
+def get_models_by_type(backend: DBBackend, table: str, model_type: ModelType) -> list[ModelCatalogueItem]:
     """Fetch every catalogue entry of a given type."""
     items = list(backend.query(table, ModelCatalogueItem, type=str(model_type)))
 
     logger.info("found %i items for %s", len(items), str(model_type))
-
-    if active_only:
-        items = [i for i in items if i.active]
 
     return items
 

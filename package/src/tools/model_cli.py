@@ -63,8 +63,10 @@ import glob
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+import stat as _stat
 
 from shared.db_models import ModelCatalogueItem
+from shared.model_cache import model_cache_bytes
 from models.catalogue import load_catalogue_from_yaml
 
 from pydantic import ValidationError
@@ -254,15 +256,6 @@ def _peak_memory_mb() -> float:
     return usage.ru_maxrss / 1024
 
 
-def _model_cache_size_gb(model_name: str, cache_path: Path) -> float:
-    cache_dir = cache_path / ("models--" + model_name.replace("/", "--"))
-    if not cache_dir.exists():
-        return 0.0
-    return sum(f.stat().st_size for f in cache_dir.rglob("*") if f.is_file()) / (
-        1024**3
-    )
-
-
 def _placeholder_image_b64() -> str:
     import base64
 
@@ -376,7 +369,7 @@ def download_weights(model_name_filter: Optional[str], prune: bool = False) -> C
         "pruned": build_result.pruned,
         "errors": build_result.errors,
         "total_gb": round(
-            sum(_model_cache_size_gb(n, ctx.cache_path) for n in build_result.cached), 3
+            sum(model_cache_bytes(n, ctx.cache_path) for n in build_result.cached), 3
         ),
     }
     return result, not build_result.errors
@@ -436,7 +429,7 @@ def run_model_inference(
         "inference_seconds": round(infer_duration, 3),
         "peak_memory_mb": round(_peak_memory_mb(), 1),
         "cache_size_gb": round(
-            _model_cache_size_gb(
+            model_cache_bytes(
                 model_name, Path(os.getenv("CACHE_DIR", "/mnt/efs/cache"))
             ),
             3,
@@ -525,7 +518,7 @@ def test_models(model_name_filter: Optional[str]) -> CommandResult:
                 "load_seconds": round(load_duration, 3),
                 "inference_seconds": round(infer_duration, 3),
                 "peak_memory_mb": round(_peak_memory_mb(), 1),
-                "cache_size_gb": round(_model_cache_size_gb(name, ctx.cache_path), 3),
+                "cache_size_gb": round(model_cache_bytes(name, ctx.cache_path), 3),
             }
         )
 
@@ -809,17 +802,6 @@ def status_dashboard(watch: bool) -> CommandResult:
     Uses rich if available for a cleaner display.
     Falls back to plain text.
     """
-    try:
-        from rich.columns import Columns
-        from rich.console import Console
-        from rich.live import Live
-        from rich.panel import Panel
-        from rich.table import Table
-
-        has_rich = True
-    except ImportError:
-        has_rich = False
-
     def render_plain():
         from datetime import datetime, timezone
 
@@ -858,95 +840,21 @@ def status_dashboard(watch: bool) -> CommandResult:
         lines.append("")
         return "\n".join(lines), {}, True
 
-    def render_rich():
-        from datetime import datetime, timezone
-
-        from rich.console import Console
-        from rich.panel import Panel
-        from rich.table import Table
-
-        console = Console()
-        client = MarigoldClient()
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-        # models table
-        models_data = client.get_models()
-        models = models_data.get("models", [])
-        by_type = {}
-        for m in models:
-            by_type.setdefault(m["type"], []).append(m)
-
-        model_table = Table(
-            title="Models  (state at %s)"
-            % models_data.get("cache_state_at", "unknown"),
-            show_header=True,
-            header_style="bold",
-        )
-        model_table.add_column("Type", style="cyan", no_wrap=True)
-        model_table.add_column("Cached", justify="right")
-        model_table.add_column("Total", justify="right")
-
-        for t in sorted(by_type):
-            ms = by_type[t]
-            nc = sum(1 for m in ms if m.get("cached") is True)
-            colour = "green" if nc == len(ms) else "yellow" if nc > 0 else "red"
-            model_table.add_row(t, "[%s]%d[/%s]" % (colour, nc, colour), str(len(ms)))
-
-        # templates table
-        templates = client.list_templates()
-        template_table = Table(
-            title="Templates (%d)" % len(templates),
-            show_header=True,
-            header_style="bold",
-        )
-        template_table.add_column("Name", style="cyan", no_wrap=True, max_width=35)
-        template_table.add_column("ID", no_wrap=True)
-        template_table.add_column("Created", no_wrap=True)
-
-        for t in sorted(templates, key=lambda x: x.get("created_at", ""), reverse=True)[
-            :10
-        ]:
-            template_table.add_row(
-                t["name"][:35],
-                t["workflow_id"],
-                t.get("created_at", "?"),
-            )
-
-        console.print()
-        console.print(
-            "[bold]Marigold Status[/bold]  [cyan]%s[/cyan]  %s"
-            % (os.environ.get("API_BASE", ""), now)
-        )
-        console.print()
-        console.print(model_table)
-        console.print()
-        console.print(template_table)
-        console.print()
-
-        return {}, {}, True
-
     if watch:
         print("watching (Ctrl-C to stop)...")
         try:
             while True:
                 os.system("clear")
-                if has_rich:
-                    render_rich()
-                else:
-                    text, _, _ = render_plain()
-                    print(text)
+                text, _, _ = render_plain()
+                print(text)
                 time.sleep(10)
         except KeyboardInterrupt:
             pass
         return {}, True
     else:
-        if has_rich:
-            render_rich()
-            return {}, True
-        else:
-            text, result, success = render_plain()
-            print(text)
-            return result, success
+        text, result, success = render_plain()
+        print(text)
+        return result, success
 
 
 # ---------------------------------------------------------------------------

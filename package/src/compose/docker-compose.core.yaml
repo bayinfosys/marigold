@@ -21,14 +21,13 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-marigold}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ${MARIGOLD_CACHE_DIR}/data/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-marigold}"]
       interval: 5s
       timeout: 5s
       retries: 5
-    depends_on:
-      cache-init:
-        condition: service_completed_successfully
 
   api:
     image: ${API_IMAGE:-ghcr.io/bayinfosys/marigold-api}:${TAG:-latest}

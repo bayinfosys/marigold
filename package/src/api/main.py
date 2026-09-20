@@ -27,7 +27,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from models.catalogue import load_catalogue_from_yaml, reconcile_catalogue
+from models.catalogue import load_catalogue_from_yaml
 
 from api.routes import router
 
@@ -45,7 +45,7 @@ def _build_local_backends(app: FastAPI) -> None:
     from dynawrap.backends.postgres import PostgresBackend
     from backend.messaging.postgres import PostgresQueueBackend
     from backend.messaging.local import LocalNotificationBackend
-    from tools.polling.results_cache import ResultsCache
+    from shared.results_cache import ResultsCache
 
     dsn = os.environ["MARIGOLD_DATABASE_URL"]
     results_table = os.environ["MARIGOLD_RESULTS_TABLE"]
@@ -71,9 +71,6 @@ def _build_local_backends(app: FastAPI) -> None:
     model_catalogue_items = load_catalogue_from_yaml(yaml_files)
     logger.info("found %i models", len(model_catalogue_items))
     PostgresBackend.create_table(conn, model_catalogue_table)
-    # reconcile the catalogue against the database
-    added, pruned = reconcile_catalogue(table_backend, model_catalogue_table, model_catalogue_items)
-    logger.info("catalogue reconciled: %d added, %d pruned", len(added), len(pruned))
 
     # create the model queues for us to write on
     for item in model_catalogue_items:

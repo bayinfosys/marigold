@@ -49,7 +49,7 @@ from fastapi.responses import StreamingResponse
 from models.catalogue import get_models_by_type
 from pydantic import BaseModel
 from shared.enums import ModelType
-from tools.state_machine.receiver_logic import handle_status, handle_submission
+from shared.receiver_logic import handle_status, handle_submission
 
 logger = logging.getLogger(__name__)
 

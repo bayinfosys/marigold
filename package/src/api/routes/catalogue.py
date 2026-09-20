@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from api.auth import apikey_auth
 
 from shared.enums import ModelType
-from models.catalogue import get_all_models
+from models.catalogue import get_all_models, get_model
 
 
 router = APIRouter()

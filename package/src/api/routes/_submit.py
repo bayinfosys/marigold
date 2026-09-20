@@ -16,7 +16,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from shared.enums import ModelMode, ModelType
-from tools.state_machine.receiver_logic import handle_submission
+from shared.receiver_logic import handle_submission
 
 logger = logging.getLogger(__name__)
 

@@ -181,7 +181,7 @@ class ModelCatalogueItem(DBItem, BaseModel):
     extra_env: dict = {}
     description: str = ""
     source_file: str = ""
-    active: bool = True
+    failed_reason: Optional[str] = None
     updated_at: Optional[str] = None  # set by the init step, not by the loader
 
     @computed_field
@@ -194,3 +194,12 @@ class ModelCatalogueItem(DBItem, BaseModel):
     @property
     def queue_name(self) -> str:
         return f"mdl_{self.hash}_queue"
+
+    @property
+    def failed(self) -> bool:
+        """A worker has attempted this model and the load failed.
+
+        Runtime state, written by the worker. Absent from models.yaml and
+        carried across a reconcile unchanged.
+        """
+        return self.failed_reason is not None

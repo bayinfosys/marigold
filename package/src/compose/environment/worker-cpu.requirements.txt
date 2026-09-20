@@ -8,4 +8,4 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch
 torchvision
-pynvml  # to avoid an ImportError
+nvidia-ml-py  # to avoid an ImportError
