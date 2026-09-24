@@ -27,6 +27,9 @@ services:
       - ${MARIGOLD_CACHE_DIR}/data/tmp:/tmp/models
       - ${MARIGOLD_CACHE_DIR}/data/outputs:/outputs
     restart: on-failure:3
+    labels:
+      - "svc.marigold.description=Worker container pulls work from the queues and runs against models on host hardware"
     depends_on:
       postgres:
         condition: service_healthy
+    networks: [core]

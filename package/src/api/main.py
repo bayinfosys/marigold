@@ -28,6 +28,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from models.catalogue import load_catalogue_from_yaml
+from shared.database import get_database_connection
 
 from api.routes import router
 
@@ -41,55 +42,38 @@ logger = logging.getLogger(__name__)
 
 
 def _build_local_backends(app: FastAPI) -> None:
-    import psycopg2
+    """Connect to Postgres and wire backends into app.state.
+
+    The API reads the catalogue; it never loads models.yaml. Catalogue
+    rows and their queues are written by the cache container, for the
+    models present in the cache.
+    """
     from dynawrap.backends.postgres import PostgresBackend
     from backend.messaging.postgres import PostgresQueueBackend
     from backend.messaging.local import LocalNotificationBackend
     from shared.results_cache import ResultsCache
 
-    dsn = os.environ["MARIGOLD_DATABASE_URL"]
     results_table = os.environ["MARIGOLD_RESULTS_TABLE"]
     model_catalogue_table = os.environ["MARIGOLD_MODEL_CATALOGUE_TABLE"]
-    model_catalogue_yamls = os.environ["MARIGOLD_MODEL_CATALOGUE_YAMLS"]
 
-    conn = psycopg2.connect(dsn)
-    conn.autocommit = True
+    conn = get_database_connection()
 
-    queue_backend = PostgresQueueBackend(conn)
-    notification_backend = LocalNotificationBackend()
-
-    # create the output results
+    # create the tables
     table_backend = PostgresBackend(conn)
     PostgresBackend.create_table(conn, results_table)
-    results_cache = ResultsCache(table_backend, results_table)
-
-    # create the model catalogue
-    yaml_files = [t for x in model_catalogue_yamls.split(",") for t in glob.glob(x)]
-    logger.info("found %i model definition files", len(yaml_files))
-
-    # load the catalogue items
-    model_catalogue_items = load_catalogue_from_yaml(yaml_files)
-    logger.info("found %i models", len(model_catalogue_items))
     PostgresBackend.create_table(conn, model_catalogue_table)
-
-    # create the model queues for us to write on
-    for item in model_catalogue_items:
-        queue_backend.create_queue(item.queue_name)
-
-    # create the usage table
     PostgresBackend.create_table(conn, os.getenv("MARIGOLD_USAGE_TABLE", "usage"))
 
-    # set application state for the api
-    app.state.queue_backend = queue_backend
-    app.state.notification_backend = notification_backend
-    app.state.results_cache = results_cache
+    # create the queues
+    app.state.queue_backend = PostgresQueueBackend(conn)
+    app.state.notification_backend = LocalNotificationBackend()
+    app.state.results_cache = ResultsCache(table_backend, results_table)
     app.state.table_backend = table_backend
     app.state.topic = os.getenv("LIFECYCLE_TOPIC", "lifecycle")
     app.state.model_catalogue_table = model_catalogue_table
 
     logger.info(
-        "local backends configured: %d models, models='%s', results='%s'",
-        len(model_catalogue_items),
+        "local backends configured: models='%s', results='%s'",
         model_catalogue_table,
         results_table,
     )

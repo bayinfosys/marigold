@@ -8,12 +8,12 @@ stats for inclusion in the handler response.
 import logging
 import os
 
-import psycopg2
 from dynawrap.backends.postgres import PostgresBackend
 
 from shared.enums import ModelType
 from api.models import ModelUsageStats
 from shared.usage_models import UsageItem
+from shared.database import get_database_connection
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +32,7 @@ def _get_backend():
     """
     global _dynawrap
     if _dynawrap is None:
-        dsn = os.environ["MARIGOLD_DATABASE_URL"]
-        conn = psycopg2.connect(dsn)
-        conn.autocommit = True
+        conn = get_database_connection()
         _dynawrap = PostgresBackend(conn)
     return _dynawrap
 

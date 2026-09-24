@@ -1,5 +1,69 @@
 # TODO
 
+# Platform, packages and applications
+
+## Next
+
+- **Populate inside `application start`.** Order platform, populate,
+  application, so a first start never runs an application against an
+  empty catalogue.
+- **`--attach` on `application start`.** Follow the application's output
+  and exit with its code, so a package can be a smoke test.
+- **Instance expansion.** `[execution.instance]` as one table, a list,
+  or a seeded generator up to `max_count`; `--max-count`, `--seed`;
+  `MARIGOLD_INSTANCE_SEED`; container names from the seed.
+- **`application_id` in client code.** Applications set it from the
+  environment; document it in every example.
+
+## Configuration
+
+- **Pydantic model for both TOML files.** Validates on load, rejects
+  unknown keys, and generates the configuration reference.
+- **System config lookup.** The working-directory rule silently changes
+  the cache and platform addressed; walk parent directories, or drop it
+  in favour of `~/.marigold/config.toml` and `MARIGOLD_CONFIG`. Print the
+  config in use on every command that writes.
+- **Remove the `[deployment]` fallback** after one release.
+- **`[execution].image` lock.** A system-level `allow_package_image`,
+  so a host can pin the executor image.
+
+## Isolation and access
+
+- **Postgres roles per component**, with DSNs selected in
+  `shared.database.get_database_connection`.
+- **Move `failed_reason` to a worker-owned table**, so the catalogue is
+  written only by the cache container.
+- **Remove table creation from the worker**; wait for tables instead.
+- **`marigold-core` as an internal network**, with the cache container
+  on a separate egress network.
+- **Archive limits** on uncompressed size and member count before
+  extraction.
+
+## Cache
+
+- **`is_model_complete` accepts partial downloads.** Check for
+  `.incomplete` blobs.
+- **Catalogue rows for pruned weights persist.** Reconcile the
+  catalogue against the disk after a prune.
+- **`ModelProvider.TOOLS`**: confirm the enum member name used by
+  `_PROVIDERS`.
+- **`cache inspect` should list installed packages** beside models.
+- **Package cleanup**: archives and extracted trees are never pruned.
+
+## Workers
+
+- **Worker selection.** Which worker serves which models, by
+  capability or allowlist; failure state per worker.
+- **Tag drift.** `platform status` compares running image tags with the
+  configured tag and flags differences.
+
+## CLI surface to rebuild
+
+- **`marigold workflow`** (`run`, `submit`, `tail`, `list`) against the
+  API, replacing the removed `model_cli.py workflow` commands.
+- **`marigold status`**, a dashboard against the current API.
+- **Payload files** for applications (`--payload`,
+  `MARIGOLD_PAYLOAD_PATH`).
 
 ## Workflow feature -- open items
 
@@ -833,8 +897,7 @@ Architecture (squashfs build, make-torrent, DHT, separate marigold-cache
 package) is settled from prior discussion.
 
 Decided: client-side seeding via opt-in flag, using python-libtorrent
-(already the planned dependency). Running marigold/model_cli instances
-seed completed .sqfs files back into the swarm when enabled.
+(already the planned dependency). Cache containers seed completed .sqfs files.
 
 Open:
   - opt-in UX: config flag, default false, one-line explanation at first run

@@ -1,38 +1,41 @@
 """
-model_cache_shared.py -- Cache builder shared logic.
+model_cache_shared.py -- cache provider logic.
 
-Contains all cache management logic that does not depend on AWS or local
-filesystem configuration. Imported by the CLI and any cache builder scripts.
+Providers know how to put one model's weights in the cache, report on
+them, and remove them. The loop over a package's models, the database
+writes and the reporting live in tools/model_cli.py; this module is
+per-model and stateless.
 
 Public interface
 ----------------
-run_build(catalogue, cache_path, hf_token, prune)
-    Download and cache all declared models. Prune undeclared entries if prune=True.
-    Returns a BuildResult.
+get_provider(item)
+    (provider_key, provider) for one catalogue item. provider is None
+    when the key is not registered.
+
+cached_model_names(cache_path)
+    model_name -> Path for everything on disk.
+
+is_model_complete(cache_path, model_name)
+    Whether a cached model looks usable.
 
 inspect_to_dict(catalogue, cache_path)
-    Collect cache state as a serialisable dict. Used by the CLI --json path
-    and by run_inspect.
+    Cache state as a serialisable dict, declared against found.
 
-run_inspect(catalogue, cache_path)
-    Print a human-readable cache inspection report to stdout.
-    Returns a list of anomaly names; empty means clean.
-
-print_build_summary(result, cache_path)
-    Print a human-readable build summary to stdout.
+run_inspect(state), print_build_summary_from_dict(result)
+    Human-readable reports from those dicts.
 """
 
 import logging
 import os
 import shutil
-from dataclasses import dataclass, field
+
 from datetime import datetime, timezone
 from pathlib import Path
 
-import models
-from shared.registry import _SPECS
 from shared.db_models import ModelCatalogueItem, set_model_config_env
 from shared.enums import ModelProvider
+from shared.model_cache import cache_dir_bytes
+from shared.registry import _SPECS
 
 log = logging.getLogger("marigold.model-cache")
 
@@ -48,21 +51,13 @@ def model_to_cache_name(model_name: str) -> str:
 
 
 def dir_size_gb(path: Path) -> float:
-    """Recursively sum file sizes under path, returning GB.
+    """Size under path in GB, counting each physical file once.
 
-    Counts inodes to avoid double-counting hard links.
+    Delegates to shared.model_cache.cache_dir_bytes, which accumulates
+    against (st_dev, st_ino): the HuggingFace layout links snapshots to
+    blobs, so a plain walk counts each blob once per revision.
     """
-    seen = set()
-    total = 0
-    for f in path.rglob("*"):
-        if not f.is_file():
-            continue
-        inode = f.stat().st_ino
-        if inode in seen:
-            continue
-        seen.add(inode)
-        total += f.stat().st_size
-    return total / (1024**3)
+    return cache_dir_bytes(path) / (1024 ** 3)
 
 
 def cached_model_names(cache_path: Path) -> dict:
@@ -71,6 +66,7 @@ def cached_model_names(cache_path: Path) -> dict:
     Returns a mapping of model_name -> Path for all models found on disk.
     """
     result = {}
+
     if not cache_path.exists():
         return result
 
@@ -79,8 +75,10 @@ def cached_model_names(cache_path: Path) -> dict:
             continue
         if not entry.name.startswith("models--"):
             continue
-        remainder = entry.name[len("models--") :]
+
+        remainder = entry.name[len("models--"):]
         parts = remainder.split("--")
+
         if len(parts) >= 2:
             result["/".join(parts)] = entry
 
@@ -88,12 +86,17 @@ def cached_model_names(cache_path: Path) -> dict:
 
 
 def is_model_complete(cache_path: Path, model_name: str) -> bool:
-    """A cached model is considered complete if its snapshots directory
-    contains at least one entry.
+    """A cached model is complete if its snapshots directory has an entry.
+
+    TODO: an interrupted download leaves a snapshot directory holding
+    some files, which passes this and then fails at load time. Checking
+    for .incomplete blobs would cover the common case.
     """
     snapshots = cache_path / model_to_cache_name(model_name) / "snapshots"
+
     if not snapshots.exists():
         return False
+
     return any(snapshots.iterdir())
 
 
@@ -105,16 +108,16 @@ def is_model_complete(cache_path: Path, model_name: str) -> bool:
 class Provider:
     """Base class for cache provider implementations.
 
-    Each provider implements build, inspect, and prune for its own storage
-    and loading strategy. Providers are registered in _PROVIDERS and looked
-    up by the provider field in models.yaml.
+    Each provider implements build, inspect and prune for its own
+    storage and loading strategy. Providers are registered in
+    _PROVIDERS and looked up by the provider field in models.yaml.
     """
 
-    def build(self, model: dict, cache_path: Path, hf_token: str) -> bool:
+    def build(self, model: ModelCatalogueItem, cache_path: Path, hf_token: str) -> bool:
         """Prepare this model for execution. Return True on success."""
         raise NotImplementedError
 
-    def inspect(self, model: dict, cache_path: Path) -> tuple:
+    def inspect(self, model: ModelCatalogueItem, cache_path: Path) -> tuple:
         """Return (status, size_gb) for this model.
 
         Status values: ok | MISSING | INCOMPLETE
@@ -127,8 +130,9 @@ class Provider:
 
 
 class HuggingFaceProvider(Provider):
+    """Weights from the HuggingFace hub, cached by its own layout."""
 
-    def build(self, model: dict, cache_path: Path, hf_token: str) -> bool:
+    def build(self, model: ModelCatalogueItem, cache_path: Path, hf_token: str) -> bool:
         name = model.name
         model_type = model.type
 
@@ -140,14 +144,13 @@ class HuggingFaceProvider(Provider):
             log.info("skip %s (complete)", name)
             return True
 
-        # NB: this is **always** the huggingface provider...
-        if model.provider == ModelProvider.HUGGINGFACE:
-            if "HF_TOKEN" in os.environ:
-                os.environ["HF_TOKEN"] = hf_token
-            else:
-                log.warning("HF_TOKEN not provided")
+        if hf_token:
+            os.environ["HF_TOKEN"] = hf_token
+        else:
+            log.warning("HF_TOKEN not provided")
 
-        # FIXME: these are defined in the container, forcing them here is confusing.
+        # FIXME: these are defined in the container, forcing them here
+        # is confusing.
         os.environ["HF_HUB_CACHE"] = str(cache_path)
         os.environ["HF_HUB_OFFLINE"] = "0"
         os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "0"
@@ -167,17 +170,17 @@ class HuggingFaceProvider(Provider):
             log.error("%s: loader failed [%s]", name, str(e))
             return False
 
-    def inspect(self, model: dict, cache_path: Path) -> tuple:
+    def inspect(self, model: ModelCatalogueItem, cache_path: Path) -> tuple:
         name = model.name
-        existing = cached_model_names(cache_path)
         path = cache_path / model_to_cache_name(name)
 
-        if name not in existing:
+        if name not in cached_model_names(cache_path):
             return ("MISSING", 0.0)
-        elif not is_model_complete(cache_path, name):
+
+        if not is_model_complete(cache_path, name):
             return ("INCOMPLETE", dir_size_gb(path))
-        else:
-            return ("ok", dir_size_gb(path))
+
+        return ("ok", dir_size_gb(path))
 
     def prune(self, name: str, path: Path) -> bool:
         try:
@@ -190,12 +193,12 @@ class HuggingFaceProvider(Provider):
 
 
 class ToolsProvider(Provider):
-    """Provider for built-in compute steps that require no downloaded weights."""
+    """Built-in compute steps that require no downloaded weights."""
 
-    def build(self, model: dict, cache_path: Path, hf_token: str) -> bool:
+    def build(self, model: ModelCatalogueItem, cache_path: Path, hf_token: str) -> bool:
         return True
 
-    def inspect(self, model: dict, cache_path: Path) -> tuple:
+    def inspect(self, model: ModelCatalogueItem, cache_path: Path) -> tuple:
         return ("ok", 0.0)
 
     def prune(self, name: str, path: Path) -> bool:
@@ -203,79 +206,17 @@ class ToolsProvider(Provider):
 
 
 _PROVIDERS = {
-    "huggingface": HuggingFaceProvider(),
-    "tools": ToolsProvider(),
+    ModelProvider.HUGGINGFACE: HuggingFaceProvider(),
+    ModelProvider.TOOLS: ToolsProvider(),
 }
 
 
-# ---------------------------------------------------------------------------
-# Build
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class BuildResult:
-    cached: list = field(default_factory=list)
-    pruned: list = field(default_factory=list)
-    errors: list = field(default_factory=list)
-
-
-def _get_provider(model: ModelCatalogueItem) -> tuple:
-    """Return (provider_key, provider) for a model dict.
+def get_provider(model: ModelCatalogueItem) -> tuple:
+    """Return (provider_key, provider) for one catalogue item.
 
     provider is None if the key is not registered.
     """
-    provider_key = model.provider
-    return provider_key, _PROVIDERS.get(provider_key)
-
-
-def run_build(
-    catalogue: list[ModelCatalogueItem],
-    cache_path: Path,
-    hf_token: str,
-    prune: bool = True,
-) -> BuildResult:
-    """Download and cache all declared models.
-
-    Prune any entries found on disk that are not in catalogue if prune=True.
-    The declared list is the source of truth for pruning. Providers that write
-    nothing to disk have no-op prune implementations.
-    """
-    models.load_all()
-
-    result = BuildResult()
-    existing = cached_model_names(cache_path)
-    declared = {m.name for m in catalogue}
-
-    cache_path.mkdir(parents=True, exist_ok=True)
-
-    for model in catalogue:
-        name = model.name
-        provider_key, provider = _get_provider(model)
-
-        if provider is None:
-            log.error("skip %s: unknown provider '%s'", name, provider_key)
-            result.errors.append(name)
-            continue
-
-        ok = provider.build(model, cache_path, hf_token)
-        if ok:
-            result.cached.append(name)
-        else:
-            result.errors.append(name)
-
-    if prune:
-        for name, path in existing.items():
-            if name not in declared:
-                log.info("pruning %s", name)
-                # TODO: cache pruning should be implemented in the provider class
-                #provider_key, provider = _get_provider({"name": name})
-                #if provider.prune(name, path):
-                #    result.pruned.append(name)
-                #else:
-                #    result.errors.append("prune:%s" % name)
-
-    return result
+    return model.provider, _PROVIDERS.get(model.provider)
 
 
 # ---------------------------------------------------------------------------
@@ -310,9 +251,10 @@ def inspect_to_dict(catalogue: list[ModelCatalogueItem], cache_path: Path) -> di
 
     for model in catalogue:
         name = model.name
-        provider_key, provider = _get_provider(model)
+        provider_key, provider = get_provider(model)
 
         if provider is None:
+            log.error("%s: unknown provider '%s'", name, provider_key)
             model_states[name] = {"status": "ERROR", "size_gb": 0.0}
             anomalies.append(name)
             continue
@@ -325,11 +267,13 @@ def inspect_to_dict(catalogue: list[ModelCatalogueItem], cache_path: Path) -> di
             anomalies.append(name)
 
     for name, path in existing.items():
-        if name not in declared:
-            gb = dir_size_gb(path)
-            model_states[name] = {"status": "UNDECLARED", "size_gb": round(gb, 3)}
-            total_gb += gb
-            anomalies.append(name)
+        if name in declared:
+            continue
+
+        gb = dir_size_gb(path)
+        model_states[name] = {"status": "UNDECLARED", "size_gb": round(gb, 3)}
+        total_gb += gb
+        anomalies.append(name)
 
     return {
         "inspected_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -345,23 +289,33 @@ def run_inspect(state: dict) -> None:
     print("\n--- cache inspection ---")
     print("  declared in config: %i" % state["declared"])
     print("  found on disk:      %i\n" % state["found"])
+
     for name, entry in state["models"].items():
         print("  %-12s %-55s %.2f GB" % (entry["status"], name, entry["size_gb"]))
+
     print("\n  total cache size: %.2f GB" % state["total_gb"])
+
     if state["anomalies"]:
         print("  anomalies: %i" % len(state["anomalies"]))
+
     print()
 
 
 def print_build_summary_from_dict(result: dict) -> None:
     print("\n--- build summary ---")
+
     for name in result.get("cached", []):
         print("  cached:  %s" % name)
+
     for name in result.get("pruned", []):
         print("  pruned:  %s" % name)
+
     for name in result.get("errors", []):
         print("  error:   %s" % name)
+
     print("\n  total cache size: %.2f GB" % result.get("total_gb", 0.0))
+
     if result.get("errors"):
         print("  errors: %i" % len(result["errors"]))
+
     print()

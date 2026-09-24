@@ -33,7 +33,7 @@ sqs_handler (additional):
 
 local_handler (additional):
     MARIGOLD_DATABASE_URL              psycopg2 DSN
-    MARIGOLD_MODEL_CATALOGUE_TABLE              model catalogue table name (default: models)
+    MARIGOLD_MODEL_CATALOGUE_TABLE     model catalogue table name (default: models)
     MARIGOLD_RESULTS_TABLE             results table name (default: results)
 """
 
@@ -178,7 +178,6 @@ def local_handler():
     many seconds, which suits a small catalogue where reload cost
     dominates. See the note on -1 in QueueRunner before using it.
     """
-    import psycopg2
     from backend.messaging.local import LocalNotificationBackend
     from backend.messaging.postgres import PostgresQueueBackend
     from dynawrap.backends.postgres import PostgresBackend
@@ -195,8 +194,8 @@ def local_handler():
     models_table = os.getenv("MARIGOLD_MODEL_CATALOGUE_TABLE", "models")
     workers_table = os.getenv("MARIGOLD_WORKERS_TABLE", "workers")
 
-    conn = psycopg2.connect(dsn)
-    conn.autocommit = True
+    # get the database connection
+    conn = get_database_connection()
 
     queue_backend = PostgresQueueBackend(conn)
     notification_backend = LocalNotificationBackend()

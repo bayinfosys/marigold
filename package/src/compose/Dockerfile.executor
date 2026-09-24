@@ -1,0 +1,11 @@
+FROM python:3.12-slim
+
+COPY package/src/compose/environment/executor.requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
+
+ENV PYTHONUNBUFFERED=1
+WORKDIR /app
+
+# The package's app/ directory is mounted here at runtime, read-only.
+# A package overrides this with [execution].command.
+CMD ["python", "main.py"]

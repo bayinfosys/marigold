@@ -22,6 +22,15 @@ services:
       - RAG_RERANKING_MODEL_AUTO_UPDATE=false
     volumes:
       - ${MARIGOLD_CACHE_DIR:-./assets}/data/webui:/app/backend/data
+    labels:
+      - "svc.marigold.description=OpenWebUI interface for chat access to LLMs in the marigold cache"
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - applications
+
+networks:
+  applications:
+    name: marigold-applications
+    external: true

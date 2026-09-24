@@ -10,6 +10,8 @@ from dynawrap.backends.base import DBBackend
 
 from shared.db_models import ModelCatalogueItem
 from shared.enums import ModelType
+from datetime import datetime, timezone
+from backend.messaging.base import QueueBackend
 
 
 logger = logging.getLogger(__name__)
@@ -110,10 +112,27 @@ def get_model(
     return backend.get(table, ModelCatalogueItem, type=str(model_type), name=model_name)
 
 
-def save_models(backend: DBBackend, table: str, items: list[ModelCatalogueItem]) -> None:
-    """Save a list of catalogue entries. No reconcile/retire logic --
-    callers wanting the retire-absent-models behaviour do that themselves."""
-    logger.info("saving %i items to '%s'", len(items), table)
+def register_model(
+    backend: DBBackend,
+    table: str,
+    queue_backend: QueueBackend,
+    item: ModelCatalogueItem,
+) -> None:
+    """Make one cached model available to the API and the worker.
 
-    for item in items:
-        backend.save(table, item)
+    The queue is created before the row, so any row the API can read
+    already has a queue to send to. failed_reason on an existing row is
+    carried over: re-populating the cache says nothing about whether
+    the model loads.
+    """
+    queue_backend.create_queue(item.queue_name)
+
+    update = {"updated_at": datetime.now(timezone.utc).isoformat()}
+
+    existing = get_model(backend, table, item.type, item.name)
+
+    if existing is not None and existing.failed_reason:
+        update["failed_reason"] = existing.failed_reason
+
+    backend.save(table, item.model_copy(update=update))
+    logger.info("registered %s/%s", item.type.value, item.name)

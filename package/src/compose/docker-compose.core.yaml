@@ -1,26 +1,10 @@
 services:
-
-  cache-init:
-    image: ${CACHE_IMAGE:-ghcr.io/bayinfosys/marigold-cache}:${TAG:-latest}
-    command: ["python3", "-m", "tools.model_cli", "download-weights"]
-    environment:
-      MARIGOLD_MODEL_CATALOGUE_YAMLS: ${MARIGOLD_MODEL_CATALOGUE_YAMLS:-/app/marigold/models.yaml}
-      HF_TOKEN: ${HF_TOKEN:-}
-      CACHE_DIR: /models
-      HF_HUB_OFFLINE: 0
-    volumes:
-      - ${MARIGOLD_PACKAGE_DIR}:/app/marigold:ro
-      - ${MARIGOLD_CACHE_DIR}/data/models:/models
-    restart: "no"
-
   postgres:
     image: postgres:17
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-marigold}
       POSTGRES_USER: ${POSTGRES_USER:-marigold}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-marigold}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - ${MARIGOLD_CACHE_DIR}/data/postgres:/var/lib/postgresql/data
     healthcheck:
@@ -28,6 +12,29 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    labels:
+      - "svc.marigold.description=Backend local data store"
+    networks: [core]
+
+  cache-init:
+    image: ${CACHE_IMAGE:-ghcr.io/bayinfosys/marigold-cache}:${TAG:-latest}
+    command: ["python3", "-m", "tools.cache_cli", "populate"]
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      CACHE_DIR: /models
+      HF_HUB_OFFLINE: 0
+      MARIGOLD_DATABASE_URL: ${MARIGOLD_DATABASE_URL:-postgresql://marigold:marigold@postgres:5432/marigold}
+      MARIGOLD_MODEL_CATALOGUE_TABLE: model_catalogue
+    volumes:
+      - ${MARIGOLD_APPLICATIONS_DIR}:/applications:ro
+      - ${MARIGOLD_CACHE_DIR}/data/models:/models
+    restart: "no"
+    labels:
+      - "svc.marigold.description=Local state management: cache, queues, model catalogue, etc"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [core]
 
   api:
     image: ${API_IMAGE:-ghcr.io/bayinfosys/marigold-api}:${TAG:-latest}
@@ -39,10 +46,18 @@ services:
       MARIGOLD_DATABASE_URL: ${MARIGOLD_DATABASE_URL:-postgresql://marigold:marigold@postgres:5432/marigold}
       LIFECYCLE_TOPIC: lifecycle
       MARIGOLD_RESULTS_TABLE: results
-      MARIGOLD_MODEL_CATALOGUE_YAMLS: ${MARIGOLD_MODEL_CATALOGUE_YAMLS:-/app/marigold/models.yaml}
       MARIGOLD_MODEL_CATALOGUE_TABLE: model_catalogue
     volumes:
       - ${MARIGOLD_PACKAGE_DIR}:/app/marigold:ro
+    labels:
+      - "svc.marigold.description=Access to the marigold core services from outside the network"
     depends_on:
       postgres:
         condition: service_healthy
+    networks: [core, applications]
+
+networks:
+  core:
+    name: marigold-core
+  applications:
+    name: marigold-applications

@@ -25,7 +25,9 @@ GHCR_NAMESPACE ?= ghcr.io/bayinfosys
 API_IMAGE      ?= $(GHCR_NAMESPACE)/marigold-api
 CACHE_IMAGE    ?= $(GHCR_NAMESPACE)/marigold-cache
 WORKER_IMAGE   ?= $(GHCR_NAMESPACE)/marigold-worker
+EXECUTOR_IMAGE ?= $(GHCR_NAMESPACE)/marigold-executor
 DOCKERFILE     := package/src/compose/Dockerfile
+PYTHON_EXECUTOR_DOCKERFILE     := package/src/compose/Dockerfile.executor
 
 .PHONY: build/api
 build/api:
@@ -59,8 +61,15 @@ build/worker-gpu:
 	  -t $(WORKER_IMAGE):$(TAG)-gpu \
 	  -f $(DOCKERFILE) .
 
+.PHONY: build/executor
+build/executor:
+	docker build \
+	  --build-arg GIT_TAG=$(TAG) \
+	  -t $(EXECUTOR_IMAGE)-python:$(TAG) \
+	  -f $(PYTHON_EXECUTOR_DOCKERFILE) .
+
 .PHONY: build
-build: build/api build/cache build/worker build/worker-gpu
+build: build/api build/cache build/worker build/worker-gpu build/executor
 
 
 # ---------------------------------------------------------------------------

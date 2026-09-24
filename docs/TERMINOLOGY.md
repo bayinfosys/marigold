@@ -74,6 +74,13 @@ distinction recurs in contexts beyond the obvious (data pipelines,
 integration boundaries, agent handoffs) and is likely to accumulate meaning
 over time.
 
+### Applications hold no weights
+
+The practical form of the fat layer claim. An application is code and a
+list of required models; the weights live in a shared cache behind the
+protocol. Use it when writing about deployment, cost, or why many
+applications can share one GPU. Pairs with "workflows are thin clients".
+
 ---
 
 ## Phrases to avoid
