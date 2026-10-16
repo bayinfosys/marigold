@@ -134,3 +134,4 @@ class StatusCode(StrEnum):
     UNSPECIFIED       = "unspecified"
     MODEL_LOAD_FAILED = "model_load_failed"
     INFERENCE_FAILED  = "inference_failed"
+    OUTPUT_INVALID    = "output_invalid"

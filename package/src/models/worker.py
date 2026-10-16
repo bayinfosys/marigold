@@ -319,11 +319,12 @@ class QueueRunner:
 
         return msg, receipt_handle
 
-    def _report_error(self, msg: MarigoldMessage, error: str) -> None:
+    def _report_error(
+        self, msg: MarigoldMessage, error: str,
+        code: StatusCode = StatusCode.INFERENCE_FAILED,
+    ) -> None:
         """Write an error result and publish the matching event."""
-        self.results_cache.write_error(
-            msg.user_id, msg.message_id, error, StatusCode.INFERENCE_FAILED
-        )
+        self.results_cache.write_error(msg.user_id, msg.message_id, error, code)
         self.publisher.publish(
             EventType.REQUEST_ERROR,
             message_id=msg.message_id,
@@ -416,7 +417,9 @@ class QueueRunner:
             logger.exception(
                 "[%s/%s] inference failed: %s", msg.user_id, msg.message_id, e
             )
-            self._report_error(msg, str(e))
+            self._report_error(
+                msg, str(e), getattr(e, "status_code", StatusCode.INFERENCE_FAILED)
+            )
 
     # -----------------------------------------------------------------------
     # Run loop

@@ -1,10 +1,11 @@
 """Common object definitions which are not request and response models."""
+import json
 from enum import Enum
-from typing import Any, Dict, List, Optional, TypeVar, Union
+from typing import Any, Dict, List, Literal, Optional, TypeVar, Union
 
 import httpx
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from shared.enums import ModelModalities, ModelProvider, ModelType
 
 T = TypeVar("T")
@@ -127,12 +128,60 @@ class InstructMessageContentHF(BaseModel, use_enum_values=True):
         exclude_none = True
 
 
+def gen_tool_call_id(message_id: str, index: int) -> str:
+    """The id of the index-th tool call in the reply to message_id.
+
+    Derived rather than random: a cached result returns the same ids every
+    time it is read, and the native and OpenAI routes agree on them.
+    """
+    return "call_%s_%d" % (message_id.removeprefix("API#")[:8], index)
+
+
+class InstructToolCallFunction(BaseModel):
+    name: str
+    arguments: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("arguments", mode="before")
+    @classmethod
+    def parse_string_arguments(cls, v):
+        """The OpenAI wire format carries arguments as a JSON string."""
+        if isinstance(v, str):
+            return json.loads(v) if v.strip() else {}
+        return v
+
+
+class InstructToolCall(BaseModel):
+    """One tool call in an assistant turn, in the OpenAI shape."""
+
+    id: str = Field("", description="matches the tool_call_id of the tool message answering it")
+    type: Literal["function"] = "function"
+    function: InstructToolCallFunction
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_flat_shape(cls, v):
+        """Results stored before 0.8 hold the flat {"name", "arguments"} shape."""
+        if isinstance(v, dict) and "function" not in v and "name" in v:
+            return {
+                "id": v.get("id", ""),
+                "type": "function",
+                "function": {"name": v["name"], "arguments": v.get("arguments", {})},
+            }
+        return v
+
+
 class InstructMessage(BaseModel, use_enum_values=True):
-    """One turn in a conversation. Matches the OpenAI message structure."""
+    """One turn in a conversation. Matches the OpenAI message structure.
+
+    An assistant turn may carry tool_calls; the tool message answering
+    one carries its id in tool_call_id.
+    """
 
     role: InstructRole
     content: Union[str, InstructMessageContentList, None] = Field(...)
-    tool_calls: list[Dict] = Field(default_factory=list)
+    tool_calls: List[InstructToolCall] = Field(default_factory=list)
+    tool_call_id: Optional[str] = Field(None, description="on a tool message: the call it answers")
+    name: Optional[str] = Field(None, description="on a tool message: the tool's name")
 
     @field_validator("role", mode="before")
     @classmethod

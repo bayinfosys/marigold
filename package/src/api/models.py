@@ -7,7 +7,7 @@ code can import it without depending on the API layer.
 """
 
 from datetime import datetime
-from typing import Dict, Generic, List, Literal, Optional, TypeVar
+from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar
 
 from pydantic import BaseModel, Field, field_validator
 from shared.models import (Embedding, EmbeddingQuantization, InstructMessage,
@@ -197,6 +197,17 @@ EmbedTextResponse = EmbeddingResponse
 # ---------------------------------------------------------------------------
 
 
+class ResponseFormat(BaseModel):
+    """Requested shape of the reply. Checked after generation, never
+    enforced during it: see models/instruct.py."""
+
+    type: Literal["text", "json_object", "json_schema"] = "text"
+    json_schema: Optional[Dict[str, Any]] = Field(
+        None,
+        description="OpenAI shape, {'name': ..., 'schema': {...}}; used when type is json_schema",
+    )
+
+
 class InstructRequest(ModelRequest):
     messages: InstructMessages = Field(..., description="conversation turns")
     temperature: float = Field(1.0)
@@ -207,11 +218,26 @@ class InstructRequest(ModelRequest):
     repetition_penalty: Optional[float] = Field(None)
     no_repeat_ngram_size: Optional[int] = Field(None)
     tools: list[Dict] = Field(default_factory=list, description="JSON schema function tool definitions")
+    tool_choice: Literal["auto", "none"] = Field(
+        "auto",
+        description="auto: the model decides whether to call a tool; none: tools are "
+                    "not offered. 'required' and named functions are not supported",
+    )
+    response_format: Optional[ResponseFormat] = Field(
+        None, description="ask for a JSON reply; checked after generation"
+    )
+    chat_template_kwargs: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="extra arguments for the model's chat template, e.g. {'enable_thinking': false}",
+    )
 
 
 class InstructResponse(GenerativeResponse):
     choices: List[InstructMessage]
-
+    tool_call_errors: List[str] = Field(
+        default_factory=list,
+        description="tool call blocks that did not parse; each block stays in the content",
+    )
 
 # ---------------------------------------------------------------------------
 # TTS

@@ -1,4 +1,5 @@
 boto3
+jsonschema
 # huggingface stuff
 transformers
 sentence-transformers
