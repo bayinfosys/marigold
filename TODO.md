@@ -949,3 +949,15 @@ Open:
   resident for MARIGOLD_QUEUE_IDLE_TIMEOUT after its queue empties,
   delaying other queues. Attempts to fix it have not worked. For
   timing runs, set IDLE_TIMEOUT=0.
+- **Site docs built from the code repository.** On release, the marigold
+  workflow notifies the site repository (repository_dispatch) with the
+  version. The site workflow copies `docs/` and `SETUP.md` from that tag
+  into the site's `/docs/`, writes the version to `_data/release.yml`,
+  and rebuilds. A default layout for `/docs/` wraps the pages; relative
+  links resolve through jekyll-relative-links. The site build depends
+  on the release, by design. Until then: one include for the quick
+  start, and a lint failing the site build on retired commands
+  (`deployment start`, `marigold package`, `[deployment]`, `[package]`).
+- **Site pages broken by 0.7.4:** home (package commands, "never runs
+  the package's own code", workflow sections), setup tutorial (0.6
+  throughout), examples (package commands, platform-test listed).

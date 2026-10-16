@@ -73,11 +73,23 @@ class ModelMode(Enum):
     GEN   = "gen"
 
 
+_EXTENSIONS = {
+    "application/json":  "json",
+    "text/plain":        "txt",
+    "image/png":         "png",
+    "image/jpeg":        "jpg",
+    "audio/mpeg":        "mp3",
+    "audio/wav":         "wav",
+    "video/mp4":         "mp4",
+    "model/gltf-binary": "glb",
+}
+
+
 class OutputMimeType(Enum):
     """MIME types produced by model handlers.
 
-    The storage property determines whether an output field is written to
-    the output store (binary types) or the results table (text and JSON types).
+    storage says where an output field is kept: the object store
+    (binary types) or the results table (text and JSON types).
     """
 
     JSON        = "application/json"
@@ -92,8 +104,12 @@ class OutputMimeType(Enum):
     @property
     def storage(self) -> str:
         if self.value.startswith(("image/", "audio/", "video/", "model/")):
-            return "fs"
+            return "object"
         return "database"
+
+    @property
+    def extension(self) -> str:
+        return _EXTENSIONS.get(self.value, "bin")
 
 
 class ModelModalities(Enum):

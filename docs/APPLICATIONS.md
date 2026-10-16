@@ -152,6 +152,12 @@ Two fields on every request matter to applications:
 the catalogue, submits one request per model, polls, and exits 0 only
 if every tested model completed.
 
+A completed job with binary outputs returns references under `outputs`,
+each with `path`, `mimetype`, `bytes` and `sha256`. The bytes come from
+`GET /output/{mode}/{task}/{message_id}/{field}`; the reference's
+`sha256` checks what arrived. `platform-model-test` does this for
+`tts`.
+
 ---
 
 ## Not yet built

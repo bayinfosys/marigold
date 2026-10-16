@@ -1,6 +1,6 @@
-"""Common object definitions whic hare not request and response models."""
+"""Common object definitions which are not request and response models."""
 from enum import Enum
-from typing import Dict, List, TypeVar, Union, Any
+from typing import Any, Dict, List, Optional, TypeVar, Union
 
 import httpx
 
@@ -61,32 +61,19 @@ class EmbeddingQuantization(str, Enum):
     UBINARY = "ubinary"
 
 
-class OutputMimeType(str, Enum):
-    IMAGE_PNG  = "image/png"
-    IMAGE_JPEG = "image/jpeg"
-    AUDIO_MP3  = "audio/mpeg"
-    VIDEO_MP4  = "video/mp4"
-
-    @property
-    def extension(self) -> str:
-        _MAP = {
-            "image/png":  "png",
-            "image/jpeg": "jpg",
-            "audio/mpeg": "mp3",
-            "video/mp4":  "mp4",
-        }
-        return _MAP.get(self.value, "bin")
-
-
 class OutputReference(BaseModel):
-    """Reference to a binary output.
+    """Reference to a binary output in the object store.
 
-    Returned in model responses in place of inline binary data.
-    Key schema: outputs/{model_type}/{message_id}/{field_name}
+    Returned in model responses in place of inline binary data. Fetch the
+    bytes from GET /output/{mode}/{task}/{message_id}/{field}.
+
+    Key schema: outputs/{model_type}/{message_id}_{field_name}.{ext}
     """
 
     path: str = Field(..., description="object key")
     mimetype: str = Field(..., description="MIME type of the stored object")
+    bytes: Optional[int] = Field(None, description="size of the stored object")
+    sha256: Optional[str] = Field(None, description="sha256 of the stored object, hex")
 
 
 # ---------------------------------------------------------------------------

@@ -47,6 +47,16 @@ services:
       LIFECYCLE_TOPIC: lifecycle
       MARIGOLD_RESULTS_TABLE: results
       MARIGOLD_MODEL_CATALOGUE_TABLE: model_catalogue
+      # object store: read-only for the API; it serves what the worker wrote
+      MARIGOLD_STORAGE: ${MARIGOLD_STORAGE:-fs}
+      MARIGOLD_STORAGE_ROOT: /data
+      MARIGOLD_STORAGE_BUCKET: ${MARIGOLD_STORAGE_BUCKET:-}
+      MARIGOLD_STORAGE_ENDPOINT: ${MARIGOLD_STORAGE_ENDPOINT:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+    volumes:
+      - ${MARIGOLD_CACHE_DIR}/data/outputs:/data/outputs:ro
     labels:
       - "svc.marigold.description=Access to the marigold core services from outside the network"
     depends_on:

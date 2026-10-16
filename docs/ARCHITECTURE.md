@@ -96,6 +96,10 @@ trees (`_src/`). `marigold cache init` creates the layout with the
 invoking user's ownership; directories Docker creates for a bind mount
 are owned by root.
 
+In `s3` mode the worker and the API reach the object store by endpoint
+instead, and `data/outputs` is unused. The access design is the same
+as the database's: the worker writes, the API reads.
+
 ---
 
 ## Access model

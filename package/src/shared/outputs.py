@@ -1,7 +1,7 @@
 """Output persistence and binary I/O utilities.
 
-Writes binary inference outputs to the output store, and provides shared
-utilities for:
+Writes binary inference outputs to the object store (shared.storage), and
+provides shared utilities for:
     - image decoding and encoding
     - binary input handling (base64)
     - video frame extraction
@@ -9,11 +9,6 @@ utilities for:
 
 Inputs are base64 only. The worker makes no outbound calls, so no
 input is fetched from a URL.
-
-When the output store is unavailable (not configured, or a failed
-write) binary output operations log a warning and return an
-OutputReference with the intended key rather than raising. Inference
-results are unaffected; only persistence is skipped.
 """
 
 import base64
@@ -24,8 +19,9 @@ import tempfile
 from base64 import b64decode
 
 from PIL import Image
-from shared.enums import ModelType
-from shared.models import OutputReference, OutputMimeType
+from shared.enums import ModelType, OutputMimeType
+from shared.models import OutputReference
+from shared.storage import get_storage
 
 logger = logging.getLogger(__name__)
 
@@ -178,54 +174,37 @@ def frames_to_mp4_bytes(frames: list, fps: int) -> bytes:
 # ---------------------------------------------------------------------------
 
 
+def output_key(message_id: str, model_type: ModelType, field_name: str, mimetype: str) -> str:
+    """outputs/{model_type}/{message_id}_{field_name}.{ext}"""
+    ext = OutputMimeType(mimetype).extension
+    clean_id = message_id.removeprefix("API#")
+    return "outputs/%s/%s_%s.%s" % (model_type.value, clean_id, field_name, ext)
+
+
 def write_binary_output(
     message_id: str,
     model_type: ModelType,
     field_name: str,
     data: bytes,
     mimetype: str,
-) -> "OutputReference":
-    """Write binary model output to the output store and return an OutputReference.
+) -> OutputReference:
+    """Write binary model output to the object store and return its reference.
 
-    Key schema: outputs/{model_type}/{message_id}_{field_name}.{ext}
+    The reference carries the key, mimetype, size and sha256. It is
+    stored with the result, and the API's output route reads it to serve
+    the bytes.
 
-    :param message_id: unique identifier for this inference request
-    :param model_type: ModelType enum value, used as the key prefix
-    :param field_name: name of the output field, e.g. "audio", "image"
-    :param data:       raw binary content to store
-    :param mimetype:   MIME type of the content
-    :returns:          OutputReference with key and mimetype
-
-    Backend is selected by the OUTPUT_BACKEND environment variable:
-      "fs" (default) -- write under OUTPUT_DIR; the full path is
-                        OUTPUT_DIR / key
-
-    When the write fails, logs the failure and returns an OutputReference
-    with the intended key. Inference results are structurally valid; only
-    persistence is skipped.
+    Raises StorageError if the write fails: a result that references an
+    object which was never stored is a failed request, not a degraded one.
     """
-    ext = OutputMimeType(mimetype).extension
-    clean_id = message_id.removeprefix("API#")
-    key = "outputs/%s/%s_%s.%s" % (model_type.value, clean_id, field_name, ext)
-    backend = os.getenv("OUTPUT_BACKEND", "fs").lower()
+    key = output_key(message_id, model_type, field_name, mimetype)
+    saved = get_storage().save(key, data, mimetype)
 
-    if backend != "fs":
-        raise NotImplementedError(f"unknown OUTPUT_BACKEND: {backend}")
+    logger.info("[%s] wrote %ib to %s", message_id, saved.size, key)
 
-    output_dir = os.getenv("OUTPUT_DIR", "")
-    if not output_dir:
-        logger.warning("[%s] OUTPUT_DIR not set; %s not persisted", message_id, key)
-        return OutputReference(path=key, mimetype=mimetype)
-
-    full_path = os.path.join(output_dir, key)
-    os.makedirs(os.path.dirname(full_path), exist_ok=True)
-
-    try:
-        with open(full_path, "wb") as f:
-            f.write(data)
-
-        logger.info("wrote %ib to %s", len(data), full_path)
-    except Exception as e:
-        logger.error("failed to write output to %s: %s -- output not persisted", full_path, e)
-
-    return OutputReference(path=key, mimetype=mimetype)
+    return OutputReference(
+        path=saved.key,
+        mimetype=saved.mimetype,
+        bytes=saved.size,
+        sha256=saved.sha256,
+    )

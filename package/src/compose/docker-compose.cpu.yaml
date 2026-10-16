@@ -19,13 +19,19 @@ services:
       REMOTE_CODE: "0"
       USE_FAST: "0"
       MARIGOLD_TMP_OFFLOAD: "/tmp/models"
-      OUTPUT_BACKEND: "${OUTPUT_BACKEND:-fs}"
-      OUTPUT_DIR: /outputs
       MARIGOLD_MODEL_CATALOGUE_TABLE: model_catalogue
+      # object store: fs under /data by default; s3 from the host's environment
+      MARIGOLD_STORAGE: ${MARIGOLD_STORAGE:-fs}
+      MARIGOLD_STORAGE_ROOT: /data
+      MARIGOLD_STORAGE_BUCKET: ${MARIGOLD_STORAGE_BUCKET:-}
+      MARIGOLD_STORAGE_ENDPOINT: ${MARIGOLD_STORAGE_ENDPOINT:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
     volumes:
       - ${MARIGOLD_CACHE_DIR}/data/models:/models:ro
       - ${MARIGOLD_CACHE_DIR}/data/tmp:/tmp/models
-      - ${MARIGOLD_CACHE_DIR}/data/outputs:/outputs
+      - ${MARIGOLD_CACHE_DIR}/data/outputs:/data/outputs
     restart: on-failure:3
     labels:
       - "svc.marigold.description=Worker container pulls work from the queues and runs against models on host hardware"

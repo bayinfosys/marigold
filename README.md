@@ -123,6 +123,24 @@ value and the layer it came from.
 
 The full application format is in [APPLICATIONS.md](docs/APPLICATIONS.md).
 
+### Binary outputs
+
+Images, audio and video are stored as objects and served by the API at
+`GET /output/{mode}/{task}/{message_id}/{field}`. The store is set by
+environment variables, read by the worker and the API:
+
+```bash
+MARIGOLD_STORAGE=fs                 # default: files under the cache's data/outputs
+MARIGOLD_STORAGE=s3                 # any S3-compatible service
+MARIGOLD_STORAGE_BUCKET=marigold    # s3: the bucket must already exist
+MARIGOLD_STORAGE_ENDPOINT=http://...  # s3: unset means AWS S3
+AWS_ACCESS_KEY_ID=...               # s3: standard AWS variables
+AWS_SECRET_ACCESS_KEY=...
+AWS_DEFAULT_REGION=...
+```
+
+Set them in the shell profile: every `marigold` command reads them.
+
 ## The model cache
 
 ```bash
