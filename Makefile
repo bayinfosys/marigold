@@ -25,7 +25,7 @@ GHCR_NAMESPACE ?= ghcr.io/bayinfosys
 API_IMAGE      ?= $(GHCR_NAMESPACE)/marigold-api
 CACHE_IMAGE    ?= $(GHCR_NAMESPACE)/marigold-cache
 WORKER_IMAGE   ?= $(GHCR_NAMESPACE)/marigold-worker
-EXECUTOR_IMAGE ?= $(GHCR_NAMESPACE)/marigold-executor
+PYTHON_EXECUTOR_IMAGE ?= $(GHCR_NAMESPACE)/marigold-executor
 DOCKERFILE     := package/src/compose/Dockerfile
 PYTHON_EXECUTOR_DOCKERFILE     := package/src/compose/Dockerfile.executor
 
@@ -65,7 +65,7 @@ build/worker-gpu:
 build/executor:
 	docker build \
 	  --build-arg GIT_TAG=$(TAG) \
-	  -t $(EXECUTOR_IMAGE)-python:$(TAG) \
+	  -t $(PYTHON_EXECUTOR_IMAGE)-python:$(TAG) \
 	  -f $(PYTHON_EXECUTOR_DOCKERFILE) .
 
 .PHONY: build
@@ -92,12 +92,16 @@ push/worker:
 push/worker-gpu:
 	docker push $(WORKER_IMAGE):$(TAG)-gpu
 
+.PHONY: push/executor
+push/executor:
+	docker push $(PYTHON_EXECUTOR_IMAGE):$(TAG)
+
 .PHONY: push
-push: push/api push/cache push/worker push/worker-gpu
+push: push/api push/cache push/worker push/worker-gpu push/executor
 
 
 
-.PHONY: print/tag print/api-image print/cache-image print/worker-image print/worker-gpu-image
+.PHONY: print/tag print/api-image print/cache-image print/worker-image print/worker-gpu-image print/executor-image
 print/tag:
 	@echo $(TAG)
 print/api-image:
@@ -108,3 +112,5 @@ print/worker-image:
 	@echo $(WORKER_IMAGE)
 print/worker-gpu-image:
 	@echo $(WORKER_IMAGE)
+print/executor-image:
+	@echo $(PYTHON_EXECUTOR_IMAGE)
