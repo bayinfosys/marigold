@@ -961,3 +961,5 @@ Open:
 - **Site pages broken by 0.7.4:** home (package commands, "never runs
   the package's own code", workflow sections), setup tutorial (0.6
   throughout), examples (package commands, platform-test listed).
+- **OpenAI route: omit null tool_call_id and name** on assistant
+  messages in responses, matching OpenAI's own output.
