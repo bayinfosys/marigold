@@ -1,25 +1,25 @@
-"""Configuration: two TOML layers, package over system.
+"""Configuration: two TOML layers; application values win over system values.
 
 A system-level config (config.toml in the current directory,
 ~/.marigold/config.toml, or $MARIGOLD_CONFIG) carries host defaults --
-cache location, database URL, which compose files the platform runs. A
-package-level marigold.toml in the package root declares what the
-package is and what its application runs. Package values win per key;
+cache location, database URL, which compose files the platform runs. An
+application-level marigold.toml in the application root declares what
+the application is and what it runs. Application values win per key;
 anything neither sets falls back to a hardcoded default.
 
-Sections follow the three nouns:
+Sections:
 
     [platform]     host: compose files, image tag
     [cache]        host: where the cache lives
     [database]     host: connection string
-    [package]      the package: name, version, models_yaml, extra
+    [application]  the application: name, version, models_yaml, extra
                    compose files it needs
-    [execution]    the application: name, image, command
+    [execution]    the application's containers: name, image, command
     [environment]  variables forwarded to every service
 
-[deployment] is the pre-0.7 name for the platform and package settings
-and is still read, with a warning. It mixed the two layers, which is
-why it went.
+[package] and [deployment] are earlier section names. An application
+config that still uses either is rejected with a message naming the
+change.
 
 Nothing here touches the filesystem beyond reading those two files, and
 nothing here exits: callers decide what a missing or malformed config
@@ -30,28 +30,28 @@ import logging
 import os
 import tomllib
 
+# PackageNotFoundError is importlib's term for a Python distribution
+# package. It is unrelated to Marigold applications.
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 logger = logging.getLogger("marigold.cli.config")
 
-PACKAGE_CONFIG_NAME = "marigold.toml"
+APPLICATION_CONFIG_NAME = "marigold.toml"
 SYSTEM_CONFIG_NAME = "config.toml"
 DEFAULT_SYSTEM_CONFIG_PATH = Path.home() / ".marigold" / "config.toml"
 
-# (section, key) -> the pre-0.7 (section, key) it was read from.
-# package.compose_files has no entry: under [deployment] that key was
-# the platform's whole list, which is platform.compose_files now.
-LEGACY_KEYS = {
-    ("platform", "compose_files"): ("deployment", "compose_files"),
-    ("platform", "tag"): ("deployment", "tag"),
-    ("package", "models_yaml"): ("deployment", "models_yaml"),
+# Earlier section names in an application config, and what to do instead.
+RENAMED_SECTIONS = {
+    "package": "rename [package] to [application]",
+    "deployment": (
+        "[deployment] is no longer read: host settings go in [platform] "
+        "in the system config, application settings in [application]"
+    ),
 }
 
-_warned: set = set()
 
-
-def package_version() -> str:
+def marigold_version() -> str:
     """The installed marigold version, which is also the image tag."""
     try:
         return version("bayis-marigold")
@@ -97,95 +97,91 @@ def load_toml(path: Path) -> dict:
             raise ValueError(f"cannot parse {path}: {e}") from e
 
 
-def merge_config(system: dict, package: dict) -> dict:
-    """Shallow-merge each top-level section; package values win per key.
+# Host settings. An application config that sets them is rejected: the
+# host decides how the platform runs, and an application adds services
+# to it through [application].compose_files.
+HOST_SECTIONS = ("platform", "cache", "database")
 
-    [environment] merges the same way -- a package can set one variable
-    without needing to repeat any others the system config already set.
+
+def check_application_config(data: dict, path: Path) -> dict:
+    """Reject earlier section names and host settings in an application config."""
+    for section, message in RENAMED_SECTIONS.items():
+        if section in data:
+            raise ValueError(f"{path}: {message}")
+
+    host = [f"[{s}]" for s in HOST_SECTIONS if s in data]
+
+    if host:
+        raise ValueError(
+            f"{path}: {', '.join(host)} must be set in the system "
+            "config.toml, not in an application. An application adds "
+            "platform services with [application].compose_files."
+        )
+
+    return data
+
+
+def load_application_toml(path: Path) -> dict:
+    """Parse an application's marigold.toml and check its sections."""
+    return check_application_config(load_toml(path), path)
+
+
+def merge_config(system: dict, application: dict) -> dict:
+    """Shallow-merge each top-level section; application values win per key.
+
+    [environment] merges the same way -- an application can set one
+    variable without repeating any others the system config already set.
     """
     merged: dict = {}
 
-    for section in set(system) | set(package):
+    for section in set(system) | set(application):
         sys_section = system.get(section, {})
-        pkg_section = package.get(section, {})
+        app_section = application.get(section, {})
 
-        if isinstance(sys_section, dict) and isinstance(pkg_section, dict):
-            merged[section] = {**sys_section, **pkg_section}
+        if isinstance(sys_section, dict) and isinstance(app_section, dict):
+            merged[section] = {**sys_section, **app_section}
         else:
-            merged[section] = pkg_section if section in package else sys_section
+            merged[section] = app_section if section in application else sys_section
 
     return merged
 
 
-def _warn_legacy(section: str, key: str, legacy: tuple) -> None:
-    """Say once, per key, that a pre-0.7 section is being read."""
-    if (section, key) in _warned:
-        return
-
-    _warned.add((section, key))
-    logger.warning(
-        "[%s].%s is the old name for [%s].%s and will stop being read; "
-        "move it in your config",
-        legacy[0], legacy[1], section, key,
-    )
-
-
 def setting(config: dict, section: str, key: str, default=None):
-    """One value from a merged config, with the pre-0.7 fallback."""
-    if key in config.get(section, {}):
-        return config[section][key]
-
-    legacy = LEGACY_KEYS.get((section, key))
-
-    if legacy and legacy[1] in config.get(legacy[0], {}):
-        _warn_legacy(section, key, legacy)
-        return config[legacy[0]][legacy[1]]
-
-    return default
+    """One value from a merged config, or the default."""
+    return config.get(section, {}).get(key, default)
 
 
-def load_config(package_dir: Path) -> dict:
-    """The merged config for one package."""
-    package_config_path = package_dir / PACKAGE_CONFIG_NAME
+def load_config(application_dir: Path) -> dict:
+    """The merged config for one application."""
+    application_config_path = application_dir / APPLICATION_CONFIG_NAME
 
-    if not package_config_path.exists():
+    if not application_config_path.exists():
         raise FileNotFoundError(
-            f"no {PACKAGE_CONFIG_NAME} found in {package_dir} "
-            "-- doesn't look like a marigold package"
+            f"no {APPLICATION_CONFIG_NAME} found in {application_dir} "
+            "-- doesn't look like a marigold application"
         )
 
     system_config = load_toml(system_config_path())
-    package_config = load_toml(package_config_path)
+    application_config = load_application_toml(application_config_path)
 
-    return merge_config(system_config, package_config)
+    return merge_config(system_config, application_config)
 
 
 def load_system_config() -> dict:
-    """The system layer alone, for commands with no package in hand."""
+    """The system layer alone, for commands with no application in hand."""
     return load_toml(system_config_path())
 
 
-def resolve_with_source(system: dict, package: dict, section: str, key: str, default):
+def resolve_with_source(system: dict, application: dict, section: str, key: str, default):
     """Resolve one config value and say which layer set it.
 
-    Mirrors setting() and merge_config's precedence: package beats
-    system, current section beats the pre-0.7 one, and a hardcoded
-    default is the floor. Returned separately rather than merged, so
-    `config show` can report provenance -- the thing that makes a
-    surprising value diagnosable.
+    Mirrors merge_config's precedence: application beats system, and a
+    hardcoded default is the floor. Returned separately rather than
+    merged, so `config show` can report provenance -- the thing that
+    makes a surprising value diagnosable.
     """
-    legacy = LEGACY_KEYS.get((section, key))
-
-    candidates = [(package, section, "package"), (system, section, "system")]
-
-    if legacy:
-        candidates += [
-            (package, legacy[0], f"package [{legacy[0]}]"),
-            (system, legacy[0], f"system [{legacy[0]}]"),
-        ]
-
-    for layer, layer_section, source in candidates:
-        if key in layer.get(layer_section, {}):
-            return layer[layer_section][key], source
+    for layer, source in ((application, "application"), (system, "system")):
+        if key in layer.get(section, {}):
+            return layer[section][key], source
 
     return default, "default"

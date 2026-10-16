@@ -1,6 +1,6 @@
 """Text-to-image generation.
 
-Takes a text prompt and returns a generated image written to S3.
+Takes a text prompt and returns a generated image written to the output store.
 
 Uses diffusers DiffusionPipeline. Compatible with any diffusers-compatible
 checkpoint. The pipeline is stored as both self.model (base class contract)
@@ -9,7 +9,6 @@ and self.pipe (local alias used in _run).
 NUM_STEPS defaults to 10; override per-model via extra_env in models.yaml.
 """
 
-import json
 import logging
 import os
 from time import perf_counter as clock

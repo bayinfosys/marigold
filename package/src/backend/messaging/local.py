@@ -1,8 +1,8 @@
 """No-op notification backend for local development.
 
 Logs lifecycle events at DEBUG level. No network calls, no threads,
-no database tables. Used in place of SNSNotificationBackend locally
-so the worker can publish events without any AWS dependency.
+no database tables. Used in place of a networked notification backend
+so the worker can publish events with no external dependency.
 """
 
 import logging

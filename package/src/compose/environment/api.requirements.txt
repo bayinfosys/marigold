@@ -1,4 +1,3 @@
 # local execution support libraries
 uvicorn
 fastapi
-#fastapi-aws

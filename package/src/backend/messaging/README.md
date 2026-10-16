@@ -1,39 +1,27 @@
-# dynawrap.messaging -- queue and notification backends.
+# backend.messaging -- queue and notification backends
 
-Provides QueueBackend and NotificationBackend interfaces with implementations
-for AWS (SQS/SNS) and PostgreSQL. Import the backend you need directly to
-avoid pulling in unnecessary dependencies.
+QueueBackend and NotificationBackend interfaces (`base.py`), with the
+implementations the platform uses:
+
+- `postgres.py` -- `PostgresQueueBackend`: queue tables in the platform
+  database, claimed with `SELECT ... FOR UPDATE SKIP LOCKED`.
+- `local.py` -- `LocalNotificationBackend`: logs lifecycle events at
+  DEBUG level, with no network calls, threads or tables.
+
+Import the backend you need directly.
 
 ## Usage
 
-```AWS
-from dynawrap.messaging.sqs_sns import SQSQueueBackend, SNSNotificationBackend
-```
-
-```Postgres
-from dynawrap.messaging.postgres import PostgresQueueBackend, PostgresNotificationBackend
-```
-
-Setup (Postgres):
-
 ```python
-    import psycopg2
-    conn = psycopg2.connect(dsn)
+import psycopg2
 
-    queue = PostgresQueueBackend(conn)
-    queue.create_queue("my-queue")
+from backend.messaging.local import LocalNotificationBackend
+from backend.messaging.postgres import PostgresQueueBackend
 
-    notifications = PostgresNotificationBackend(dsn)
-    notifications.create_topic("lifecycle")
-    notifications.start_repeater()
-```
+conn = psycopg2.connect(dsn)
 
-Setup (AWS / LocalStack):
+queue = PostgresQueueBackend(conn)
+queue.create_queue("my-queue")
 
-```python
-    queue = SQSQueueBackend(endpoint_url="http://localhost:4566")
-    queue.create_queue("my-queue")
-
-    notifications = SNSNotificationBackend(endpoint_url="http://localhost:4566")
-    notifications.create_topic("lifecycle")
+notifications = LocalNotificationBackend()
 ```

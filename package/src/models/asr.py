@@ -84,12 +84,12 @@ def load_asr(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResu
 
 
 def _decode_audio(input_str: str, target_sr: int) -> dict:
-    """Decode a base64 or s3:// audio input to a pipeline-ready dict.
+    """Decode a base64 audio input to a pipeline-ready dict.
 
     Returns {"array": np.ndarray, "sampling_rate": int} where array is
     mono float32 normalised to [-1.0, 1.0] at target_sr.
 
-    decode_binary_input handles the base64/s3:// dispatch. The pydub
+    decode_binary_input handles the base64 decoding. The pydub
     conversion step (format detection, channel collapse, resampling) is
     specific to audio and lives here rather than in shared.outputs.
     """

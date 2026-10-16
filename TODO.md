@@ -922,3 +922,30 @@ Open:
   Building this means a vision-aware loader and _run() in instruct.py, not
   just retyping a catalogue entry -- see shared/models.py's note on
   InstructMessageImageContent.
+
+
+## Backlog (found during the 0.7.0 release work)
+
+- **Scheduler holds an idle model while other queues wait.** A model
+  stays resident for MARIGOLD_QUEUE_IDLE_TIMEOUT after its queue
+  empties, even when another queue has messages. Release early when
+  any other queue is non-empty. Affects every multi-model application.
+- **Chat template arguments.** No way to pass `enable_thinking` and
+  similar through /gen/instruct or the OpenAI route.
+- **Reinstall leaves the previous `_src/<digest>` tree.** Uninstall
+  cleans up; replacement does not.
+- **`load_all()` omits obs2act, vid2txt and vid2vid.** The handlers
+  exist; they are never registered.
+- **pydub imported at module level in asr.py.** Warns in every
+  container without ffmpeg; import it where it is used.
+- **The API and the worker create tables at startup.** Table creation
+  belongs to the cache container.
+- **System config found in the working directory first.** Caught the
+  release work today; consider dropping the cwd lookup or warning
+  when a cwd config shadows the home one.
+- **Environment audit**, **safe catalogue loading**, **clearing
+  failed_reason**: carried from 6 October.
+- **Worker idle timeout serialises models (parked).** A model stays
+  resident for MARIGOLD_QUEUE_IDLE_TIMEOUT after its queue empties,
+  delaying other queues. Attempts to fix it have not worked. For
+  timing runs, set IDLE_TIMEOUT=0.

@@ -1,13 +1,10 @@
 """API catalogue routes: OpenAPI spec and model list.
 
-On AWS these are served directly from S3 via API Gateway integrations.
 Locally the OpenAPI spec is served by FastAPI's built-in /openapi.json
 endpoint, so this route is a no-op stub. models.json is served from
 the local filesystem if MODELS_JSON_PATH is set.
 """
 
-import json
-import os
 
 from fastapi import Request, Security, APIRouter
 from fastapi.responses import JSONResponse

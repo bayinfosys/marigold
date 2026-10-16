@@ -1,6 +1,6 @@
 """Shared enumerations.
 
-Importable without pulling in boto3, pydantic, or any ML dependencies.
+Importable without pulling in pydantic or any ML dependencies.
 All three enum classes must be kept in sync with:
   - models.yaml  (type/mode strings)
   - _SPECS registry  (ModelType values used as keys)
@@ -77,7 +77,7 @@ class OutputMimeType(Enum):
     """MIME types produced by model handlers.
 
     The storage property determines whether an output field is written to
-    S3 (binary types) or DynamoDB (text and JSON types).
+    the output store (binary types) or the results table (text and JSON types).
     """
 
     JSON        = "application/json"
@@ -93,7 +93,7 @@ class OutputMimeType(Enum):
     def storage(self) -> str:
         if self.value.startswith(("image/", "audio/", "video/", "model/")):
             return "fs"
-        return "dynamodb"
+        return "database"
 
 
 class ModelModalities(Enum):

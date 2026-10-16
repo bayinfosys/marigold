@@ -1,6 +1,6 @@
 """Video-to-video transformation.
 
-Takes a source video and returns a transformed video written to S3.
+Takes a source video and returns a transformed video written to the output store.
 
 The source video is decoded to frames, passed to a video diffusion pipeline
 as conditioning, and the output frames are encoded to MP4. The strength

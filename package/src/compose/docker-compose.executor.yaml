@@ -1,11 +1,11 @@
-# The application layer: one package's code, running against the API.
+# The application layer: one application's code, running against the API.
 #
 # Started by `marigold application start` as compose project
 # marigold-<application>, separate from the platform, so starting,
 # stopping or resizing one application touches nothing else.
 #
 # Every variable here is set by the CLI (cli/compose.py, compose_env).
-# The package root is mounted read-only at /app, so a flat package runs
+# The application root is mounted read-only at /app, so a flat application runs
 # main.py and a larger one adds modules and data beside it.
 
 services:
@@ -20,11 +20,11 @@ services:
       MARIGOLD_APPLICATION_ID: ${MARIGOLD_APPLICATION_ID}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - ${MARIGOLD_PACKAGE_DIR}:/app:ro
+      - ${MARIGOLD_APPLICATION_DIR}:/app:ro
       - ${MARIGOLD_APPLICATIONS_DIR}/${MARIGOLD_APPLICATION_NAME}/outputs:/outputs
     restart: "no"
     labels:
-      svc.marigold.description: "Application code for one package, running against the API"
+      svc.marigold.description: "Application code for one application, running against the API"
     networks:
       - applications
 

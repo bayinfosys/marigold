@@ -38,7 +38,7 @@ services:
 
   api:
     image: ${API_IMAGE:-ghcr.io/bayinfosys/marigold-api}:${TAG:-latest}
-    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "${API_PORT:-8000}:8000"
     environment:
@@ -47,8 +47,6 @@ services:
       LIFECYCLE_TOPIC: lifecycle
       MARIGOLD_RESULTS_TABLE: results
       MARIGOLD_MODEL_CATALOGUE_TABLE: model_catalogue
-    volumes:
-      - ${MARIGOLD_PACKAGE_DIR}:/app/marigold:ro
     labels:
       - "svc.marigold.description=Access to the marigold core services from outside the network"
     depends_on:

@@ -3,7 +3,6 @@
 from fastapi import Security, APIRouter
 from fastapi.responses import JSONResponse
 
-from api.auth import apikey_auth, User
 
 
 cognito_auth = None

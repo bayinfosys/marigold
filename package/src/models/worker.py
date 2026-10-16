@@ -24,7 +24,7 @@ this process runs is picked up on the next sweep, and a failure it records
 survives its own restart.
 
 The worker has no knowledge of why a job was submitted -- whether it came
-from a direct API call or a workflow step. It writes the result to
+from a direct API call. It writes the result to
 results_cache and publishes lifecycle events.
 """
 
@@ -391,6 +391,7 @@ class QueueRunner:
                     user_id=msg.user_id,
                     model_type=self.model_type,
                     model_name=self.model_name,
+                    message_id=msg.message_id,
                 )
             )
 

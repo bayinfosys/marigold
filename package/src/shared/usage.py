@@ -10,7 +10,6 @@ import os
 
 from dynawrap.backends.postgres import PostgresBackend
 
-from shared.enums import ModelType
 from api.models import ModelUsageStats
 from shared.usage_models import UsageItem
 from shared.database import get_database_connection

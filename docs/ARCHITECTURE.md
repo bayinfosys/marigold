@@ -11,25 +11,25 @@ describes the result.
 **Platform.** Postgres, the API, the worker and the cache container.
 One per host, shared by every application. Compose project `marigold`.
 Configured entirely by the system config, so it starts, stops and
-reports with no package in hand:
+reports with no application in hand:
 
     marigold platform start
     marigold platform status
     marigold platform logs [service]
     marigold platform stop [--applications]
 
-**Package.** A directory or archive holding `marigold.toml`, one or more
-`models.yaml` files, and application code. Installed into the cache
-under its name. See PACKAGES.md.
+**Application.** A directory or archive holding `marigold.toml`, one or
+more `models.yaml` files, and the code that uses them. Installed into
+the cache under its name. See APPLICATIONS.md.
 
-**Application.** A package's code running in its own container, compose
-project `marigold-<application>`. Started, stopped and replaced without
-touching the platform or any other application.
+**Instance.** An application's code running in its own container,
+compose project `marigold-<application>`. Started, stopped and replaced
+without touching the platform or any other application.
 
-    marigold application start <package>
-    marigold application status <package>
-    marigold application logs <package>
-    marigold application stop <package>
+    marigold application start <name>
+    marigold application status <name>
+    marigold application logs <name>
+    marigold application stop <name>
 
 `application start` brings the platform up first when it is not already
 running. Several applications share one platform; stopping one leaves
@@ -42,17 +42,20 @@ the others and the platform running.
 Two components face outward. Everything else is internal.
 
 **The cache container** is the gateway for artefacts. It downloads
-weights, reads installed packages, creates the platform's tables, and
-writes the catalogue. It is the only component that needs outbound
+weights, reads installed applications, creates the platform's tables,
+and writes the catalogue. It is the only component that needs outbound
 network access, and the only one that writes the model cache.
 
 **The API** is the gateway for requests. Applications and external
 clients submit work, poll results, and read the catalogue through it.
-It is the only component on both networks, and the place
-authentication will live.
+It is the only component on both networks.
 
 The worker talks to Postgres and reads the cache. It makes no outbound
 calls: `HF_HUB_OFFLINE` is set, and the cache is mounted read-only.
+
+Authentication is the deployment's concern. Marigold trusts the
+`X-User-Id` header it receives; a proxy or load balancer in front of
+the API authenticates callers and sets it.
 
 ---
 
@@ -61,7 +64,7 @@ calls: `HF_HUB_OFFLINE` is set, and the cache is mounted read-only.
 | Network | Members | Purpose |
 |---|---|---|
 | `marigold-core` | postgres, worker, cache-init, api | platform internals |
-| `marigold-applications` | api, every application executor | the only route from an application to the platform |
+| `marigold-applications` | api, every instance | the only route from an application to the platform |
 
 Postgres publishes no port on the host. Containers on `marigold-core`
 reach it as `postgres:5432`; nothing else can. For a shell:
@@ -78,7 +81,7 @@ compose projects share them.
 
 ## Mounts
 
-| Host path (under the cache root) | cache-init | worker | api | executor |
+| Host path (under the cache root) | cache-init | worker | api | instance |
 |---|---|---|---|---|
 | `data/models` | read-write | read-only | -- | -- |
 | `data/applications` | read-only (`/applications`) | -- | -- | -- |
@@ -86,12 +89,12 @@ compose projects share them.
 | `data/applications/<name>/outputs` | -- | -- | -- | read-write (`/outputs`) |
 | `data/outputs`, `data/tmp` | -- | read-write | -- | -- |
 | `data/postgres` | -- | -- | -- | -- (postgres only) |
-| `data/packages` | -- | -- | -- | -- (CLI only) |
 
-The CLI, on the host, writes `data/packages` (archives and the installed
-index) and `data/applications/_src` (extracted packages). `marigold cache
-init` creates the layout with the invoking user's ownership; directories
-Docker creates for a bind mount are owned by root.
+The CLI, on the host, writes under `data/applications`: the installed
+index (`installed.json`), the archives (`_archives/`) and the extracted
+trees (`_src/`). `marigold cache init` creates the layout with the
+invoking user's ownership; directories Docker creates for a bind mount
+are owned by root.
 
 ---
 
@@ -122,12 +125,12 @@ worker owns, so the catalogue stays a record of cache contents.
 ## The catalogue
 
 A catalogue row means a model's weights are in the cache. `marigold
-cache populate <package>` reads the package's models.yaml inside the
+cache populate <name>` reads the application's models.yaml inside the
 cache container, downloads what is missing, and registers each model as
 its weights are confirmed: queue first, then row. A model that fails to
 download gets no row.
 
-The catalogue is host-wide. Rows accumulate across packages and are
+The catalogue is host-wide. Rows accumulate across applications and are
 never removed by uninstalling one: a cached model stays available to
 every application.
 
@@ -170,8 +173,10 @@ future work, recorded in TODO.md.
 - The worker still creates its own tables at startup.
 - `marigold-core` has a route out; making it internal needs the cache
   container on a separate egress network.
-- Package archives are extracted with `filter="data"` and no limit on
-  uncompressed size or member count.
+- Application archives are extracted with `filter="data"` and no limit
+  on uncompressed size or member count.
+- The installed index is written by the CLI on the host, outside any
+  container's ownership.
 - The system config is found relative to the working directory before
   the home directory, so changing directory can change which cache and
   platform the CLI addresses.

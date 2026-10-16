@@ -1,41 +1,42 @@
-"""marigold -- CLI for running Marigold packages.
+"""marigold -- CLI for running Marigold applications.
 
 Three nouns
 -----------
 platform     postgres, api, worker, cache-init. One per host, shared by
-             every package, compose project 'marigold'. Configured
+             every application, in its own compose project. Configured
              entirely from the system config, so it starts, stops and
-             reports with no package in hand.
-package      a directory or archive holding marigold.toml, models.yaml
-             files, and application code. Installing one puts it in the
+             reports with no application in hand.
+application  a directory or archive holding marigold.toml, models.yaml
+             files and application code. Installing one puts it in the
              cache under its name; populating the cache from it writes
              the model catalogue.
-application  a package's containers, compose project
-             'marigold-<application>'. Started, stopped and resized
+instance     an application's running containers, in compose project
+             'marigold-<application>'. Started, stopped and inspected
              without touching the platform or any other application.
 
-'marigold app ...' is an alias for 'marigold application ...',
-Note that it stops the application alone: bringing the platform down is
-'marigold platform stop'.
+'marigold app ...' is an alias for 'marigold application ...'. Stopping
+an application stops its containers alone: bringing the platform down
+is 'marigold platform stop'.
 
 Layout
 ------
-config.py    two TOML layers, package over system, with provenance
-paths.py     the cache layout and its creation
-packages.py  package identity, archives, installation, resolution
-compose.py   compose projects, environment, invocation
-commands.py  the cmd_* functions; the only layer that exits
-main.py      the parser
+config.py        the two TOML layers
+paths.py         the cache layout and its creation
+archives.py      writing and extracting application archives
+applications.py  identity, declared models, installation, resolution
+compose.py       compose projects, environment, invocation
+commands.py      the cmd_* functions; the only layer that exits
+main.py          the parser
 
-The package root is mounted read-only at /app in the executor, so a
-flat package runs main.py and a larger one adds modules, workflows and
-subdirectories as it needs them. Package layout beyond marigold.toml is
-the package's own business -- see PACKAGES.md.
+The application root is mounted read-only at /app in the executor, so a
+flat application runs main.py and a larger one adds modules and
+subdirectories as it needs them. Layout beyond marigold.toml is private
+to the application -- see APPLICATIONS.md.
 
-This CLI never runs a model or touches torch. cache validate and
-package create import models.catalogue for schema validation only --
-that module's import chain was checked directly to confirm it has no
-eager side effects (no DB connection, no network call) at import time.
+This CLI never runs a model or touches torch. cache validate imports
+models.catalogue for schema validation only -- that module's import
+chain was checked directly to confirm it has no eager side effects (no
+DB connection, no network call) at import time.
 """
 
 import argparse
@@ -44,16 +45,16 @@ import os
 import sys
 
 from cli import commands
-from cli.config import package_version
+from cli.config import marigold_version
 from cli.paths import CacheNotWritable
 
-TARGET_HELP = "installed package name, package directory, or archive"
+TARGET_HELP = "installed application name, directory, or archive"
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="marigold")
     parser.add_argument(
-        "--version", action="version", version=f"marigold {package_version()}"
+        "--version", action="version", version=f"marigold {marigold_version()}"
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -64,14 +65,14 @@ def build_parser() -> argparse.ArgumentParser:
     plat_start_p = plat_sub.add_parser("start", help="start the platform")
     plat_start_p.add_argument(
         "target", nargs="?", default=None,
-        help=f"optional package whose compose files to add ({TARGET_HELP})",
+        help=f"optional application whose compose files to add ({TARGET_HELP})",
     )
     plat_start_p.set_defaults(func=commands.cmd_platform_start)
 
     plat_stop_p = plat_sub.add_parser("stop", help="stop the platform")
     plat_stop_p.add_argument(
         "--applications", action="store_true",
-        help="stop every application first",
+        help="stop applications first",
     )
     plat_stop_p.set_defaults(func=commands.cmd_platform_stop)
 
@@ -83,11 +84,11 @@ def build_parser() -> argparse.ArgumentParser:
     plat_logs_p.add_argument("--no-follow", action="store_true", help="print current logs and exit, don't tail")
     plat_logs_p.set_defaults(func=commands.cmd_platform_logs)
 
-    # application ('deployment' kept as an alias while marigold.run is updated)
+    # application: build, install and run
     app = sub.add_parser(
         "application",
         aliases=["app"],
-        help="run a package's application against the platform",
+        help="build, install and run applications",
     )
     app_sub = app.add_subparsers(dest="application_command", required=True)
 
@@ -106,6 +107,22 @@ def build_parser() -> argparse.ArgumentParser:
     app_logs_p.add_argument("--no-follow", action="store_true", help="print current logs and exit, don't tail")
     app_logs_p.set_defaults(func=commands.cmd_application_logs)
 
+    create_p = app_sub.add_parser("create", help="build an application archive from a directory")
+    create_p.add_argument("target", nargs="?", default=".", help="application directory")
+    create_p.add_argument("-o", "--output", default=".", help="output directory, or a filename ending in .tar.gz")
+    create_p.set_defaults(func=commands.cmd_application_create)
+
+    install_p = app_sub.add_parser("install", help="install an application archive")
+    install_p.add_argument("archive", help="application archive to install")
+    install_p.set_defaults(func=commands.cmd_application_install)
+
+    list_p = app_sub.add_parser("list", help="list installed applications")
+    list_p.set_defaults(func=commands.cmd_application_list)
+
+    uninstall_p = app_sub.add_parser("uninstall", help="remove an installed application")
+    uninstall_p.add_argument("name", help="installed application name")
+    uninstall_p.set_defaults(func=commands.cmd_application_uninstall)
+
     # config
     cfg = sub.add_parser("config", help="inspect marigold configuration")
     cfg_sub = cfg.add_subparsers(dest="config_command", required=True)
@@ -116,7 +133,7 @@ def build_parser() -> argparse.ArgumentParser:
     show_p = cfg_sub.add_parser("show", help="print resolved config and where each value came from")
     show_p.add_argument(
         "target", nargs="?", default=None,
-        help=f"{TARGET_HELP}, to include package-level values",
+        help=f"{TARGET_HELP}, to include application-level values",
     )
     show_p.set_defaults(func=commands.cmd_config_show)
 
@@ -127,13 +144,13 @@ def build_parser() -> argparse.ArgumentParser:
     init_p = cache_sub.add_parser("init", help="create the cache layout for this host")
     init_p.set_defaults(func=commands.cmd_cache_init)
 
-    validate_p = cache_sub.add_parser("validate", help="check a package's models.yaml loads cleanly")
+    validate_p = cache_sub.add_parser("validate", help="check an application's models.yaml loads cleanly")
     validate_p.add_argument("target", nargs="?", default=".", help=TARGET_HELP)
     validate_p.set_defaults(func=commands.cmd_cache_validate)
 
-    populate_p = cache_sub.add_parser("populate", help="download the models an installed package declares")
-    populate_p.add_argument("target", nargs="?", default=".", help="installed package name")
-    populate_p.add_argument("--prune", action="store_true", help="remove cached models this package does not declare")
+    populate_p = cache_sub.add_parser("populate", help="download the models an installed application declares")
+    populate_p.add_argument("target", nargs="?", default=".", help="installed application name")
+    populate_p.add_argument("--prune", action="store_true", help="remove cached models this application does not declare")
     populate_p.set_defaults(func=commands.cmd_cache_populate)
 
     inspect_p = cache_sub.add_parser("inspect", help="list cached models, disk usage, and cache location")
@@ -141,30 +158,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     seed_p = cache_sub.add_parser("seed", help="share cached models with the network via torrent (not yet implemented)")
     seed_p.set_defaults(func=commands.cmd_cache_stub)
-
-    # package
-    pkg = sub.add_parser("package", help="build and install Marigold packages")
-    pkg_sub = pkg.add_subparsers(dest="package_command", required=True)
-
-    create_p = pkg_sub.add_parser("create", help="build a package archive from a directory")
-    create_p.add_argument("target", nargs="?", default=".", help="package directory")
-    create_p.add_argument("-o", "--output", default=".", help="output directory, or a filename ending in .tar.gz")
-    create_p.set_defaults(func=commands.cmd_package_create)
-
-    install_p = pkg_sub.add_parser("install", help="install a package archive")
-    install_p.add_argument("archive", help="package archive to install")
-    install_p.set_defaults(func=commands.cmd_package_install)
-
-    list_p = pkg_sub.add_parser("list", help="list installed packages")
-    list_p.set_defaults(func=commands.cmd_package_list)
-
-    uninstall_p = pkg_sub.add_parser("uninstall", help="remove an installed package")
-    uninstall_p.add_argument("name", help="installed package name")
-    uninstall_p.set_defaults(func=commands.cmd_package_uninstall)
-
-    for name in ["repo", "update", "sign", "publish"]:
-        p = pkg_sub.add_parser(name)
-        p.set_defaults(func=commands.cmd_package_stub)
 
     return parser
 

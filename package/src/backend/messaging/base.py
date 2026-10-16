@@ -2,7 +2,7 @@
 
 All backends inherit from QueueBackend or NotificationBackend and implement
 every method. The interfaces define the contract; implementations are free to
-use any underlying transport (SQS/SNS, Postgres, SQLite, etc.).
+use any underlying transport (Postgres, in-process, etc.).
 
 Queue semantics
 ---------------
@@ -87,8 +87,8 @@ class QueueBackend:
     def depth(self, queue: str) -> int:
         """Return the number of visible (not in-flight) messages.
 
-        The value is approximate on backends where counting is non-atomic
-        (e.g. SQS). Use for monitoring and queue selection, not for flow
+        The value is approximate on backends where counting is
+        non-atomic. Use for monitoring and queue selection, not for flow
         control.
 
         Args:

@@ -1,6 +1,6 @@
 """Text-to-audio generation: music and sound effects.
 
-Takes a text prompt and returns a generated audio clip written to S3.
+Takes a text prompt and returns a generated audio clip written to the output store.
 
 Two model families are supported:
 

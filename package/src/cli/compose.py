@@ -1,8 +1,8 @@
-"""Compose invocation: two projects, two environments.
+"""Compose invocation: two kinds of project, two environments.
 
 The platform (postgres, api, worker, cache-init) runs as project
-'marigold': one per host, shared by every package. A package's
-application containers run as project 'marigold-<application>'.
+'marigold': one per host, shared by every application. An
+application's containers run as project 'marigold-<application>'.
 
 Compose treats everything under a project name as one set, starting
 what is missing and removing what a run no longer declares, which is
@@ -10,9 +10,9 @@ why these cannot share a name. They are joined by the
 marigold-applications network, declared in docker-compose.core.yaml and
 joined as external by the executor.
 
-platform_env needs no package, which is what lets the platform start,
-stop and be inspected on its own. compose_env adds the package and
-application variables on top of it.
+platform_env needs no application, which is what lets the platform
+start, stop and be inspected on its own. compose_env adds the
+application's variables on top of it.
 """
 
 import json
@@ -23,8 +23,8 @@ import subprocess
 from importlib.resources import files
 from pathlib import Path
 
-from cli.config import package_version, setting
-from cli.packages import application_name
+from cli.applications import application_name
+from cli.config import marigold_version, setting
 from cli.paths import cache_dir_from_config, cache_paths
 
 COMPOSE_FILES = {
@@ -39,7 +39,7 @@ PLATFORM_PROJECT = "marigold"
 
 DEFAULT_PLATFORM_COMPOSE_FILES = ["core", "cpu"]
 
-# Compose files describing a package's application containers. Not
+# Compose files describing an application's containers. Not
 # configurable: an application is one service definition, parameterised
 # through the environment.
 APPLICATION_COMPOSE_FILES = ["executor"]
@@ -58,20 +58,20 @@ def default_tag() -> str:
     normalises away any 'v', so the two agree only when nothing adds one
     back.
     """
-    return package_version()
+    return marigold_version()
 
 
 def platform_compose_files(config: dict) -> list[str]:
-    """Compose files describing the platform, plus any a package adds.
+    """Compose files describing the platform, plus any an application adds.
 
-    [platform].compose_files is the host's own list. A package's
-    [package].compose_files are additions: an overlay it needs (gpu) or
-    a service it brings (webui). Appended in order, so an overlay lands
-    after the file it overlays.
+    [platform].compose_files is the host's own list. An application's
+    [application].compose_files are additions: an overlay it needs (gpu)
+    or a service it brings (webui). Appended in order, so an overlay
+    lands after the file it overlays.
     """
     names = list(setting(config, "platform", "compose_files", DEFAULT_PLATFORM_COMPOSE_FILES))
 
-    for name in config.get("package", {}).get("compose_files", []):
+    for name in setting(config, "application", "compose_files", []):
         if name not in names:
             names.append(name)
 
@@ -99,11 +99,11 @@ def execution_command(config: dict) -> str | None:
 def execution_image(config: dict, tag: str) -> str:
     """The executor image reference, tag included.
 
-    A reference carrying a tag or a digest is taken as written: a
-    package pinning marigold-executor-node:1.4 means that version,
+    A reference carrying a tag or a digest is taken as written: an
+    application pinning marigold-executor-node:1.4 means that version,
     whatever the platform is running. An untagged reference gets the
     platform's tag, which keeps the default image in step with the rest
-    of the deployment without anyone declaring it.
+    of the platform without anyone declaring it.
     """
     image = str(config.get("execution", {}).get("image", DEFAULT_EXECUTION_IMAGE))
 
@@ -144,9 +144,9 @@ def compose_base_cmd(
 def platform_env(config: dict) -> dict:
     """Everything the platform's compose files read.
 
-    No package: nothing in the platform's services reads one. The cache
-    container mounts the applications directory, which is where an
-    installed package lives, and is told which file to read when
+    No application: nothing in the platform's services reads one. The
+    cache container mounts the applications directory, which is where an
+    installed application lives, and is told which one to read when
     `cache populate` runs it.
     """
     env = dict(os.environ)
@@ -155,6 +155,8 @@ def platform_env(config: dict) -> dict:
     cache_dir = cache_dir_from_config(config)
     env["MARIGOLD_CACHE_DIR"] = str(cache_dir)
 
+    # MARIGOLD_MODELS_DIR, MARIGOLD_TMP_DIR, MARIGOLD_OUTPUTS_DIR,
+    # MARIGOLD_APPLICATIONS_DIR: one per entry in paths.CACHE_SUBDIRS.
     for name, path in cache_paths(cache_dir).items():
         env[f"MARIGOLD_{name.upper()}_DIR"] = str(path)
 
@@ -165,26 +167,26 @@ def platform_env(config: dict) -> dict:
     if db_url:
         env["MARIGOLD_DATABASE_URL"] = db_url
 
-    # Package-declared variables for services other than api/worker/cache
-    # -- e.g. RAG_EMBEDDING_MODEL for open-webui. The CLI doesn't know or
-    # care what these mean; it just forwards them.
+    # Application-declared variables for services other than
+    # api/worker/cache -- e.g. RAG_EMBEDDING_MODEL for open-webui. The
+    # CLI doesn't know or care what these mean; it just forwards them.
     for key, value in config.get("environment", {}).items():
         env[str(key)] = str(value)
 
     return env
 
 
-def compose_env(package_dir: Path, config: dict) -> dict:
-    """The platform environment, plus the package and application."""
+def compose_env(application_dir: Path, config: dict) -> dict:
+    """The platform environment, plus the application's own variables."""
     env = platform_env(config)
 
-    env["MARIGOLD_PACKAGE_DIR"] = str(package_dir)
+    env["MARIGOLD_APPLICATION_DIR"] = str(application_dir)
 
-    # MARIGOLD_APPLICATION_ID is the name while a package runs one
+    # MARIGOLD_APPLICATION_ID is the name while an application runs one
     # instance; instance expansion appends a suffix to it and leaves
     # MARIGOLD_APPLICATION_NAME alone, so code and usage rows can group
     # by application either way.
-    name = application_name(package_dir, config)
+    name = application_name(application_dir, config)
     env["MARIGOLD_APPLICATION_NAME"] = name
     env["MARIGOLD_APPLICATION_ID"] = name
     env["MARIGOLD_EXECUTION_IMAGE"] = execution_image(config, env["TAG"])
@@ -197,7 +199,7 @@ def compose_env(package_dir: Path, config: dict) -> dict:
 
 
 def run_compose(
-    package_dir: Path | None,
+    application_dir: Path | None,
     config: dict,
     extra_args: list[str],
     env: dict | None = None,
@@ -211,25 +213,25 @@ def run_compose(
     containers described by a different file.
     """
     if env is None:
-        env = compose_env(package_dir, config) if package_dir else platform_env(config)
+        env = compose_env(application_dir, config) if application_dir else platform_env(config)
 
     names = compose_file_names or platform_compose_files(config)
-    cmd = compose_base_cmd(project, names, project_directory=package_dir) + extra_args
+    cmd = compose_base_cmd(project, names, project_directory=application_dir) + extra_args
 
     return subprocess.run(cmd, env=env).returncode
 
 
 def run_application_compose(
-    package_dir: Path,
+    application_dir: Path,
     config: dict,
     extra_args: list[str],
     env: dict | None = None,
 ) -> int:
-    """Run one docker compose command against this package's application."""
-    name = application_name(package_dir, config)
+    """Run one docker compose command against this application's containers."""
+    name = application_name(application_dir, config)
 
     return run_compose(
-        package_dir, config, extra_args,
+        application_dir, config, extra_args,
         env=env,
         project=application_project(name),
         compose_file_names=APPLICATION_COMPOSE_FILES,
@@ -241,8 +243,8 @@ def run_project_compose(project: str, extra_args: list[str]) -> int:
 
     down, ps and logs resolve what they act on from container labels,
     so they need neither the files nor the environment. This is what
-    lets the platform, and an application whose package has since been
-    removed, be stopped and inspected.
+    lets the platform, and an application that has since been
+    uninstalled, be stopped and inspected.
     """
     return subprocess.run(["docker", "compose", "-p", project] + extra_args).returncode
 

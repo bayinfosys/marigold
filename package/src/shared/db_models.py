@@ -1,19 +1,16 @@
 """
-shared/db_models.py -- DynamoDB item definitions for shared tables.
+shared/db_models.py -- item definitions for the platform's tables.
 
 PK/SK patterns are the authoritative source for all key construction.
 Values are sourced from CONTRACTS.md. No key strings are constructed
 anywhere outside this module.
 
-All items use boto3.client("dynamodb") wire format via to_dynamo_item().
-Never use boto3.resource or Table objects with these items.
+Items are persisted through a dynawrap backend: Postgres on the platform.
 """
 import os
-import json
 import time
 from hashlib import md5 as _md5
 from typing import ClassVar, Optional
-from datetime import datetime
 
 from dynawrap import DBItem
 from pydantic import BaseModel, Field, computed_field

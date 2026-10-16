@@ -12,8 +12,7 @@ logger = logging.getLogger(__name__)
 class ResultsCache:
     """Backend-agnostic wrapper for job result storage.
 
-    Replaces the module-level DynamoDB calls in cache.py with an
-    injected DBBackend. Accepts any dynawrap-compatible backend.
+    Takes an injected DBBackend; any dynawrap-compatible backend works.
     """
 
     def __init__(self, backend: DBBackend, table: str):

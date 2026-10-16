@@ -1,6 +1,6 @@
 """Monocular depth estimation.
 
-Takes a single image and returns a depth map written to S3.
+Takes a single image and returns a depth map written to the output store.
 
 Compatible models:
     facebook/dpt-dinov2-small-kitti

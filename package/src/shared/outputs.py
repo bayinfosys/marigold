@@ -1,32 +1,29 @@
 """Output persistence and binary I/O utilities.
 
-Writes inference results to a filesystem (binary outputs) and database (status and
-JSON results). Also provides shared utilities for:
-    - Image decoding and encoding
-    - Binary input handling (base64)
-    - Video frame extraction
+Writes binary inference outputs to the output store, and provides shared
+utilities for:
+    - image decoding and encoding
+    - binary input handling (base64)
+    - video frame extraction
     - MP4 encoding
 
-When filesystem is unavailable (not configured or write failure) binary
-output operations log a warning and return a placeholder OutputReference
-rather than raising. Inference results are unaffected; only persistence
-is skipped. This allows local development and testing without AWS
-credentials.
+Inputs are base64 only. The worker makes no outbound calls, so no
+input is fetched from a URL.
 
-A Backend abstraction is planned to match the database/queue/notifications abstractions.
+When the output store is unavailable (not configured, or a failed
+write) binary output operations log a warning and return an
+OutputReference with the intended key rather than raising. Inference
+results are unaffected; only persistence is skipped.
 """
 
 import base64
 import io
-import json
 import logging
 import os
 import tempfile
 from base64 import b64decode
 
-from dynawrap.backends.dynamodb import DynamoDBBackend
 from PIL import Image
-from shared.db_models import ResultsItem
 from shared.enums import ModelType
 from shared.models import OutputReference, OutputMimeType
 
@@ -46,12 +43,7 @@ def decode_image(b64_str: str) -> Image.Image:
     """Decode a base64 image string to a PIL Image.
 
     Accepts raw base64 or a data-URI prefix (data:image/jpeg;base64,...).
-    For http/https URLs delegates to transformers.image_utils.load_image.
     """
-    if b64_str.startswith(("http://", "https://")):
-        from transformers.image_utils import load_image
-
-        return load_image(b64_str)
     if b64_str.startswith("data:"):
         b64_str = b64_str.split(",", 1)[1]
     return Image.open(io.BytesIO(b64decode(b64_str))).convert("RGB")
@@ -65,16 +57,15 @@ def image_to_png_bytes(image: Image.Image) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# Binary input utilities  (base64 and s3://)
+# Binary input utilities
 # ---------------------------------------------------------------------------
 
 
 def decode_binary_input(input_str: str) -> bytes:
     """Decode a base64 string to raw bytes.
 
-    This is the standard input decoder for handlers that accept audio,
-    video, or other binary content. For base64 input the bytes are decoded
-    directly.
+    The standard input decoder for handlers that accept audio, video or
+    other binary content.
 
     Raises ValueError on invalid base64.
     """
@@ -183,7 +174,7 @@ def frames_to_mp4_bytes(frames: list, fps: int) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# S3 output writing
+# Binary output writing
 # ---------------------------------------------------------------------------
 
 
@@ -194,98 +185,47 @@ def write_binary_output(
     data: bytes,
     mimetype: str,
 ) -> "OutputReference":
-    """Write binary model output to local filesystem and return an OutputReference.
+    """Write binary model output to the output store and return an OutputReference.
 
-    Key schema: outputs/{model_type}/{message_id}/{field_name}
+    Key schema: outputs/{model_type}/{message_id}_{field_name}.{ext}
 
     :param message_id: unique identifier for this inference request
-    :param model_type: ModelType enum value, used as the S3 key prefix
+    :param model_type: ModelType enum value, used as the key prefix
     :param field_name: name of the output field, e.g. "audio", "image"
     :param data:       raw binary content to store
-    :param mimetype:   MIME type of the content, stored as S3 ContentType
-    :param bucket:     name of the S3 output bucket
+    :param mimetype:   MIME type of the content
     :returns:          OutputReference with key and mimetype
 
     Backend is selected by the OUTPUT_BACKEND environment variable:
-      "fs"  -- write to local filesystem under OUTPUT_DIR
+      "fs" (default) -- write under OUTPUT_DIR; the full path is
+                        OUTPUT_DIR / key
 
-    The OutputReference path contains the key for both backends. For "fs"
-    the full path is OUTPUT_DIR / key. For "s3" it is the S3 object key.
-
-    When the write fails, log the failure and returns an OutputReference
-    with the intended key. Inference results are structurally valid; only persistence is skipped.
+    When the write fails, logs the failure and returns an OutputReference
+    with the intended key. Inference results are structurally valid; only
+    persistence is skipped.
     """
-
     ext = OutputMimeType(mimetype).extension
     clean_id = message_id.removeprefix("API#")
     key = "outputs/%s/%s_%s.%s" % (model_type.value, clean_id, field_name, ext)
-    backend = os.getenv("OUTPUT_BACKEND", "s3").lower()
+    backend = os.getenv("OUTPUT_BACKEND", "fs").lower()
 
-    if backend == "fs":
-        output_dir = os.getenv("OUTPUT_DIR", "")
-        if not output_dir:
-            logger.warning("[%s] OUTPUT_DIR not set; %s not persisted", message_id, key)
-            return OutputReference(path=key, mimetype=mimetype)
+    if backend != "fs":
+        raise NotImplementedError(f"unknown OUTPUT_BACKEND: {backend}")
 
-        full_path = os.path.join(output_dir, key)
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
-
-        try:
-            with open(full_path, "wb") as f:
-                f.write(data)
-
-            logger.info("wrote %ib to %s", len(data), full_path)
-        except Exception as e:
-            logger.error("failed to write output to %s: %s -- output not persisted", full_path, e)
-
+    output_dir = os.getenv("OUTPUT_DIR", "")
+    if not output_dir:
+        logger.warning("[%s] OUTPUT_DIR not set; %s not persisted", message_id, key)
         return OutputReference(path=key, mimetype=mimetype)
 
-    else:
-        raise NotImplementedError(f"Unknown backend: {backend}")
-
-
-# ---------------------------------------------------------------------------
-# Database
-# ---------------------------------------------------------------------------
-
-
-def update_results_table(
-    user_id: str,
-    message_id: str,
-    response: dict,
-    status: str = "complete",
-):
-    """Write a result or status update to the results cache table."""
-    results_table = os.getenv("DYNAMODB_RESULTS_TABLE")
-
-    if not results_table:
-        logger.warning(
-            "[%s/%s] DYNAMODB_RESULTS_TABLE not set, skipping results write",
-            user_id,
-            message_id,
-        )
-        return
-
-    item = ResultsItem(
-        user_id=user_id,
-        message_id=message_id,
-        status=status,
-        response=json.dumps(response) if response is not None else None,
-    )
+    full_path = os.path.join(output_dir, key)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
     try:
-        _dynawrap.save(results_table, item)
-        logger.info(
-            "[%s/%s] status='%s' written to dynamodb",
-            user_id,
-            message_id,
-            status,
-        )
+        with open(full_path, "wb") as f:
+            f.write(data)
+
+        logger.info("wrote %ib to %s", len(data), full_path)
     except Exception as e:
-        logger.critical(
-            "[%s/%s] failed to write to dynamodb table '%s': %s",
-            user_id,
-            message_id,
-            results_table,
-            e,
-        )
+        logger.error("failed to write output to %s: %s -- output not persisted", full_path, e)
+
+    return OutputReference(path=key, mimetype=mimetype)

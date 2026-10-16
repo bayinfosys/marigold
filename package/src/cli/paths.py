@@ -2,12 +2,6 @@
 
 Compose receives these paths as environment variables rather than
 composing them itself, so the host and the containers cannot disagree.
-
-Directories the containers write are created by Docker's bind mounts,
-as root. The ones the CLI writes -- packages, applications -- belong to
-whoever runs it, which is why a cache root under a system path needs
-creating once with the right ownership rather than being left to
-whichever process gets there first.
 """
 
 from pathlib import Path
@@ -21,16 +15,17 @@ CACHE_SUBDIRS = {
     "tmp":          "data/tmp",
     "outputs":      "data/outputs",
     "applications": "data/applications",
-    "packages":     "data/packages",
 }
 
-# Extracted package trees live under the applications directory. The
-# prefix cannot collide with an application's own directory, since
-# application names are [a-z0-9-] only.
-EXTRACTED_PACKAGES_SUBDIR = "_src"
+# Inside the applications directory, anything that is not one
+# application's own directory starts with an underscore or contains a
+# dot. Application names are [a-z0-9-] only, so neither can collide.
+ARCHIVES_SUBDIR = "_archives"           # archives as installed, by digest
+EXTRACTED_SUBDIR = "_src"               # extracted application trees
+INSTALLED_INDEX_NAME = "installed.json"
 
 # Where the applications directory is mounted in the cache container,
-# which is how it reads an installed package's models.yaml.
+# which is how it reads an installed application's models.yaml.
 CONTAINER_APPLICATIONS_DIR = "/applications"
 
 
@@ -44,12 +39,23 @@ def cache_paths(cache_dir: Path) -> dict[str, Path]:
     models       -- downloaded weights, the model cache proper
     tmp          -- worker offload space
     outputs      -- inference outputs written by the worker
-    applications -- per-application outputs, and extracted package
-                    trees under _src/
-    packages     -- package archives and the installed index, kept so a
-                    package survives the file it was installed from
+    applications -- installed applications: the index, the archives they
+                    were installed from, the extracted trees and each
+                    application's own outputs
     """
     return {name: cache_dir / rel for name, rel in CACHE_SUBDIRS.items()}
+
+
+def archives_dir(cache_dir: Path) -> Path:
+    return cache_paths(cache_dir)["applications"] / ARCHIVES_SUBDIR
+
+
+def extracted_applications_dir(cache_dir: Path) -> Path:
+    return cache_paths(cache_dir)["applications"] / EXTRACTED_SUBDIR
+
+
+def installed_index_path(cache_dir: Path) -> Path:
+    return cache_paths(cache_dir)["applications"] / INSTALLED_INDEX_NAME
 
 
 def cache_dir_from_config(config: dict) -> Path:
@@ -63,12 +69,8 @@ def cache_dir_from_config(config: dict) -> Path:
 
 
 def cache_dir_from_system_config() -> Path:
-    """The cache root for commands with no package in hand."""
+    """The cache root for commands with no application in hand."""
     return cache_dir_from_config(load_system_config())
-
-
-def extracted_packages_dir(cache_dir: Path) -> Path:
-    return cache_paths(cache_dir)["applications"] / EXTRACTED_PACKAGES_SUBDIR
 
 
 def container_path(path: Path, cache_dir: Path) -> str:
@@ -76,7 +78,7 @@ def container_path(path: Path, cache_dir: Path) -> str:
     container sees it.
 
     Raises if the path is outside: the cache container mounts the cache
-    and nothing else, so a package it must read has to be installed.
+    and nothing else, so an application it must read has to be installed.
     """
     applications = cache_paths(cache_dir)["applications"]
 
@@ -85,9 +87,9 @@ def container_path(path: Path, cache_dir: Path) -> str:
     except ValueError as e:
         raise ValueError(
             f"{path} is not inside the cache ({applications}), so the cache "
-            "container cannot read it. Install the package first:\n"
-            f"  marigold package create {path} -o /tmp\n"
-            "  marigold package install /tmp/<name>-<version>.tar.gz"
+            "container cannot read it. Install the application first:\n"
+            f"  marigold application create {path} -o /tmp\n"
+            "  marigold application install /tmp/<name>-<version>.tar.gz"
         ) from e
 
     return f"{CONTAINER_APPLICATIONS_DIR}/{relative}"
@@ -99,8 +101,9 @@ def ensure_cache_layout(cache_dir: Path) -> dict[str, Path]:
     Called before anything the CLI writes from the host. Idempotent.
     """
     paths = cache_paths(cache_dir)
+    extra = [archives_dir(cache_dir), extracted_applications_dir(cache_dir)]
 
-    for path in list(paths.values()) + [extracted_packages_dir(cache_dir)]:
+    for path in list(paths.values()) + extra:
         if path.exists():
             continue
 

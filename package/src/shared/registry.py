@@ -6,6 +6,7 @@ BaseModelHandler. Handler modules import from here to register themselves.
 _SPECS is the singleton registry. Python's import machinery ensures this
 module is initialised once regardless of how many times it is imported.
 """
+import logging
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -15,8 +16,6 @@ from typing import Any, Callable, Dict, List, Optional, Type
 from shared.enums import ModelMode, ModelType, OutputMimeType
 from shared.outputs import write_binary_output
 
-import logging
-
 logger = logging.getLogger(__name__)
 
 
@@ -24,11 +23,12 @@ logger = logging.getLogger(__name__)
 class OutputField:
     """Declares one output produced by a model handler.
 
-    name      -- field identifier, used in S3 key and API retrieval path
+    name      -- field identifier, used in the output key and the API
+                 retrieval path
     mimetype  -- determines storage backend via OutputMimeType.storage
     writer    -- override the default writer for this field; None uses the
-                 default derived from mimetype (write_binary_output for S3,
-                 write_json_output for DynamoDB)
+                 default derived from mimetype (write_binary_output for binary
+                 types, write_json_output for text and JSON)
     """
 
     name: str
@@ -122,8 +122,8 @@ class BaseModelHandler(ABC):
     request_model and passes the typed result to _run(). Subclasses do not
     override process().
 
-    Model loading (from EFS cache) happens in __init__ so it occurs once
-    at task start, not per message. The loader is called via the ModelSpec
+    Model loading (from the model cache) happens in __init__, so it occurs
+    once per load, not per message. The loader is called via the ModelSpec
     registered by @model_spec and must return a ModelLoaderResult.
 
     self.processor and self.model are set from the ModelLoaderResult.
@@ -134,14 +134,14 @@ class BaseModelHandler(ABC):
 
     def __init__(self, modelname: str):
         self.modelname = modelname
-        cache_dir = os.getenv("CACHE_DIR", "/mnt/efs/cache")
+        cache_dir = os.getenv("CACHE_DIR", "/models")
 
         spec = _SPECS[self._model_type.value]  # set by decorator
         T = clock()
 
         try:
             result = spec.loader(self.modelname, cache_dir)
-        except Exception as e:
+        except Exception:
             logger.exception("%s an exception on load", self.modelname)
             raise
 
@@ -152,13 +152,14 @@ class BaseModelHandler(ABC):
         logger.info("'%s' loaded in %0.2fs", modelname, clock() - T)
 
     def write_output(self, field_name: str, data: bytes, message_id: str):
-        """Write a binary output field to S3 and return an OutputReference.
+        """Write a binary output field to the output store and return an OutputReference.
 
         Looks up the field's mimetype from the ModelSpec output_fields
         declaration. Raises ValueError if field_name is not declared.
 
-        Handlers with binary outputs call this instead of write_binary_output
-        directly, removing the need to import or reference OUTPUT_BUCKET.
+        Handlers with binary outputs call this instead of
+        write_binary_output directly, so the mimetype always comes from
+        the declaration.
         """
         spec = _SPECS[self._model_type.value]
         field = next(
@@ -184,18 +185,13 @@ class BaseModelHandler(ABC):
 
         Does not write to the results table. The caller is responsible for
         persisting the result to whichever backing store is appropriate for
-        the execution context (direct API polling table, workflow steps table,
-        or neither for CLI use).
+        the execution context (the results table for API requests, or
+        neither for CLI use).
         """
         spec = _SPECS[self._model_type.value]
         validated = spec.request_model.model_validate(request)
 
-        try:
-            result = self._run(user_id, message_id, validated)
-        except Exception as e:
-            raise
-
-        return result
+        return self._run(user_id, message_id, validated)
 
     @abstractmethod
     def _run(self, user_id: str, message_id: str, request: Any) -> Any:
@@ -204,7 +200,7 @@ class BaseModelHandler(ABC):
         user_id    -- authenticated caller identifier, used for logging and
                       usage recording
         message_id -- unique identifier for this job, used for logging and
-                      as the S3 key component for binary outputs
+                      as part of the output key for binary outputs
         request    -- validated request model instance, typed to the specific
                       request class declared in the ModelSpec
         """

@@ -2,10 +2,10 @@
 
 Takes an RGB observation image and a natural language task instruction and
 returns the model's raw generated output. Action decoding, unnormalisation,
-and trajectory construction are workflow or client responsibilities.
+and trajectory construction are client responsibilities.
 
 For OpenVLA-family models the raw output is a sequence of action tokens.
-The client or a downstream workflow step decodes these using the per-dataset
+The client decodes these using the per-dataset
 normalisation statistics that ship alongside the model weights.
 
 Prompt configuration (models.yaml extra_env):

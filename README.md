@@ -11,18 +11,18 @@ Marigold runs as three separate layers on one host:
 
 - **the platform** -- a model cache, a catalogue, a worker and an API,
   shared by everything on the host;
-- **packages** -- a list of required models plus application code,
-  installed into the cache by name;
-- **applications** -- a package's code running in its own container,
+- **applications** -- a list of required models plus the code that uses
+  them, installed into the cache by name;
+- **instances** -- an application's code running in its own container,
   reaching the platform only through the API.
 
-Applications hold no weights. Many applications share one model cache
-and one worker, which is what lets a fleet of agents run on a single
-local GPU and the same package run unchanged on larger hardware.
+Applications hold no weights. Many instances share one model cache and
+one worker, which is what lets a fleet of agents run on a single local
+GPU and the same application run unchanged on larger hardware.
 
 For a walkthrough, see the [setup tutorial](https://marigold.run/tutorials/setup.html).
 The design is described in [ARCHITECTURE.md](docs/ARCHITECTURE.md),
-[PACKAGES.md](docs/PACKAGES.md) and [PRINCIPLES.md](docs/PRINCIPLES.md).
+[APPLICATIONS.md](docs/APPLICATIONS.md) and [PRINCIPLES.md](docs/PRINCIPLES.md).
 
 ## Status
 
@@ -44,34 +44,41 @@ pip install bayis-marigold
 git clone https://github.com/bayinfosys/marigold-examples
 
 marigold cache init
-marigold package create marigold-examples/platform-model-test -o /tmp
-marigold package install /tmp/platform-model-test-0.2.0.tar.gz
+marigold application create marigold-examples/platform-model-test -o /tmp
+marigold application install /tmp/platform-model-test-0.2.0.tar.gz
 marigold cache populate platform-model-test
 marigold application start platform-model-test
 marigold application logs platform-model-test
 ```
 
-`cache init` creates the cache layout. `package install` puts the
-package in the cache under its name. `cache populate` downloads the
-models it declares and registers them in the catalogue. `application
-start` brings the platform up if it is not already running, then starts
-the package's application in its own container.
+`cache init` creates the cache layout. `application create` builds an
+archive from an application directory, and `application install` puts
+it in the cache under its name. `cache populate` downloads the models
+the application declares and registers them in the catalogue.
+`application start` brings the platform up if it is not already
+running, then starts the application in its own container.
 
 ```bash
-marigold platform status               # platform and every application
-marigold platform logs [service]       # api, worker, postgres, cache-init
-marigold application stop <package>    # the application only
-marigold platform stop --applications  # everything
-marigold package list                  # installed packages
-marigold cache inspect                 # what is cached, sizes, location
-marigold config show [package]         # resolved configuration and its sources
+marigold platform status                # platform and every application
+marigold platform logs [service]        # api, worker, postgres, cache-init
+marigold application stop <name>        # the application only
+marigold platform stop --applications   # everything
+marigold application list               # installed applications
+marigold application uninstall <name>   # remove one; the cache is untouched
+marigold cache inspect                  # what is cached, sizes, location
+marigold config show [name]             # resolved configuration and its sources
 ```
+
+`marigold app` is an alias for `marigold application`.
 
 ## Configuration
 
-Two layers of TOML. The system config holds host settings; each
-package's `marigold.toml` declares what the package is and runs.
-Package values win per key.
+Two layers of TOML. The system config holds host settings:
+`[platform]`, `[cache]` and `[database]`. Each application's
+`marigold.toml` declares what the application is and runs:
+`[application]`, `[execution]` and `[environment]`. An application
+config that sets a host section is rejected. Where both layers set
+`[environment]` values, the application's win per key.
 
 The system config is `$MARIGOLD_CONFIG` if set, otherwise `config.toml`
 in the current directory, otherwise `~/.marigold/config.toml`. Because
@@ -81,7 +88,7 @@ set `MARIGOLD_CONFIG` in scripts.
 ```toml
 # config.toml -- the host
 [platform]
-compose_files = ["core", "cpu"]    # or ["core", "cpu", "gpu"]
+compose_files = ["core", "cpu"]    # or ["core", "gpu"]
 # tag = "0.7.0"                    # default: the installed CLI's version
 
 [cache]
@@ -92,12 +99,12 @@ url = "postgresql://..."           # default: the platform's own Postgres
 ```
 
 ```toml
-# marigold.toml -- a package
-[package]
+# marigold.toml -- an application
+[application]
 name = "chat"
 version = "0.1.0"
 models_yaml = ["models.yaml"]
-compose_files = ["webui"]          # additions to the platform
+compose_files = ["webui"]          # services added to the platform
 
 [execution]
 command = ["python", "main.py"]
@@ -106,30 +113,34 @@ command = ["python", "main.py"]
 RAG_EMBEDDING_MODEL = "sentence-transformers/all-minilm-l6-v2"
 ```
 
-`[environment]` forwards variables to the containers without the CLI
-interpreting them. `marigold config show <package>` prints every
-resolved value and the layer it came from.
+`[application].name` and `version` are required to build or install an
+archive. Running straight from a directory, the directory name stands in
+for a missing name.
 
-The full package format is in [PACKAGES.md](docs/PACKAGES.md).
+`[environment]` forwards variables to the containers without the CLI
+interpreting them. `marigold config show <name>` prints every resolved
+value and the layer it came from.
+
+The full application format is in [APPLICATIONS.md](docs/APPLICATIONS.md).
 
 ## The model cache
 
 ```bash
-marigold cache populate <package>    # download and register a package's models
-marigold cache validate <package>    # check its models.yaml, no download
-marigold cache inspect               # list what is on disk
+marigold cache populate <name>    # download and register an application's models
+marigold cache validate <name>    # check its models.yaml, no download
+marigold cache inspect            # list what is on disk
 ```
 
-The cache outlives every package. A model downloaded for one is
-available to all; uninstalling a package removes nothing from the cache
-or the catalogue. `populate --prune` removes cached models the given
-package does not declare, and refuses when it declares none.
+The cache outlives every application. A model downloaded for one is
+available to all; uninstalling an application removes nothing from the
+cache or the catalogue. `populate --prune` removes cached models the
+given application does not declare, and refuses when it declares none.
 
-Model catalogue files are kept small and task-specific. A package lists
-as many as it needs:
+Model catalogue files are kept small and task-specific. An application
+lists as many as it needs:
 
 ```toml
-[package]
+[application]
 models_yaml = ["models-instruct.yaml", "models-embed.yaml"]
 ```
 
@@ -146,8 +157,8 @@ flowchart LR
     CLIENT([external client]):::app
 
     subgraph APPS[marigold-applications]
-        APP1["application\n(package code)"]:::app
-        APP2["application\n(package code)"]:::app
+        APP1["instance\n(application code)"]:::app
+        APP2["instance\n(application code)"]:::app
     end
 
     subgraph CORE[marigold-core]
@@ -237,9 +248,10 @@ package/src/
   cli/                  the `marigold` command
     main.py             parser
     commands.py         command implementations
-    config.py           system and package TOML, with provenance
+    config.py           system and application TOML, with provenance
     paths.py            the cache layout
-    packages.py         package identity, archives, installation
+    archives.py         writing and extracting application archives
+    applications.py     identity, installation, resolution
     compose.py          compose projects, environment, invocation
   compose/              compose files and the multi-stage Dockerfile
   tools/
@@ -247,7 +259,7 @@ package/src/
     model_cache_shared.py  cache providers
 ```
 
-Application packages live in [marigold-examples](https://github.com/bayinfosys/marigold-examples).
+Example applications live in [marigold-examples](https://github.com/bayinfosys/marigold-examples).
 
 ## Handler architecture
 
@@ -282,18 +294,19 @@ Subclasses implement only `_run()`.
 
 ### Adding a model
 
-1. Add an entry to a package's `models.yaml`.
+1. Add an entry to an application's `models.yaml`.
 2. If the type is new, add a handler in `package/src/models/` following
    the existing pattern and register its import in `models/load_all()`.
-3. `marigold cache validate <package>` to check the file.
-4. Reinstall the package and `marigold cache populate <package>`.
+3. `marigold cache validate <name>` to check the file.
+4. Rebuild and reinstall the application, then `marigold cache populate <name>`.
 
 ## Authentication
 
-No API key is required. The caller is identified by an optional
-`X-User-Id` header, defaulting to `local-user`.
+Marigold has no authentication of its own. The caller is identified by
+an optional `X-User-Id` header, defaulting to `local-user`, and that
+header is trusted as received.
 
-This is designed for localhost or a private network. Marigold provides
-no authentication of its own today; if you expose the API beyond that
-boundary, put your own authentication in front of it. The API is the
-single point where that will be added.
+On localhost or a private network this needs nothing further. To expose
+the API beyond that boundary, put the deployment's own authentication
+in front of it -- a reverse proxy, a cloud load balancer, an identity
+provider -- and have it set `X-User-Id` for each authenticated caller.

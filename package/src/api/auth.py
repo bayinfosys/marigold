@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass
 
 
@@ -14,7 +13,7 @@ def _local_authorizer():
     Returns a User with id from the X-User-Id header if present,
     otherwise a fixed development user. No key validation.
     """
-    from fastapi import Depends, Header
+    from fastapi import Header
 
     async def _auth(
         x_api_key: str = Header(default=""),

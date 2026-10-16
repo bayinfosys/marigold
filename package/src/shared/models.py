@@ -16,7 +16,7 @@ T = TypeVar("T")
 
 
 class CacheDestination(BaseModel):
-    """Location of a cached result in DynamoDB."""
+    """Location of a cached result in the results table."""
 
     user_id: str
     message_id: str

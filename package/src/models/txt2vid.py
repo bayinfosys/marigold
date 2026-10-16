@@ -1,13 +1,13 @@
 """Text-to-video generation.
 
-Takes a text prompt and returns a video written to S3.
+Takes a text prompt and returns a video written to the output store.
 
 Uses diffusers DiffusionPipeline, which auto-dispatches to the correct
 pipeline class for each model family (CogVideoXPipeline, WanPipeline, etc.).
 The pipeline is stored as self.pipe, consistent with txt2img.
 
 Video frames are exported to MP4 via imageio-ffmpeg. The output key 'video'
-in the response outputs dict contains the S3 reference.
+in the response outputs dict contains the output reference.
 
 Video generation is significantly slower than image generation. Expect
 several minutes per request on a single GPU for 2-5B parameter models.

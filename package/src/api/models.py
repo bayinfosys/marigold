@@ -226,7 +226,7 @@ class TTSRequest(ModelRequest):
 class TTSResponse(GenerativeResponse):
     language_code: str
     outputs: Dict[str, OutputReference] = Field(
-        ..., description="named S3 outputs; key 'audio' is the synthesised audio"
+        ..., description="named binary outputs; key 'audio' is the synthesised audio"
     )
 
 
@@ -261,7 +261,7 @@ class Txt2AudioRequest(ModelRequest):
 
 class Txt2AudioResponse(GenerativeResponse):
     outputs: Dict[str, OutputReference] = Field(
-        ..., description="named S3 outputs; key 'audio' is the generated audio"
+        ..., description="named binary outputs; key 'audio' is the generated audio"
     )
 
 
@@ -276,7 +276,7 @@ class Txt2ImgRequest(ModelRequest):
     num_inference_steps: Optional[int] = Field(
         None,
         description=(
-            "diffusion steps. Defaults to the NUM_STEPS env var on the ECS task "
+            "diffusion steps. Defaults to the NUM_STEPS env var on the worker "
             "(set per-model in models.yaml extra_env). Falls back to 10 if unset."
         ),
     )
@@ -285,7 +285,7 @@ class Txt2ImgRequest(ModelRequest):
 
 class Txt2ImgResponse(GenerativeResponse):
     outputs: Dict[str, OutputReference] = Field(
-        ..., description="named S3 outputs; key 'image' is the generated image"
+        ..., description="named binary outputs; key 'image' is the generated image"
     )
 
 
@@ -315,7 +315,7 @@ class DepthRequest(ModelRequest):
 
 class DepthResponse(GenerativeResponse):
     outputs: Dict[str, OutputReference] = Field(
-        ..., description="named S3 outputs; key 'depth' is the depth map"
+        ..., description="named binary outputs; key 'depth' is the depth map"
     )
 
 
@@ -330,7 +330,7 @@ class Img2MaskRequest(ModelRequest):
 
 class Img2MaskResponse(GenerativeResponse):
     outputs: Dict[str, OutputReference] = Field(
-        ..., description="named S3 outputs; key 'mask' is the segmentation mask"
+        ..., description="named binary outputs; key 'mask' is the segmentation mask"
     )
 
 
@@ -436,7 +436,7 @@ class Txt2VidRequest(ModelRequest):
     num_inference_steps: Optional[int] = Field(
         None,
         description=(
-            "diffusion steps. Defaults to NUM_STEPS env var on the ECS task. "
+            "diffusion steps. Defaults to NUM_STEPS env var on the worker. "
             "Falls back to 50 if unset"
         ),
     )
@@ -462,7 +462,7 @@ class Txt2VidResponse(BaseModel):
     num_frames: int
     fps: int
     outputs: Dict[str, OutputReference] = Field(
-        ..., description="named S3 outputs; key 'video' is the generated video"
+        ..., description="named binary outputs; key 'video' is the generated video"
     )
 
 
@@ -475,9 +475,8 @@ class Vid2TxtRequest(ModelRequest):
     input: str = Field(
         ...,
         description=(
-            "video to describe. Accepts base64-encoded video or an "
-            "s3://bucket/key URI. Short clips only for base64; use S3 for "
-            "anything over ~10MB"
+            "video to describe, base64-encoded. Keep clips short: the "
+            "whole request body is held in memory"
         ),
     )
     prompt: Optional[str] = Field(
@@ -532,7 +531,7 @@ class Img23DResponse(BaseModel):
     usage: ModelUsageStats
     outputs: Dict[str, OutputReference] = Field(
         ...,
-        description="named S3 outputs; key 'mesh' is the GLB file",
+        description="named binary outputs; key 'mesh' is the GLB file",
     )
 
 
@@ -545,8 +544,7 @@ class ASRRequest(ModelRequest):
     input: str = Field(
         ...,
         description=(
-            "audio to transcribe. Accepts base64-encoded audio (any format "
-            "ffmpeg can decode) or an s3://bucket/key URI for larger files"
+            "audio to transcribe, base64-encoded, in any format ffmpeg can decode"
         ),
     )
     language: Optional[str] = Field(
@@ -646,7 +644,7 @@ class Img2VidResponse(GenerativeResponse):
     num_frames: int
     fps: int
     outputs: Dict[str, OutputReference] = Field(
-        ..., description="named S3 outputs; key 'video' is the generated video"
+        ..., description="named binary outputs; key 'video' is the generated video"
     )
 
 
@@ -687,8 +685,7 @@ class Vid2VidRequest(ModelRequest):
     input: str = Field(
         ...,
         description=(
-            "source video to transform. Accepts base64-encoded video or an "
-            "s3://bucket/key URI"
+            "source video to transform, base64-encoded"
         ),
     )
     prompt: Optional[str] = Field(
@@ -726,5 +723,5 @@ class Vid2VidResponse(GenerativeResponse):
     num_frames: int
     fps: int
     outputs: Dict[str, OutputReference] = Field(
-        ..., description="named S3 outputs; key 'video' is the transformed video"
+        ..., description="named binary outputs; key 'video' is the transformed video"
     )

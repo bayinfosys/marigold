@@ -4,7 +4,7 @@ from fastapi import Security, APIRouter
 from fastapi.responses import JSONResponse
 
 from api.models import UsageResponse
-from api.auth import apikey_auth, User
+from api.auth import apikey_auth
 
 
 router = APIRouter()

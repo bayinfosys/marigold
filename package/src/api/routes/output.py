@@ -61,7 +61,6 @@ async def get_output(
     field: str,
     user=Security(apikey_auth),
 ):
-    # Binary output is served directly from S3 on AWS via the decorator.
     # Local binary output retrieval is not yet implemented.
     return JSONResponse(
         status_code=501,

@@ -1,7 +1,7 @@
-"""Load HuggingFace models from the EFS cache.
+"""Load HuggingFace models from the model cache.
 
 Used by:
-  - ECS task handlers at runtime (local_files_only=True by default)
+  - worker handlers at runtime (local_files_only=True by default)
   - The cache-builder EC2 instance during cache population (local_files_only=False)
 
 All loader functions must return a ModelLoaderResult. The processor field is
@@ -22,7 +22,6 @@ from typing import Any
 import torch
 from transformers import BitsAndBytesConfig
 
-from shared.schedule_models import EventType, LifecycleEvent
 
 logger = logging.getLogger(__name__)
 logger.setLevel(os.getenv("LOG_LEVEL") or "INFO")

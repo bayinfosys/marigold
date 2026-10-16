@@ -1,6 +1,6 @@
 """Image-to-video generation.
 
-Takes one or more image keyframes and returns a generated video written to S3.
+Takes one or more image keyframes and returns a generated video written to the output store.
 
 Keyframe handling by model capability:
 

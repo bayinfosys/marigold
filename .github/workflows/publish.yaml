@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [api, cache, worker, worker-gpu]
+        target: [api, cache, worker, worker-gpu, executor]
         include:
           - target: worker-gpu
             tag_suffix: "-gpu"
@@ -60,6 +60,8 @@ jobs:
     needs: containers
     runs-on: ubuntu-latest
     environment: release
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -72,6 +74,15 @@ jobs:
       - name: Install build tools
         run: pip install build twine
 
+      # Relative links in the README point at docs/ in this repository.
+      # On PyPI they resolve against pypi.org and break, so the wheel's
+      # copy links to the same files on GitHub at this ref. The
+      # repository's own README keeps its relative links.
+      - name: Rewrite README links for PyPI
+        run: |
+          perl -pi -e 's#\]\((?!https?://|\#|mailto:)([^)\s]+)\)#](https://github.com/bayinfosys/marigold/blob/$ENV{GITHUB_REF_NAME}/$1)#g' README.md
+          grep -n "](docs/" README.md && exit 1 || true
+
       - name: Build
         run: python -m build
 
@@ -80,7 +91,6 @@ jobs:
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-
         run: twine upload dist/*
 
       - name: create GitHub release

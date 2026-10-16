@@ -1,6 +1,6 @@
 """Image segmentation / mask generation.
 
-Takes an image and returns a segmentation mask written to S3.
+Takes an image and returns a segmentation mask written to the output store.
 
 Compatible models:
     facebook/sam-vit-huge
