@@ -12,6 +12,7 @@ containers mount the result and outlive the command that started them.
 import hashlib
 import shutil
 import tarfile
+import gzip
 
 from pathlib import Path
 
@@ -26,9 +27,11 @@ from cli.paths import (
 ARCHIVE_SUFFIXES = (".tar.gz", ".tgz", ".marigold")
 
 # Never archived: caches, VCS metadata, virtualenvs, build output.
+# TODO: use a .marigoldignore file instead of this hardcode
 EXCLUDED_NAMES = {
     ".git", ".hg", ".svn", "__pycache__", ".venv", "venv", "node_modules",
     ".mypy_cache", ".pytest_cache", ".ruff_cache", ".DS_Store", "dist", "build",
+    ".env"
 }
 EXCLUDED_SUFFIXES = (".pyc", ".pyo") + ARCHIVE_SUFFIXES
 
@@ -67,21 +70,33 @@ def _members(source: Path) -> list[Path]:
     return members
 
 
-def _member_filter(info: tarfile.TarInfo) -> tarfile.TarInfo:
-    """Strip host identity from archive members.
+# Every member and the gzip header carry this timestamp. Fixed, and not
+# taken from SOURCE_DATE_EPOCH, so a local build and a CI build agree
+# whatever their environments set.
+ARCHIVE_MTIME = 0
 
-    Ownership and permission bits beyond the read/execute distinction
-    are the extracting host's business, and an archive carrying the
-    builder's uid extracts differently for everyone else.
+
+def _member_filter(info: tarfile.TarInfo) -> tarfile.TarInfo:
+    """Strip host identity and time from archive members.
+
+    Ownership, timestamps and permission bits beyond the read/execute
+    distinction are the extracting host's business. An archive carrying
+    any of them has different bytes on every machine that builds it.
     """
     info.uid = info.gid = 0
     info.uname = info.gname = ""
+    info.mtime = ARCHIVE_MTIME
     info.mode = 0o755 if info.mode & 0o100 else 0o644
     return info
 
 
 def write_archive(source: Path, archive: Path) -> int:
     """Write an application directory as a .tar.gz. Returns the file count.
+
+    Deterministic: one tree gives one set of bytes. Members are sorted
+    and carry no owner or time, and the gzip header holds no filename
+    and no time. The digest therefore identifies the content, which is
+    what the registry's immutability check compares.
 
     Members are listed before the archive is opened, so an archive
     written inside its own source directory never contains itself.
@@ -92,15 +107,35 @@ def write_archive(source: Path, archive: Path) -> int:
     archive.parent.mkdir(parents=True, exist_ok=True)
     members = _members(source)
 
-    with tarfile.open(archive, "w:gz") as tar:
+    with (
+        open(archive, "wb") as raw,
+        gzip.GzipFile(
+            filename="", mode="wb", fileobj=raw,
+            compresslevel=9, mtime=ARCHIVE_MTIME,
+        ) as gz,
+        tarfile.open(fileobj=gz, mode="w", format=tarfile.PAX_FORMAT) as tar,
+    ):
         for path in members:
             tar.add(
                 path,
-                arcname=str(path.relative_to(source)),
+                arcname=path.relative_to(source).as_posix(),
+                recursive=False,
                 filter=_member_filter,
             )
 
     return len(members)
+
+
+def extract_to(archive: Path, target: Path) -> Path:
+    """Extract an archive into target and return the application root.
+
+    For reading an archive's contents. Installation uses
+    extract_archive, which also copies the archive into the cache.
+    """
+    with tarfile.open(archive) as tar:
+        tar.extractall(target, filter="data")
+
+    return application_root(target)
 
 
 def application_root(extracted: Path) -> Path:

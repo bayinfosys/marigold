@@ -11,7 +11,7 @@ from pathlib import Path
 
 from shared.model_cache import cache_dir_bytes
 
-from cli import applications, archives
+from cli import applications, archives, registry
 from cli.compose import (
     DEFAULT_EXECUTION_IMAGE,
     DEFAULT_PLATFORM_COMPOSE_FILES,
@@ -558,3 +558,35 @@ def cmd_cache_inspect(args):
 def cmd_cache_stub(args):
     print(f"marigold cache {args.cache_command}: not yet implemented")
     sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# registry
+# ---------------------------------------------------------------------------
+
+def cmd_registry_build(args):
+    """Build a static registry from application directories."""
+    out = Path(args.out)
+    front_page = Path(args.front_page) if args.front_page else None
+
+    if front_page is not None and not front_page.is_file():
+        raise FileNotFoundError(f"front page not found: {front_page}")
+
+    index, warnings = registry.build(
+        [Path(p) for p in args.paths],
+        out,
+        front_page=front_page,
+    )
+
+    for warning in warnings:
+        print(f"marigold: warning: {warning}", file=sys.stderr)
+
+    count = 0
+
+    for name, application in sorted(index["applications"].items()):
+        for version, entry in sorted(application["versions"].items()):
+            print(f"  {name:<30} {version:<12} {entry['sha256'][:12]}")
+            count += 1
+
+    print(f"\n{count} application(s), index at {out.resolve() / registry.INDEX_NAME}")
+    sys.exit(0)

@@ -35,6 +35,8 @@ import tomllib
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
+from cli.application_config import ApplicationConfig, validate_application_config
+
 logger = logging.getLogger("marigold.cli.config")
 
 APPLICATION_CONFIG_NAME = "marigold.toml"
@@ -121,9 +123,32 @@ def check_application_config(data: dict, path: Path) -> dict:
     return data
 
 
+def parse_application_config(text: str, source) -> ApplicationConfig:
+    """Parse and validate marigold.toml content. source names it in errors."""
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as e:
+        raise ValueError(f"cannot parse {source}: {e}") from e
+
+    check_application_config(data, source)
+    return validate_application_config(data, source)
+
+
+def load_application_config(path: Path) -> ApplicationConfig:
+    """An application's marigold.toml, validated. A missing file is empty."""
+    if not path.exists():
+        return ApplicationConfig()
+
+    return parse_application_config(path.read_text(encoding="utf-8"), path)
+
+
 def load_application_toml(path: Path) -> dict:
-    """Parse an application's marigold.toml and check its sections."""
-    return check_application_config(load_toml(path), path)
+    """An application's marigold.toml as a dict of validated values.
+
+    Only keys the file sets are present, so merge_config lets system
+    values stand wherever the application is silent, as before.
+    """
+    return load_application_config(path).model_dump(exclude_unset=True)
 
 
 def merge_config(system: dict, application: dict) -> dict:

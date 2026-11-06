@@ -31,11 +31,9 @@ from cli.paths import (
     ensure_cache_layout,
     installed_index_path as _installed_index_path,
 )
+from cli.application_config import NAME_RE
 
-# compose project and container names: lowercase, digits, hyphens.
-NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _NAME_SEPARATORS = re.compile(r"[^a-z0-9]+")
-
 
 # ---------------------------------------------------------------------------
 # identity
@@ -55,8 +53,8 @@ def application_identity(
     content-addressed directory whose name says nothing about the
     application, so the archive must carry its identity itself.
 
-    The version is a label on the archive, not something Marigold
-    compares or orders.
+    The version is PEP 440, normalised when the config is read
+    (cli.application_config).
     """
     section = config.get("application", {})
     declared_name = section.get("name")

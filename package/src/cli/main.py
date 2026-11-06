@@ -27,6 +27,8 @@ applications.py  identity, declared models, installation, resolution
 compose.py       compose projects, environment, invocation
 commands.py      the cmd_* functions; the only layer that exits
 main.py          the parser
+application_config.py  marigold.toml schema and validation
+registry.py            building static registries
 
 The application root is mounted read-only at /app in the executor, so a
 flat application runs main.py and a larger one adds modules and
@@ -122,6 +124,24 @@ def build_parser() -> argparse.ArgumentParser:
     uninstall_p = app_sub.add_parser("uninstall", help="remove an installed application")
     uninstall_p.add_argument("name", help="installed application name")
     uninstall_p.set_defaults(func=commands.cmd_application_uninstall)
+
+    # registry
+    reg = sub.add_parser("registry", help="build application registries")
+    reg_sub = reg.add_subparsers(dest="registry_command", required=True)
+
+    reg_build_p = reg_sub.add_parser(
+        "build", help="build a static registry from application directories",
+    )
+    reg_build_p.add_argument(
+        "paths", nargs="*", default=["."],
+        help="application directories, or directories to search for them",
+    )
+    reg_build_p.add_argument("-o", "--out", default="dist", help="output directory")
+    reg_build_p.add_argument(
+        "--front-page", default=None,
+        help="Markdown file shown above the application list on the catalogue front page",
+    )
+    reg_build_p.set_defaults(func=commands.cmd_registry_build)
 
     # config
     cfg = sub.add_parser("config", help="inspect marigold configuration")

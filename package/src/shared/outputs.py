@@ -18,7 +18,6 @@ import os
 import tempfile
 from base64 import b64decode
 
-from PIL import Image
 from shared.enums import ModelType, OutputMimeType
 from shared.models import OutputReference
 from shared.storage import get_storage
@@ -35,17 +34,20 @@ _VIDEO_READ_CAP = 512
 # ---------------------------------------------------------------------------
 
 
-def decode_image(b64_str: str) -> Image.Image:
+def decode_image(b64_str: str):
     """Decode a base64 image string to a PIL Image.
 
     Accepts raw base64 or a data-URI prefix (data:image/jpeg;base64,...).
     """
+    from PIL import Image
+
     if b64_str.startswith("data:"):
         b64_str = b64_str.split(",", 1)[1]
+
     return Image.open(io.BytesIO(b64decode(b64_str))).convert("RGB")
 
 
-def image_to_png_bytes(image: Image.Image) -> bytes:
+def image_to_png_bytes(image) -> bytes:
     """Encode a PIL Image to PNG bytes."""
     with io.BytesIO() as buf:
         image.save(buf, format="PNG")
@@ -90,6 +92,7 @@ def decode_video_frames(input_str: str, max_frames: int) -> list:
     Raises ValueError if no frames could be read or if the input is invalid.
     """
     import imageio
+    from PIL import Image
 
     raw = decode_binary_input(input_str)
 
@@ -140,6 +143,7 @@ def frames_to_mp4_bytes(frames: list, fps: int) -> bytes:
     """
     import imageio
     import numpy as np
+    from PIL import Image
 
     def _to_array(frame: Image.Image) -> "np.ndarray":
         arr = np.array(frame.convert("RGB"))

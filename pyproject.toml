@@ -3,6 +3,8 @@ requires = ["setuptools>=68", "setuptools_scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
+name = "bayis-marigold"
+dynamic = ["version"]
 description = "Open source inference API for open-weight models. Self-hosted on your own hardware, or run for you as a managed service."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -16,6 +18,10 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "packaging>=24",
+  "pydantic>=2",
 ]
 
 [project.urls]
