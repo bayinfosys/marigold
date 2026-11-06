@@ -3,18 +3,28 @@ requires = ["setuptools>=68", "setuptools_scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bayis-marigold"
-dynamic = ["version"]
-description = "Self-hosted, open source inference platform for open-weight models. Typed async API, on your own hardware."
+description = "Open source inference API for open-weight models. Self-hosted on your own hardware, or run for you as a managed service."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["pyyaml", "pydantic", "dynawrap"]
+keywords = ["inference", "llm", "open-weight", "self-hosted", "on-premise", "sovereign-ai", "openai-compatible", "air-gapped"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Framework :: AsyncIO",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 
 [project.urls]
 Homepage = "https://marigold.run"
 Repository = "https://github.com/bayinfosys/marigold"
 Examples = "https://github.com/bayinfosys/marigold-examples"
 Issues = "https://github.com/bayinfosys/marigold/issues"
+"Managed hosting" = "https://www.bayis.co.uk/sovereign-ai.html"
+"Bay Information Systems" = "https://www.bayis.co.uk/"
 
 [project.scripts]
 marigold = "cli.main:main"

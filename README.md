@@ -252,9 +252,17 @@ wrap Marigold's submit and poll path for unmodified OpenAI-SDK clients
 
 - `stream=true` returns correctly framed SSE chunks, without
   token-level streaming.
-- One tool call per assistant turn round-trips correctly. The wire
-  format has no field for `tool_call_id`, so parallel tool calls cannot
-  be matched back to the call that produced them.
+- Tool calls carry ids in both directions, so several calls in one
+  turn round-trip. `tool_choice` accepts `auto` and `none`.
+- `response_format` (`json_object`, `json_schema`) is checked after
+  generation; a reply that does not match fails the request with 422
+  (`output_invalid`).
+- `chat_template_kwargs` passes through to the model's chat template,
+  for example `{"enable_thinking": false}` for Qwen3.
+- `X-Marigold-Application-Id` attributes a request to an application.
+
+`platform-test-tool-call-conformance` in marigold-examples checks all
+of this against the instruct models in a catalogue.
 
 ## Repository structure
 

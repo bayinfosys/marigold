@@ -963,3 +963,11 @@ Open:
   throughout), examples (package commands, platform-test listed).
 - **OpenAI route: omit null tool_call_id and name** on assistant
   messages in responses, matching OpenAI's own output.
+- **Instruct defaults come from the model's generation_config.** With
+  no sampling parameters set, Qwen models sample (their shipped config
+  enables it), so identical requests can differ. Decide one rule:
+  greedy unless sampling is asked for, or sampling with a seed always
+  recorded. Document it in the request model either way.
+- **Tool call parsing for non-Hermes families** (Llama, Mistral): one
+  parser per family behind the existing parse_tool_calls interface,
+  selected per model.
