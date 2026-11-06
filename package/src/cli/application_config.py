@@ -96,6 +96,7 @@ class ApplicationSection(_Section):
     models_yaml: list[str] = ["models.yaml"]
     compose_files: list[str] = []
     requires: list[str] = []
+    urls: dict[str, str] = {}
 
     @field_validator("name", mode="before")
     @classmethod
@@ -123,6 +124,14 @@ class ApplicationSection(_Section):
         for entry in value:
             parse_requirement(entry)
         return [entry.strip() for entry in value]
+
+    @field_validator("urls")
+    @classmethod
+    def _urls(cls, value):
+        for key, url in value.items():
+            if not url.startswith(REGISTRY_SCHEMES):
+                raise ValueError(f"urls.{key}: '{url}' must be http:// or https://")
+        return value
 
 
 class ExecutionSection(_Section):

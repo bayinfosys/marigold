@@ -1,0 +1,76 @@
+name: marigold registry
+
+on:
+  workflow_call:
+    inputs:
+      marigold-version:
+        description: bayis-marigold version that builds the registry
+        required: true
+        type: string
+      root:
+        description: registry root, holding marigold-registry.toml
+        required: false
+        type: string
+        default: "."
+      site-builder:
+        description: Jekyll image that renders the catalogue
+        required: false
+        type: string
+        default: ghcr.io/bayinfosys/jekyll-site-builder:latest
+      python-version:
+        required: false
+        type: string
+        default: "3.12"
+      deploy:
+        description: deploy the built site to GitHub Pages
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    env:
+      MARIGOLD_VERSION: ${{ inputs.marigold-version }}
+      REGISTRY_ROOT: ${{ inputs.root }}
+      SITE_BUILDER: ${{ inputs.site-builder }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install marigold
+        run: pip install "bayis-marigold==$MARIGOLD_VERSION"
+
+      - name: Build registry
+        run: marigold registry build "$REGISTRY_ROOT" --out "$GITHUB_WORKSPACE/dist"
+
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Build catalogue
+        env:
+          PAGES_ORIGIN: ${{ steps.pages.outputs.origin }}
+          PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+        run: |
+          printf 'url: "%s"\nbaseurl: "%s"\n' "$PAGES_ORIGIN" "$PAGES_BASE_PATH" > dist/_pages.yml
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$GITHUB_WORKSPACE/dist":/site "$SITE_BUILDER" \
+            build --config _config.yml,_pages.yml
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/_site
+
+  deploy:
+    if: inputs.deploy
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

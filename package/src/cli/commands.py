@@ -12,6 +12,7 @@ from pathlib import Path
 from shared.model_cache import cache_dir_bytes
 
 from cli import applications, archives, registry
+from cli.registry_config import REGISTRY_CONFIG_NAME, load_registry_config
 from cli.compose import (
     DEFAULT_EXECUTION_IMAGE,
     DEFAULT_PLATFORM_COMPOSE_FILES,
@@ -565,17 +566,33 @@ def cmd_cache_stub(args):
 # ---------------------------------------------------------------------------
 
 def cmd_registry_build(args):
-    """Build a static registry from application directories."""
-    out = Path(args.out)
-    front_page = Path(args.front_page) if args.front_page else None
+    """Build a static registry from every application under a root.
+
+    The root's marigold-registry.toml is required and supplies the
+    registry's title, description and links, and optionally its site
+    template and visitor text. Paths in it are relative to the root.
+    """
+    root = Path(args.root).resolve()
+    section = load_registry_config(root / REGISTRY_CONFIG_NAME).registry
+
+    def from_root(value: str | None) -> Path | None:
+        return root / value if value else None
+
+    front_page = Path(args.front_page) if args.front_page else from_root(section.front_page)
+    site = Path(args.site) if args.site else from_root(section.site)
+    out = Path(args.out) if args.out else root / "dist"
 
     if front_page is not None and not front_page.is_file():
         raise FileNotFoundError(f"front page not found: {front_page}")
 
     index, warnings = registry.build(
-        [Path(p) for p in args.paths],
+        root,
         out,
+        title=section.title,
+        description=section.description,
+        urls=section.urls,
         front_page=front_page,
+        site=site,
     )
 
     for warning in warnings:

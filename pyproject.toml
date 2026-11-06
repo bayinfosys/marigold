@@ -22,6 +22,36 @@ classifiers = [
 dependencies = [
   "packaging>=24",
   "pydantic>=2",
+  "PyYAML",
+  "httpx",
+  "dynawrap",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg2-binary"]
+api = [
+  "bayis-marigold[postgres]",
+  "fastapi",
+  "uvicorn",
+]
+inference = [
+  "torch",
+  "torchvision",
+  "transformers",
+  "sentence-transformers",
+  "diffusers",
+  "accelerate",
+  "sentencepiece",
+  "protobuf",
+  "einops",
+  "pydub",
+  "nvidia-ml-py",
+]
+gpu = ["bitsandbytes"]
+worker = ["bayis-marigold[inference,postgres]"]
+cache = [
+  "bayis-marigold[inference,postgres]",
+  "huggingface_hub",
 ]
 
 [project.urls]
@@ -44,3 +74,4 @@ packages = ["api", "backend", "models", "shared", "tools", "cli", "compose"]
 
 [tool.setuptools.package-data]
 compose = ["*.yaml", "Dockerfile", "environment/*.txt"]
+cli = ["site/*", "site/_layouts/*", "site/_includes/*", "site/_includes/icons/*", "site/assets/*"]

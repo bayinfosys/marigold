@@ -1,0 +1,9 @@
+---
+layout: default
+---
+{% assign m = site.data.marigold %}
+<p class="crumbs"><a href="{{ page.root }}index.html">{{ m.title | escape }}</a> /
+<a href="index.html">{{ page.application }}</a> / models</p>
+<h1>{{ page.application }}: models</h1>
+<p>Declared by version {{ page.version }}: {{ page.model_count }}.</p>
+{{ content }}

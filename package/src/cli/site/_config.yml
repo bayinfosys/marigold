@@ -1,0 +1,6 @@
+# Jekyll settings for the default Marigold registry site.
+# The README and models pages are GitHub-flavoured Markdown, so a
+# template replacing this file should keep kramdown's GFM input.
+markdown: kramdown
+kramdown:
+  input: GFM

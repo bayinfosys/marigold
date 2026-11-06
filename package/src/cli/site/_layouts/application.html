@@ -1,0 +1,32 @@
+---
+layout: default
+---
+{% assign m = site.data.marigold %}
+{% assign registry = "/" | absolute_url %}
+<p class="crumbs"><a href="{{ page.root }}index.html">{{ m.title | escape }}</a> / {{ page.application }}</p>
+<h1>{{ page.application }}</h1>
+<p>{{ page.description | escape }}</p>
+<pre><code>{% for step in m.install_steps %}{{ step | replace: "%registry%", registry | replace: "%name%", page.application | replace: "%archive%", page.archive_path | replace: "%archive_name%", page.archive_name | escape }}
+{% endfor %}</code></pre>
+<table>
+<tr><th>Version</th><td>{{ page.version }}</td></tr>
+<tr><th>Models</th><td><a href="models.html">{{ page.model_count }} declared</a></td></tr>
+<tr><th>Archive</th><td><a href="{{ page.archive }}">{{ page.archive_name }}</a></td></tr>
+<tr><th>sha256</th><td><code>{{ page.sha256 }}</code></td></tr>
+{% if page.requires.size > 0 %}<tr><th>Requires</th><td>{{ page.requires | join: ", " | escape }}</td></tr>{% endif %}
+{% for link in page.urls %}<tr><th>{{ link[0] | capitalize | escape }}</th><td><a href="{{ link[1] }}">{{ link[1] | escape }}</a></td></tr>{% endfor %}
+</table>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": {{ page.application | jsonify }},
+  "softwareVersion": {{ page.version | jsonify }},
+  "description": {{ page.description | jsonify | replace: "<", "\u003c" }},
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Linux",
+  "url": {{ page.url | absolute_url | jsonify }},
+  "downloadUrl": {{ page.archive_path | prepend: "/" | absolute_url | jsonify }}
+}
+</script>
+{{ content }}

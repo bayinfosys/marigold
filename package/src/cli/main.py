@@ -28,6 +28,7 @@ compose.py       compose projects, environment, invocation
 commands.py      the cmd_* functions; the only layer that exits
 main.py          the parser
 application_config.py  marigold.toml schema and validation
+registry_config.py     marigold-registry.toml schema and validation
 registry.py            building static registries
 
 The application root is mounted read-only at /app in the executor, so a
@@ -130,16 +131,25 @@ def build_parser() -> argparse.ArgumentParser:
     reg_sub = reg.add_subparsers(dest="registry_command", required=True)
 
     reg_build_p = reg_sub.add_parser(
-        "build", help="build a static registry from application directories",
+        "build",
+        help="build a static registry from every application under a root",
     )
     reg_build_p.add_argument(
-        "paths", nargs="*", default=["."],
-        help="application directories, or directories to search for them",
+        "root", nargs="?", default=".",
+        help="registry root, holding marigold-registry.toml; every directory "
+             "under it holding marigold.toml is published (default: .)",
     )
-    reg_build_p.add_argument("-o", "--out", default="dist", help="output directory")
+    reg_build_p.add_argument(
+        "-o", "--out", default=None,
+        help="output directory (default: <root>/dist)",
+    )
     reg_build_p.add_argument(
         "--front-page", default=None,
-        help="Markdown file shown above the application list on the catalogue front page",
+        help="Markdown for registry visitors, overriding [registry].front_page",
+    )
+    reg_build_p.add_argument(
+        "--site", default=None,
+        help="site template directory laid over the default, overriding [registry].site",
     )
     reg_build_p.set_defaults(func=commands.cmd_registry_build)
 

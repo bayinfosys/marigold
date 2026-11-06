@@ -1,0 +1,27 @@
+---
+layout: default
+root: ""
+---
+{% assign m = site.data.marigold %}
+<h1>{{ m.title | escape }}</h1>
+<p>{{ m.description | escape }}</p>
+{% if m.front_page %}{{ m.front_page | markdownify }}{% endif %}
+
+<h2>Using this registry</h2>
+{% assign registry = "/" | absolute_url %}
+<pre><code>{% for step in m.install_steps %}{{ step | replace: "%registry%", registry | replace: "%name%", "<name>" | replace: "%archive%", "applications/<name>-<version>.tar.gz" | replace: "%archive_name%", "<name>-<version>.tar.gz" | escape }}
+{% endfor %}</code></pre>
+<p>Every archive's sha256 is recorded in <a href="{{ m.index }}">{{ m.index }}</a>.</p>
+
+<h2>Applications</h2>
+<table>
+<thead><tr><th>Application</th><th>Version</th><th>Description</th><th>Models</th></tr></thead>
+<tbody>
+{% for app in m.applications %}<tr>
+<td><a href="{{ app.page }}">{{ app.name }}</a></td>
+<td>{{ app.version }}</td>
+<td>{{ app.description | escape }}</td>
+<td><a href="{{ app.page }}models.html">{{ app.model_count }}</a></td>
+</tr>
+{% endfor %}</tbody>
+</table>

@@ -1,0 +1,19 @@
+---
+layout: null
+---
+{%- assign m = site.data.marigold -%}
+{%- assign registry = "/" | absolute_url -%}
+# {{ m.title }}
+
+> {{ m.description }} The machine-readable index is {{ m.index | prepend: "/" | absolute_url }}.
+
+{% for link in m.urls %}{{ link[0] | capitalize }}: {{ link[1] }}
+{% endfor %}
+## Using this registry
+
+{% for step in m.install_steps %}    {{ step | replace: "%registry%", registry | replace: "%name%", "<name>" | replace: "%archive%", "applications/<name>-<version>.tar.gz" | replace: "%archive_name%", "<name>-<version>.tar.gz" }}
+{% endfor %}
+## Applications
+
+{% for app in m.applications %}- [{{ app.name }} {{ app.version }}]({{ app.page | prepend: "/" | absolute_url }}): {{ app.description | default: "no description" }} Models: {{ app.page | append: "models.html" | prepend: "/" | absolute_url }}
+{% endfor %}

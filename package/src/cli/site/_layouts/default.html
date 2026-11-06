@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="marigold {{ site.data.marigold.version }}">
+<title>{{ page.title | default: site.data.marigold.title | escape }}</title>
+{% assign description = page.description | default: site.data.marigold.description %}
+<meta name="description" content="{{ description | escape }}">
+{% if site.url %}<link rel="canonical" href="{{ page.url | absolute_url }}">{% endif %}
+<link rel="alternate" type="application/json" title="Marigold application index" href="{{ page.root }}{{ site.data.marigold.index }}">
+<link rel="stylesheet" href="{{ page.root }}assets/marigold.css">
+</head>
+<body>
+{% assign m = site.data.marigold %}
+<header class="site-nav">
+  <div class="wrap">
+    <a class="site-title" href="{{ page.root }}index.html">{{ m.title | escape }}</a>
+    <nav>
+      <a href="{{ page.root }}{{ m.index }}">Index</a>
+      {% for link in m.urls %}{% if link[0] == "repository" %}<a href="{{ link[1] }}" title="Repository">src<span class="visually-hidden">Repository</span></a>{% else %}<a href="{{ link[1] }}">{{ link[0] | capitalize | escape }}</a>{% endif %}{% endfor %}
+    </nav>
+  </div>
+</header>
+<main class="wrap">
+{{ content }}
+</main>
+<footer class="site-footer">
+  <div class="wrap footer-columns">
+    <div class="footer-marigold">
+      <p><a href="{{ m.project_url }}">Marigold</a>
+      <a href="{{ m.source_url }}" title="Marigold source at this version">{{ m.version }}</a></p>
+      <p><a href="{{ page.root }}{{ m.index }}">{{ m.index }}</a><br>
+      <a href="{{ page.root }}llms.txt">llms.txt</a></p>
+    </div>
+    {% if m.urls.size > 0 %}<div class="footer-registry">
+      <p class="footer-heading">{{ m.title | escape }}</p>
+      <ul>
+      {% for link in m.urls %}<li>
+        <a href="{{ link[1] }}">{{ link[1] | escape }}</a></li>
+      {% endfor %}</ul>
+    </div>{% endif %}
+  </div>
+</footer>
+</body>
+</html>

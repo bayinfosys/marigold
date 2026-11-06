@@ -1,24 +1,33 @@
-"""Registry build: application directories in, a static registry out.
+"""Registry build: every application under a root in, a static registry out.
 
-A registry is a directory any static host can serve:
+A registry is a directory any static host can serve. The build writes
+two layers into it:
 
-    marigold-applications.json            the index
-    applications/<name>-<version>.tar.gz  the archives
-    applications/<name>/index.md          catalogue: the README
-    applications/<name>/models.md         catalogue: the declared models
-    index.md, _config.yml, _layouts/      catalogue site, Jekyll source
+    protocol   marigold-applications.json
+               applications/<name>-<version>.tar.gz
+    catalogue  applications/<name>/index.md and models.md
+               _data/marigold.json
+               a site template: _config.yml, _layouts/, assets/, the
+               front page, llms.txt and sitemap.xml
 
-The index and the archives are the protocol, and the only files a
-loader reads. The rest is Jekyll source for an optional catalogue:
-`jekyll build` turns the directory into _site/, which holds the same
-protocol files beside the HTML. Served without Jekyll, the directory
-is still a complete registry.
+The protocol is complete without Jekyll, and a loader reads only the
+protocol. The catalogue is Jekyll source: `jekyll build` renders it into
+_site/, beside copies of the protocol files. Absolute URLs are Jekyll's,
+from site.url and site.baseurl, set where the site is rendered.
 
-Everything is derived from the archives: the build writes each
-archive, extracts it to a temporary directory, and takes the index
-entry, the README and the declared models from there. Nothing is
-maintained by hand, and nothing depends on a previous build: the same
-sources give the same registry.
+The site template is the package's own (cli/site) with an optional
+template directory laid over it: a file in the template replaces the
+default at the same path, and anything else is added. The template
+presents; the build supplies the data, in _data/marigold.json and each
+page's front matter. Commands shown to readers are part of that data.
+
+Every directory under the root holding marigold.toml is published. The
+registry's identity comes from marigold-registry.toml at the root
+(cli.registry_config). Everything else is derived from the archives:
+the build writes each archive, extracts it to a temporary directory,
+and takes the index entry, the README and the declared models from
+there. Nothing is maintained by hand, and nothing depends on a previous
+build: the same sources and template give the same registry.
 """
 
 import json
@@ -26,7 +35,10 @@ import os
 import shutil
 import tempfile
 
+from importlib.resources import files
 from pathlib import Path
+
+from packaging.version import Version
 
 from cli import applications, archives
 from cli.application_config import ApplicationConfig
@@ -34,6 +46,7 @@ from cli.config import (
     APPLICATION_CONFIG_NAME,
     load_application_config,
     load_application_toml,
+    marigold_version,
 )
 
 PROTOCOL = 1
@@ -41,53 +54,92 @@ INDEX_NAME = "marigold-applications.json"
 APPLICATIONS_SUBDIR = "applications"
 README_NAME = "README.md"
 HUGGINGFACE_URL = "https://huggingface.co/"
-
-# What a build writes at the top of its output directory, plus what
-# Jekyll writes there. A directory holding anything else is not a
-# previous build, and is left alone.
-OUTPUT_ENTRIES = (
-    INDEX_NAME, APPLICATIONS_SUBDIR, "index.md", "_config.yml", "_layouts",
-    "_site", ".jekyll-cache", ".jekyll-metadata",
-)
+PROJECT_URL = "https://marigold.run"
+PROJECT_REPOSITORY = "https://github.com/bayinfosys/marigold"
+DATA_PATH = "_data/marigold.json"
 
 
-# ---------------------------------------------------------------------------
-# discovery
-# ---------------------------------------------------------------------------
+# Written into every build. A non-empty output directory is cleared only
+# when it holds this marker, so a build never empties a directory it did
+# not write. Jekyll skips dotfiles, so the marker stays out of _site.
+MARKER = ".marigold-registry"
 
-def discover(paths: list[Path], out: Path) -> list[Path]:
-    """Application directories under the given paths, sorted.
+# The default site template, shipped as package data.
+DEFAULT_SITE = files("cli").joinpath("site")
 
-    A path holding marigold.toml is an application. Any other directory
-    is searched. An application's subdirectories belong to it and are
-    not searched, and hidden directories, excluded names and the output
-    directory are skipped.
+# Paths the build writes. A site template containing one is an error:
+# it would replace generated content. _pages.yml is written by the
+# Pages workflow with the site's URL.
+GENERATED_PATHS = (INDEX_NAME, APPLICATIONS_SUBDIR, DATA_PATH, MARKER, "_pages.yml")
+
+# A template providing either replaces the default front page.
+FRONT_PAGES = ("index.html", "index.md")
+
+# Commands shown to readers. Templates substitute %registry%, %name%,
+# %archive% and %archive_name%. The placeholders avoid braces: Liquid ends
+# a {{ }} tag at the first '}', even inside a quoted string.
+INSTALL_STEPS = [
+    "marigold registry add %registry%",
+    "marigold application install %name%",
+]
+
+def _source_url(version: str) -> str:
+    """The marigold source this registry was built with.
+
+    A release has a tag, v<version>, so it links to the source at that
+    tag. A development build has none, so it links to the repository.
     """
-    found = set()
+    parsed = Version(version)
+
+    if parsed.is_devrelease or parsed.local:
+        return PROJECT_REPOSITORY
+
+    return f"{PROJECT_REPOSITORY}/tree/v{parsed}"
+
+# ---------------------------------------------------------------------------
+# discovery of applications
+# ---------------------------------------------------------------------------
+
+def discover(root: Path, out: Path) -> list[Path]:
+    """Every application directory under root, sorted.
+
+    A directory holding marigold.toml is an application, at any depth.
+    Hidden directories and the output directory are not searched. A
+    marigold.toml inside another application's directory is an error,
+    since it would be both an application and part of the other's
+    archive. Nothing else is excluded: a directory leaves the registry
+    when its marigold.toml does.
+    """
+    root = root.resolve()
     out = out.resolve()
 
-    for root in paths:
-        root = root.resolve()
+    if not root.is_dir():
+        raise FileNotFoundError(f"not a directory: {root}")
 
-        if not root.is_dir():
-            raise FileNotFoundError(f"not a directory: {root}")
+    found = []
 
-        for dirpath, dirnames, filenames in os.walk(root):
-            current = Path(dirpath)
+    for dirpath, dirnames, filenames in os.walk(root):
+        current = Path(dirpath)
 
-            if APPLICATION_CONFIG_NAME in filenames:
-                found.add(current)
-                dirnames.clear()
-                continue
+        dirnames[:] = sorted(
+            d for d in dirnames
+            if not d.startswith(".") and (current / d).resolve() != out
+        )
 
-            dirnames[:] = sorted(
-                d for d in dirnames
-                if not d.startswith(".")
-                and d not in archives.EXCLUDED_NAMES
-                and (current / d).resolve() != out
-            )
+        if APPLICATION_CONFIG_NAME in filenames:
+            found.append(current)
 
-    return sorted(found)
+    found.sort()
+
+    for outer in found:
+        for inner in found:
+            if inner != outer and outer in inner.parents:
+                raise ValueError(
+                    f"{inner} holds {APPLICATION_CONFIG_NAME} inside the "
+                    f"application at {outer}; remove one of them"
+                )
+
+    return found
 
 
 # ---------------------------------------------------------------------------
@@ -95,47 +147,76 @@ def discover(paths: list[Path], out: Path) -> list[Path]:
 # ---------------------------------------------------------------------------
 
 def build(
-    paths: list[Path],
+    root: Path,
     out: Path,
+    *,
+    title: str,
+    description: str,
+    urls: dict[str, str] | None = None,
     front_page: Path | None = None,
+    site: Path | None = None,
 ) -> tuple[dict, list[str]]:
-    """Build a registry into out. Returns (index, warnings).
+    """Build the registry under root into out. Returns (index, warnings).
+
+    title, description and urls are the registry's identity, from
+    marigold-registry.toml. front_page is Markdown for registry visitors,
+    shown on the front page above the usage. site is a template
+    directory laid over the default.
 
     The index is written last, so a failed build leaves no index and the
     directory is not a usable registry.
     """
     out = out.resolve()
-    sources = discover(paths, out)
+    sources = discover(root, out)
 
     if not sources:
-        raise FileNotFoundError(
-            "no applications found under: " + ", ".join(str(p) for p in paths)
-        )
+        raise FileNotFoundError(f"no {APPLICATION_CONFIG_NAME} found under {root.resolve()}")
 
     identities = _identities(sources)
+
     _prepare_output(out)
+    _write_template(out, site)
 
     index: dict = {"protocol": PROTOCOL, "applications": {}}
     model_counts: dict[str, int] = {}
+    links: dict[str, dict[str, str]] = {}
     warnings: list[str] = []
 
     for name, (version, source) in sorted(identities.items()):
         archive, _ = applications.build_archive(source, out / APPLICATIONS_SUBDIR)
         contents = _read_archive(archive)
-        entry = _entry(archive, out, contents["config"])
+        entry = _entry(archive, out=out, config=contents["config"])
 
         index["applications"][name] = {"versions": {version: entry}}
         model_counts[name] = len(contents["models"])
+        links[name] = contents["config"].application.urls
 
         if contents["readme"] is None:
             warnings.append(f"{name}: no {README_NAME}; its catalogue page shows the description only")
         if not entry["description"]:
             warnings.append(f"{name}: no [application].description")
 
-        _write_application_pages(out, name, version, entry, contents)
+        _write_application_pages(
+            out,
+            name=name,
+            version=version,
+            entry=entry,
+            contents=contents,
+        )
+
+    front_text = front_page.read_text(encoding="utf-8") if front_page else None
 
     _check_consistency(out, index)
-    _write_site(out, index, model_counts, front_page)
+    _write_data(
+        out,
+        index=index,
+        model_counts=model_counts,
+        links=links,
+        title=title,
+        description=description,
+        urls=urls or {},
+        front_page=front_text,
+    )
     _write_index(out, index)
 
     return index, warnings
@@ -166,24 +247,76 @@ def _identities(sources: list[Path]) -> dict[str, tuple[str, Path]]:
 
 def _prepare_output(out: Path) -> None:
     """An empty output directory, or a previous build's, cleared."""
-    if out.exists():
-        foreign = sorted(p.name for p in out.iterdir() if p.name not in OUTPUT_ENTRIES)
-
-        if foreign:
+    if out.exists() and any(out.iterdir()):
+        if not (out / MARKER).is_file():
             raise ValueError(
-                f"{out} holds files a registry build did not write "
-                f"({', '.join(foreign[:5])}); choose an empty directory"
+                f"{out} is not empty and was not written by a registry "
+                "build; choose an empty directory"
             )
 
-        for name in OUTPUT_ENTRIES:
-            path = out / name
-            if path.is_dir():
-                shutil.rmtree(path)
-            elif path.exists():
-                path.unlink()
+        for child in out.iterdir():
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
 
     (out / APPLICATIONS_SUBDIR).mkdir(parents=True)
+    (out / MARKER).write_text(
+        "Written by marigold registry build. The next build clears this directory.\n",
+        encoding="utf-8",
+    )
 
+
+# ---------------------------------------------------------------------------
+# site template
+# ---------------------------------------------------------------------------
+
+def _copy_tree(source, target: Path) -> None:
+    """Copy a directory tree from a Path or an importlib.resources
+    Traversable. Dotfiles and Jekyll output are not copied."""
+    target.mkdir(parents=True, exist_ok=True)
+
+    for child in sorted(source.iterdir(), key=lambda c: c.name):
+        if child.name.startswith(".") or child.name == "_site":
+            continue
+
+        destination = target / child.name
+
+        if child.is_dir():
+            _copy_tree(child, destination)
+        else:
+            destination.write_bytes(child.read_bytes())
+
+
+def _write_template(out: Path, site: Path | None) -> None:
+    """The default site, with the given template laid over it."""
+    _copy_tree(DEFAULT_SITE, out)
+
+    if site is None:
+        return
+
+    site = site.resolve()
+
+    if not site.is_dir():
+        raise FileNotFoundError(f"site template not found: {site}")
+
+    clashes = [path for path in GENERATED_PATHS if (site / path).exists()]
+
+    if clashes:
+        raise ValueError(
+            f"{site} contains paths the registry build writes: {', '.join(clashes)}"
+        )
+
+    if any((site / name).exists() for name in FRONT_PAGES):
+        for name in FRONT_PAGES:
+            (out / name).unlink(missing_ok=True)
+
+    _copy_tree(site, out)
+
+
+# ---------------------------------------------------------------------------
+# archives and the index
+# ---------------------------------------------------------------------------
 
 def _read_archive(archive: Path) -> dict:
     """What the index and the catalogue take from an archive.
@@ -209,7 +342,7 @@ def _read_archive(archive: Path) -> dict:
     return {"config": config, "models": models, "model_files": model_files, "readme": readme}
 
 
-def _entry(archive: Path, out: Path, config: ApplicationConfig) -> dict:
+def _entry(archive: Path, *, out: Path, config: ApplicationConfig) -> dict:
     """The index entry for one archive."""
     return {
         "archive": archive.relative_to(out).as_posix(),
@@ -217,6 +350,11 @@ def _entry(archive: Path, out: Path, config: ApplicationConfig) -> dict:
         "description": config.application.description or "",
         "requires": config.application.requires,
     }
+
+
+def _versions(application: dict) -> list[tuple[str, dict]]:
+    """An application's versions in PEP 440 order."""
+    return sorted(application["versions"].items(), key=lambda item: Version(item[0]))
 
 
 def _check_consistency(out: Path, index: dict) -> None:
@@ -238,7 +376,7 @@ def _write_index(out: Path, index: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# catalogue (Jekyll source)
+# catalogue pages and data
 # ---------------------------------------------------------------------------
 
 def _front_matter(fields: dict) -> str:
@@ -314,26 +452,36 @@ def _models_markdown(models: list, model_files: dict[str, str]) -> str:
 
 
 def _write_application_pages(
-    out: Path, name: str, version: str, entry: dict, contents: dict,
+    out: Path,
+    *,
+    name: str,
+    version: str,
+    entry: dict,
+    contents: dict,
 ) -> None:
     """applications/<name>/index.md and models.md.
 
     'name' is a Jekyll built-in page variable (the source filename), so
-    the application's name goes under 'application'.
+    the application's name goes under 'application'. 'root' is the path
+    from the page back to the registry root, for relative links.
     """
     directory = out / APPLICATIONS_SUBDIR / name
     directory.mkdir()
 
     archive_name = Path(entry["archive"]).name
+
     common = {
+        "root": "../../",
         "application": name,
         "version": version,
         "description": entry["description"],
         "archive": f"../{archive_name}",
         "archive_name": archive_name,
+        "archive_path": entry["archive"],
         "sha256": entry["sha256"],
         "requires": entry["requires"],
         "model_count": len(contents["models"]),
+        "urls": contents["config"].application.urls,
     }
 
     readme = contents["readme"]
@@ -351,94 +499,47 @@ def _write_application_pages(
     )
 
 
-def _write_site(
-    out: Path, index: dict, model_counts: dict[str, int], front_page: Path | None,
+def _write_data(
+    out: Path,
+    *,
+    index: dict,
+    model_counts: dict[str, int],
+    links: dict[str, dict[str, str]],
+    title: str,
+    description: str,
+    urls: dict[str, str],
+    front_page: str | None,
 ) -> None:
-    (out / "_config.yml").write_text(CONFIG_YML, encoding="utf-8")
-
-    layouts = out / "_layouts"
-    layouts.mkdir()
-    (layouts / "default.html").write_text(DEFAULT_LAYOUT, encoding="utf-8")
-    (layouts / "application.html").write_text(APPLICATION_LAYOUT, encoding="utf-8")
-    (layouts / "models.html").write_text(MODELS_LAYOUT, encoding="utf-8")
-
-    rows = [
-        "| Application | Version | Description | Models |",
-        "|---|---|---|---|",
-    ]
+    """_data/marigold.json: everything a template reads as site.data.marigold."""
+    listing = []
 
     for name, application in sorted(index["applications"].items()):
-        page = f"{APPLICATIONS_SUBDIR}/{name}/"
+        for version, entry in _versions(application):
+            listing.append({
+                "name": name,
+                "version": version,
+                "description": entry["description"],
+                "page": f"{APPLICATIONS_SUBDIR}/{name}/",
+                "archive": entry["archive"],
+                "sha256": entry["sha256"],
+                "requires": entry["requires"],
+                "model_count": model_counts.get(name, 0),
+                "urls": links.get(name, {}),
+            })
 
-        for version, entry in sorted(application["versions"].items()):
-            rows.append(
-                f"| [{name}]({page}) | {version} | {_cell(entry['description'])} "
-                f"| [{model_counts.get(name, 0)}]({page}models.html) |"
-            )
+    data = {
+        "title": title,
+        "description": description,
+        "urls": urls,
+        "version": marigold_version(),
+        "source_url": _source_url(marigold_version()),
+        "index": INDEX_NAME,
+        "front_page": front_page,
+        "install_steps": INSTALL_STEPS,
+        "applications": listing,
+        "project_url": PROJECT_URL,
+    }
 
-    intro = _raw(front_page.read_text(encoding="utf-8")) if front_page else ""
-    fields = {"layout": "default", "title": "Marigold applications"}
-
-    (out / "index.md").write_text(
-        _front_matter(fields) + intro + "\n" + "\n".join(rows) + "\n",
-        encoding="utf-8",
-    )
-
-
-CONFIG_YML = """\
-title: Marigold applications
-markdown: kramdown
-kramdown:
-  input: GFM
-"""
-
-DEFAULT_LAYOUT = """\
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ page.title }}</title>
-<style>
-body { font-family: system-ui, sans-serif; max-width: 52rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
-pre, code { font-family: ui-monospace, monospace; }
-pre { overflow-x: auto; padding: 0.75rem; background: #f4f4f4; }
-table { border-collapse: collapse; }
-th, td { padding: 0.25rem 0.75rem; border-bottom: 1px solid #ddd; text-align: left; vertical-align: top; }
-td:first-child, th:first-child { white-space: nowrap; }
-.crumbs { font-size: 0.9rem; }
-</style>
-</head>
-<body>
-{{ content }}
-</body>
-</html>
-"""
-
-APPLICATION_LAYOUT = """\
----
-layout: default
----
-<p class="crumbs"><a href="../../index.html">Applications</a> / {{ page.application }}</p>
-<h1>{{ page.application }}</h1>
-<p>{{ page.description | escape }}</p>
-<pre><code>marigold application install {{ page.application }}=={{ page.version }}</code></pre>
-<table>
-<tr><th>Version</th><td>{{ page.version }}</td></tr>
-<tr><th>Models</th><td><a href="models.html">{{ page.model_count }} declared</a></td></tr>
-<tr><th>Archive</th><td><a href="{{ page.archive }}">{{ page.archive_name }}</a></td></tr>
-<tr><th>sha256</th><td><code>{{ page.sha256 }}</code></td></tr>
-{% if page.requires.size > 0 %}<tr><th>Requires</th><td>{{ page.requires | join: ", " | escape }}</td></tr>{% endif %}
-</table>
-{{ content }}
-"""
-
-MODELS_LAYOUT = """\
----
-layout: default
----
-<p class="crumbs"><a href="../../index.html">Applications</a> / <a href="index.html">{{ page.application }}</a> / models</p>
-<h1>{{ page.application }}: models</h1>
-<p>Declared by version {{ page.version }}: {{ page.model_count }}.</p>
-{{ content }}
-"""
+    path = out / DATA_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
