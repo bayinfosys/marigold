@@ -12,26 +12,26 @@ A file with front matter is published; a file without it is not.
 
 ## Start
 
-- [Getting started](GETTING-STARTED.md) -- install the CLI, run a first
+- [Getting started](getting-started.md) -- install the CLI, run a first
   application, call the OpenAI-compatible endpoints.
 
 ## Applications
 
-- [Applications](APPLICATIONS.md) -- what an application is, and the three layers it runs in.
-- [Building](BUILDING.md) -- `marigold.toml`, `models.yaml`, the instance contract, packaging.
-- [Publishing](PUBLISHING.md) -- registries, and publishing one with GitHub Pages or any static host.
-- [Installing](INSTALLING.md) -- adding registries, installing by name, dependencies.
-- [Finding](FINDING.md) -- registries, catalogues, and the index for tools and agents.
-- [Examples](EXAMPLES.md) -- the examples registry.
-- [Showcase](SHOWCASES.md) -- the showcase registry.
+- [Applications](applications.md) -- what an application is, and the three layers it runs in.
+- [Building](building.md) -- `marigold.toml`, `models.yaml`, the instance contract, packaging.
+- [Publishing](publishing.md) -- registries, and publishing one with GitHub Pages or any static host.
+- [Installing](installing.md) -- adding registries, installing by name, dependencies.
+- [Finding](finding.md) -- registries, catalogues, and the index for tools and agents.
+- [Examples](examples.md) -- the examples registry.
+- [Showcase](showcases.md) -- the showcase registry.
 
 ## Reference
 
-- [Configuration](CONFIGURATION.md) -- the system config, output storage, authentication.
-- [Model types](MODEL-TYPES.md) -- every model type, its input and output.
-- [API](API.md) -- submitting and polling, binary outputs, the OpenAI-compatible endpoints.
+- [Configuration](configuration.md) -- the system config, output storage, authentication.
+- [Model types](model-types.md) -- every model type, its input and output.
+- [API](api.md) -- submitting and polling, binary outputs, the OpenAI-compatible endpoints.
 
 ## Design
 
-- [Architecture](ARCHITECTURE.md) -- how the running system is divided, and what each part may touch.
-- [Principles](PRINCIPLES.md) -- the reasoning behind recurring design decisions.
+- [Architecture](architecture.md) -- how the running system is divided, and what each part may touch.
+- [Principles](principles.md) -- the reasoning behind recurring design decisions.
