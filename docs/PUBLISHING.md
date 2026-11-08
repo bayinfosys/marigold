@@ -90,6 +90,7 @@ One-time settings in the registry repository:
 
 Add `.github/workflows/publish.yaml`:
 
+<!-- {% raw %} Liquid raw block, so marigold.run renders the expressions below as written -->
 ```yaml
 name: registry
 
@@ -116,6 +117,8 @@ jobs:
       site-builder: ghcr.io/bayinfosys/jekyll-site-builder:v0.0.2
       deploy: ${{ startsWith(github.ref, 'refs/tags/v') }}
 ```
+<!-- {% endraw %} -->
+
 
 Every push builds the registry, which checks it. Pushing a `v*` tag
 publishes it:
