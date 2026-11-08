@@ -1,7 +1,7 @@
 ---
 title: Configuration
 description: The Marigold system config, where it is read from, registries, output storage and authentication.
-nav_order: 11
+nav_order: 12
 ---
 
 # Configuration
@@ -29,7 +29,7 @@ marigold config show [name]   # every resolved value and the layer it came from
 
 ```toml
 [platform]
-compose_files = ["core", "cpu"]    # or ["core", "gpu"]
+compose_files = ["core", "cpu"]    # add "gpu" for an NVIDIA worker: ["core", "cpu", "gpu"]
 # tag = "0.8.1"                    # default: the installed CLI's version
 
 [cache]
@@ -63,7 +63,17 @@ AWS_SECRET_ACCESS_KEY=...
 AWS_DEFAULT_REGION=...
 ```
 
-Set them in the shell profile: every `marigold` command reads them.
+For Azure Blob Storage:
+
+```sh
+MARIGOLD_STORAGE=azure
+MARIGOLD_STORAGE_CONTAINER=marigold   # the container must already exist
+AZURE_STORAGE_ACCOUNT=...             # credentials from a managed identity, or
+AZURE_STORAGE_CONNECTION_STRING=...   # a connection string
+```
+
+Set them in the shell profile: every `marigold` command reads them. For
+several hosts sharing one store, see [Deployment](deployment.md).
 
 ## Authentication
 

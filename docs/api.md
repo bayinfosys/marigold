@@ -1,7 +1,7 @@
 ---
 title: API
 description: Submitting and polling jobs, binary outputs, the catalogue and the OpenAI-compatible endpoints of the Marigold API.
-nav_order: 10
+nav_order: 11
 ---
 
 # API

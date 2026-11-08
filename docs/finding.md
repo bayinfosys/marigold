@@ -1,7 +1,7 @@
 ---
 title: Finding applications
 description: Registries, their catalogues, and the machine-readable index and llms.txt for tools and agents.
-nav_order: 6
+nav_order: 7
 ---
 
 # Finding applications

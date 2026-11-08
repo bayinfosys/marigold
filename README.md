@@ -62,7 +62,9 @@ a local instruct model. The walkthrough is in
 | [Getting started](docs/getting-started.md) | install, first application, OpenAI-compatible client |
 | [Applications](docs/applications.md) | what an application is; [building](docs/building.md), [publishing](docs/publishing.md), [installing](docs/installing.md), [finding](docs/finding.md) |
 | [Examples](docs/examples.md), [Showcase](docs/showcase.md) | the project's registries |
+| [Porting](docs/porting.md) | bringing an existing AI application to Marigold |
 | [Configuration](docs/configuration.md) | system config, registries, output storage, authentication |
+| [Deployment](docs/deployment.md) | from a laptop to your own cloud account |
 | [Model types](docs/model-types.md) | every type, route, input and output; adding a type |
 | [API](docs/api.md) | submit and poll, binary outputs, OpenAI-compatible endpoints |
 | [Architecture](docs/ARCHITECTURE.md), [Principles](docs/PRINCIPLES.md) | how the system is divided, and why |

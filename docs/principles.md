@@ -1,7 +1,7 @@
 ---
 title: Principles
 description: The reasoning behind recurring Marigold design decisions, and what each implies for the design.
-nav_order: 13
+nav_order: 15
 ---
 
 # Marigold -- Principles

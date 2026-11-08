@@ -1,7 +1,7 @@
 ---
 title: Publishing applications
 description: Registries, marigold-registry.toml, building a registry, and publishing it with GitHub Pages or any static host.
-nav_order: 4
+nav_order: 5
 ---
 
 # Publishing applications

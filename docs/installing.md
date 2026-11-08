@@ -1,7 +1,7 @@
 ---
 title: Installing applications
 description: Adding a registry, installing an application by name, downloading its models and running it.
-nav_order: 5
+nav_order: 6
 ---
 
 # Installing applications

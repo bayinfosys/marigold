@@ -1,7 +1,7 @@
 ---
 title: Examples
 description: "The Marigold examples registry: platform tests, benchmarks and small applications to start from."
-nav_order: 7
+nav_order: 8
 ---
 
 # Examples

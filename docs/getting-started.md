@@ -39,7 +39,7 @@ Set its location in the system config:
 ```toml
 # ~/.marigold/config.toml
 [platform]
-compose_files = ["core", "cpu"]     # ["core", "gpu"] for an NVIDIA worker
+compose_files = ["core", "cpu"]     # ["core", "cpu", "gpu"] for an NVIDIA worker
 
 [cache]
 dir = "/data/marigold"              # default: ~/.marigold/cache

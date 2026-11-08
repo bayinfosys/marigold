@@ -1,7 +1,7 @@
 ---
 title: Architecture
 description: How the running Marigold system is divided into platform, application and instance, and what each part may touch.
-nav_order: 12
+nav_order: 14
 ---
 
 # Marigold -- Architecture

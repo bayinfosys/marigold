@@ -1,7 +1,7 @@
 ---
 title: Model types
 description: Every Marigold model type, its route, input, output and example models.
-nav_order: 9
+nav_order: 10
 ---
 
 # Model types

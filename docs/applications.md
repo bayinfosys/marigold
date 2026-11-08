@@ -41,6 +41,18 @@ Anything that drives models through the API:
 
 Models are not limited to text: see [Model types](model-types.md).
 
+## What is stable
+
+An application depends on four interfaces. They are what a port or a
+new application is written against:
+
+| Interface | Where | Status |
+|---|---|---|
+| `marigold.toml` and `models.yaml` | [Building](building.md) | stable; new keys are additions |
+| The instance contract: mounts, environment, network | [Building](building.md#what-an-instance-can-rely-on) | stable |
+| The API: submit, poll, outputs, OpenAI-compatible endpoints | [API](api.md) | stable routes; new model types are additions |
+| The registry index, `protocol: 1` | [Publishing](publishing.md#the-index) | stable; a breaking change takes a new protocol number |
+
 ## From source to running
 
 | Step | Command | Page |

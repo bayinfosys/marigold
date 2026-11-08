@@ -188,6 +188,9 @@ current.
 
 ## Not yet built
 
+- Services supplied by the application: its own compose file, so an
+  application with a web interface publishes its own port. See
+  [Porting](porting.md#applications-with-a-web-interface).
 - Model placeholders: `$name` in model fields, with defaults in `models.yaml` and overrides at start.
 - Runs: a runs API, run records, and a handler interface for applications that serve many requests.
 - `api.py`, served by the instance and reached through the platform API.
