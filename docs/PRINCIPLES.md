@@ -1,3 +1,9 @@
+---
+title: Principles
+description: The reasoning behind recurring Marigold design decisions, and what each implies for the design.
+nav_order: 13
+---
+
 # Marigold -- Principles
 
 These principles record the reasoning behind recurring design decisions.
@@ -96,10 +102,11 @@ output refines the specification.
 
 ## 6. Separation and isolation are what let it scale
 
-The platform, the package and the application are separate, with
+The platform, the application and the instance are separate, with
 separate lifecycles. The platform serves models and is shared by every
-application on a host. A package declares what an application needs.
-An application is code running in its own container.
+application on a host. An application declares the models it needs and
+carries the code that uses them. An instance is that code running in
+its own container.
 
 Each component owns what it writes and reads everything else. Two
 components face outward: the cache container brings artefacts in, and
@@ -110,7 +117,7 @@ it happens.
 
 Because the layers meet only at declared interfaces, each scales on its
 own terms. Ten agents share one worker on a single local GPU; the same
-package runs unchanged against many workers.
+application runs unchanged against many workers.
 
 Implication: nothing reaches across a boundary for convenience.
 Application code never runs on the host, never mounts the Docker
@@ -118,10 +125,9 @@ socket, and never touches the database.
 
 ---
 
-## 7. A package declares requirements, not execution
+## 7. An application declares requirements, not execution
 
-A package states which models must be present and what its application
-runs. It does not say where models execute, on what hardware, or by
+An application states which models must be present and what it runs. It does not say where models execute, on what hardware, or by
 which worker. A cached model with no application is valid; an
 application using a model cached for another is valid.
 
@@ -129,7 +135,7 @@ The catalogue records what the cache contains. A row is written when
 weights are confirmed present, and at no other time.
 
 Implication: execution details stay out of models.yaml, and the
-platform can change how models run without any package changing.
+platform can change how models run without any application changing.
 
 ---
 

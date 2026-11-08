@@ -1,8 +1,53 @@
+---
+title: Architecture
+description: How the running Marigold system is divided into platform, application and instance, and what each part may touch.
+nav_order: 12
+---
+
 # Marigold -- Architecture
 
 How the running system is divided, what each part may touch, and why.
-The reasoning is in PRINCIPLES.md (principles 6 and 7); this document
+The reasoning is in [PRINCIPLES.md](PRINCIPLES.md) (principles 6 and 7); this document
 describes the result.
+
+---
+
+## Overview
+
+```mermaid
+flowchart LR
+    classDef gw  fill:#FAC775,stroke:#854F0B,color:#412402,stroke-width:1.5px
+    classDef svc fill:#B5D4F4,stroke:#185FA5,color:#042C53,stroke-width:1.5px
+    classDef app fill:#D3D1C7,stroke:#5F5E5A,color:#2C2C2A,stroke-width:1.5px
+    classDef st  fill:#9FE1CB,stroke:#0F6E56,color:#04342C,stroke-width:1.5px
+
+    HF([HuggingFace]):::app
+    CLIENT([external client]):::app
+
+    subgraph APPS[marigold-applications]
+        APP1["instance\n(application code)"]:::app
+        APP2["instance\n(application code)"]:::app
+    end
+
+    subgraph CORE[marigold-core]
+        CACHE["cache-init\nartefact gateway"]:::gw
+        API["api\nrequest gateway"]:::gw
+        PG[("postgres\ncatalogue, queues, results")]:::st
+        WRK["worker"]:::svc
+    end
+
+    DISK[/"model cache\n(host disk)"/]:::st
+
+    HF -->|weights| CACHE
+    CACHE -->|writes| DISK
+    CACHE -->|tables, catalogue| PG
+    APP1 & APP2 -->|HTTP| API
+    CLIENT -->|HTTP :8000| API
+    API -->|enqueue, read| PG
+    PG -->|claim| WRK
+    WRK -->|read-only| DISK
+    WRK -->|results| PG
+```
 
 ---
 
@@ -20,7 +65,7 @@ reports with no application in hand:
 
 **Application.** A directory or archive holding `marigold.toml`, one or
 more `models.yaml` files, and the code that uses them. Installed into
-the cache under its name. See APPLICATIONS.md.
+the cache under its name. See [Building](building.md).
 
 **Instance.** An application's code running in its own container,
 compose project `marigold-<application>`. Started, stopped and replaced
@@ -123,6 +168,31 @@ exception, recorded in TODO.md.
 Model failure state (`failed_reason`) is written by the worker onto the
 catalogue row today. Under enforced roles it moves to a table the
 worker owns, so the catalogue stays a record of cache contents.
+
+---
+
+## Inference flow
+
+```mermaid
+sequenceDiagram
+    participant C as application
+    participant A as api
+    participant P as postgres
+    participant W as worker
+
+    C->>A: POST /{mode}/{task}
+    A->>P: check results cache
+    A->>P: write status=queued, enqueue
+    A-->>C: 200 {message_id}, Location
+    W->>P: SELECT FOR UPDATE SKIP LOCKED
+    Note over W: load weights once per idle period, run inference
+    W->>P: write status=complete + result
+    C->>A: GET Location
+    A-->>C: 200 {status, result}
+```
+
+Text and vector outputs are stored in Postgres. Binary outputs are
+written under the cache's `data/outputs`.
 
 ---
 
