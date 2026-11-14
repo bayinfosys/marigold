@@ -3,9 +3,14 @@
 [![PyPI](https://img.shields.io/pypi/v/bayis-marigold)](https://pypi.org/project/bayis-marigold/)
 [![GitHub tag](https://img.shields.io/github/v/tag/bayinfosys/marigold)](https://github.com/bayinfosys/marigold/tags)
 
-A typed inference protocol over neural network models, self-hosted.
-Typed operations -- a capability class, a model and an input set --
-produce immutable results that applications compose.
+A package manager and runtime for local AI applications. One
+self-hosted model layer serves every application on the machine:
+applications install by name from registries, share one model cache
+and one GPU queue, and reach models through a typed API with
+OpenAI-compatible chat and embeddings.
+
+Underneath, typed operations -- a capability class, a model and an
+input set -- produce immutable results that applications compose.
 
 Marigold runs as three separate layers on one host:
 
@@ -25,8 +30,11 @@ The documentation is in [docs/](docs/README.md), and published at
 
 ## Status
 
-Early stage. Interfaces, config format and the CLI may change without
-notice. Issues and questions are welcome; for a pull request, open an
+Early stage. The interfaces an application is written against --
+`marigold.toml` and `models.yaml`, the instance contract, the API
+routes and the registry index (`protocol: 1`) -- are stable; see
+[What is stable](docs/applications.md#what-is-stable). The CLI and the
+configuration format may change. Issues and questions are welcome; for a pull request, open an
 issue first to discuss the change before writing code.
 
 ## Prerequisites

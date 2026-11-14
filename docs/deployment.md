@@ -140,6 +140,7 @@ and load models only from their cache.
 
 ## Help
 
-Bay Information Systems helps organisations deploy Marigold in their own
-cloud accounts, and works with design partners on what the platform does
-next: see [Support and design partners](https://marigold.run/pricing.html).
+Bay Information Systems builds Marigold applications for clients, sets
+up internal registries and mirrors, deploys the platform on a client's
+own servers or cloud account, and works with design partners on what
+the platform does next: see [Services](https://marigold.run/services.html).
