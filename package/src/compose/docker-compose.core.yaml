@@ -1,3 +1,10 @@
+# The platform core: Postgres, the cache container and the API.
+#
+# The marigold CLI sets every variable below from marigold-host.toml
+# (cli/host_config.py, HostConfig.compose_env). Run without the CLI, each
+# takes its value from the environment when set, otherwise the default
+# shown, which matches the HostConfig default.
+
 services:
   postgres:
     image: postgres:17
@@ -6,7 +13,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-marigold}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-marigold}
     volumes:
-      - ${MARIGOLD_CACHE_DIR}/data/postgres:/var/lib/postgresql/data
+      - ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-marigold}"]
       interval: 5s
@@ -14,6 +21,9 @@ services:
       retries: 5
     labels:
       - "svc.marigold.description=Backend local data store"
+    mem_limit: ${MARIGOLD_POSTGRES_MEMORY:-1g}
+    cpus: ${MARIGOLD_POSTGRES_CPUS:-0}
+    pids_limit: ${MARIGOLD_POSTGRES_PIDS:--1}
     networks: [core]
 
   cache-init:
@@ -26,8 +36,8 @@ services:
       MARIGOLD_DATABASE_URL: ${MARIGOLD_DATABASE_URL:-postgresql://marigold:marigold@postgres:5432/marigold}
       MARIGOLD_MODEL_CATALOGUE_TABLE: model_catalogue
     volumes:
-      - ${MARIGOLD_APPLICATIONS_DIR}:/applications:ro
-      - ${MARIGOLD_CACHE_DIR}/data/models:/models
+      - ${MARIGOLD_APPLICATIONS_DIR:-~/.marigold/cache/data/applications}:/applications:ro
+      - ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/models:/models
     restart: "no"
     labels:
       - "svc.marigold.description=Local state management: cache, queues, model catalogue, etc"
@@ -40,7 +50,7 @@ services:
     image: ${API_IMAGE:-ghcr.io/bayinfosys/marigold-api}:${TAG:-latest}
     command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "${MARIGOLD_BIND:-127.0.0.1}:${MARIGOLD_API_PORT:-8000}:8000"
     environment:
       MARIGOLD_VERSION: ${TAG:-latest}
       MARIGOLD_DATABASE_URL: ${MARIGOLD_DATABASE_URL:-postgresql://marigold:marigold@postgres:5432/marigold}
@@ -52,18 +62,34 @@ services:
       MARIGOLD_STORAGE_ROOT: /data
       MARIGOLD_STORAGE_BUCKET: ${MARIGOLD_STORAGE_BUCKET:-}
       MARIGOLD_STORAGE_ENDPOINT: ${MARIGOLD_STORAGE_ENDPOINT:-}
+      MARIGOLD_STORAGE_CONTAINER: ${MARIGOLD_STORAGE_CONTAINER:-}
+      # secrets: from the shell environment, never from marigold-host.toml
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-}
+      AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:-}
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
     volumes:
-      - ${MARIGOLD_CACHE_DIR}/data/outputs:/data/outputs:ro
+      - ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/outputs:/data/outputs:ro
     labels:
       - "svc.marigold.description=Access to the marigold core services from outside the network"
+    mem_limit: ${MARIGOLD_API_MEMORY:-1g}
+    cpus: ${MARIGOLD_API_CPUS:-0}
+    pids_limit: ${MARIGOLD_API_PIDS:--1}
     depends_on:
       postgres:
         condition: service_healthy
     networks: [core, applications]
 
+# Two networks. Both are ordinary bridges, so containers on either can
+# reach the internet; restricting that is the host's firewall's job (see
+# docs/deployment.md, Restricting instances).
+#
+#   core          postgres, cache-init, the worker, the api. Postgres
+#                 publishes no port, so only these services reach it.
+#   applications  the api, Open WebUI and every application instance.
+#                 The api is the only service on both, so it is the one
+#                 route from an application to the platform.
 networks:
   core:
     name: marigold-core

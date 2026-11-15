@@ -4,7 +4,10 @@
 # marigold-<application>, separate from the platform, so starting,
 # stopping or resizing one application touches nothing else.
 #
-# Every variable here is set by the CLI (cli/compose.py, compose_env).
+# The CLI sets every variable here (cli/compose.py, compose_env), the
+# host's values from marigold-host.toml (cli/host_config.py). Run without
+# the CLI, each takes the environment's value or the default shown;
+# MARIGOLD_EXECUTOR_USER left blank runs as the image's own user.
 # The application root is mounted read-only at /app, so a flat application runs
 # main.py and a larger one adds modules and data beside it.
 
@@ -14,14 +17,27 @@ services:
     pull_policy: missing
     command: ${MARIGOLD_EXECUTION_COMMAND:-python main.py}
     working_dir: /app
+    # Hardening: no capabilities, no privilege gain, a read-only root
+    # filesystem with a writable /tmp, and the host user's identity so
+    # files written to /outputs belong to whoever runs marigold.
+    user: ${MARIGOLD_EXECUTOR_USER:-}
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      - /tmp
+    mem_limit: ${MARIGOLD_EXECUTOR_MEMORY:-4g}
+    cpus: ${MARIGOLD_EXECUTOR_CPUS:-2}
+    pids_limit: ${MARIGOLD_EXECUTOR_PIDS:-512}
     environment:
-      MARIGOLD_API_BASE: ${MARIGOLD_API_BASE:-http://api:8000}
-      MARIGOLD_APPLICATION_NAME: ${MARIGOLD_APPLICATION_NAME}
-      MARIGOLD_APPLICATION_ID: ${MARIGOLD_APPLICATION_ID}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MARIGOLD_API_BASE: http://api:8000
+      MARIGOLD_APPLICATION_NAME: ${MARIGOLD_APPLICATION_NAME:-application}
+      MARIGOLD_APPLICATION_ID: ${MARIGOLD_APPLICATION_ID:-application}
+      LOG_LEVEL: ${MARIGOLD_LOG_LEVEL:-INFO}
+      HOME: /tmp
     volumes:
-      - ${MARIGOLD_APPLICATION_DIR}:/app:ro
-      - ${MARIGOLD_APPLICATIONS_DIR}/${MARIGOLD_APPLICATION_NAME}/outputs:/outputs
+      - ${MARIGOLD_APPLICATION_DIR:-.}:/app:ro
+      - ${MARIGOLD_APPLICATIONS_DIR:-~/.marigold/cache/data/applications}/${MARIGOLD_APPLICATION_NAME:-application}/outputs:/outputs
     restart: "no"
     labels:
       svc.marigold.description: "Application code for one application, running against the API"

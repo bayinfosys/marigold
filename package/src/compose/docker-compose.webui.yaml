@@ -2,7 +2,7 @@ services:
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
     ports:
-      - "${WEBUI_PORT:-3000}:8080"
+      - "${MARIGOLD_BIND:-127.0.0.1}:${MARIGOLD_WEBUI_PORT:-3000}:8080"
     environment:
       - OPENAI_API_KEY=${WEBUI_DUMMY_KEY:-marigold}
       - OPENAI_API_BASE_URL=http://api:8000/v1
@@ -21,9 +21,12 @@ services:
       - RAG_EMBEDDING_MODEL_AUTO_UPDATE=false
       - RAG_RERANKING_MODEL_AUTO_UPDATE=false
     volumes:
-      - ${MARIGOLD_CACHE_DIR:-./assets}/data/webui:/app/backend/data
+      - ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/webui:/app/backend/data
     labels:
       - "svc.marigold.description=OpenWebUI interface for chat access to LLMs in the marigold cache"
+    mem_limit: ${MARIGOLD_WEBUI_MEMORY:-2g}
+    cpus: ${MARIGOLD_WEBUI_CPUS:-0}
+    pids_limit: ${MARIGOLD_WEBUI_PIDS:--1}
     depends_on:
       postgres:
         condition: service_healthy

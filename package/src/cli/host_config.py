@@ -244,8 +244,9 @@ class HostConfig(_Section):
         """The variables the platform compose files read.
 
         tag is the resolved image tag: platform.tag, or the CLI's
-        version when that is unset. Compose files read these with
-        ${NAME:?}, so a missing variable stops compose with an error.
+        version when that is unset. Compose files read each as
+        ${NAME:-default}, with the same defaults as this model, so they
+        also run without the CLI.
         """
         env = {
             "TAG": tag,
