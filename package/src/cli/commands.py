@@ -15,7 +15,6 @@ from cli import applications, archives, registry
 from cli.registry_config import REGISTRY_CONFIG_NAME, load_registry_config
 from cli.compose import (
     DEFAULT_EXECUTION_IMAGE,
-    DEFAULT_PLATFORM_COMPOSE_FILES,
     PLATFORM_PROJECT,
     application_project,
     application_projects,
@@ -31,19 +30,19 @@ from cli.compose import (
 )
 from cli.config import (
     APPLICATION_CONFIG_NAME,
-    SYSTEM_CONFIG_NAME,
+    host_config_path,
+    host_dict,
+    host_keys_set,
     load_application_toml,
     load_config,
-    load_system_config,
-    load_toml,
+    load_host_config,
+    load_platform_config,
     marigold_version,
     merge_config,
-    resolve_with_source,
     setting,
-    system_config_path,
 )
+from cli.host_config import HOST_CONFIG_ENV, HOST_CONFIG_NAME
 from cli.paths import (
-    DEFAULT_CACHE_DIR,
     cache_dir_from_config,
     cache_dir_from_system_config,
     cache_paths,
@@ -87,111 +86,99 @@ def _application_target(target: str) -> str:
 # config
 # ---------------------------------------------------------------------------
 
+def _host_config_source(path: Path | None) -> str:
+    if path is None:
+        return "none found: every value is a default"
+    if os.environ.get(HOST_CONFIG_ENV):
+        return f"{HOST_CONFIG_ENV} or --host-config"
+    if path.parent.resolve() == Path.cwd().resolve():
+        return "current directory"
+    return "home directory"
+
+
 def cmd_config_path(args):
-    """Print the system config file in use, absolute."""
-    path = system_config_path()
-    override = os.environ.get("MARIGOLD_CONFIG")
+    """Print the host config file in use, absolute."""
+    path = host_config_path()
 
-    if override:
-        source = "MARIGOLD_CONFIG"
-    elif path == Path(SYSTEM_CONFIG_NAME):
-        source = "current directory"
-    else:
-        source = "home directory"
+    if path is None:
+        print(f"no {HOST_CONFIG_NAME} found: every value is a default")
+        sys.exit(1)
 
-    state = "found" if path.exists() else "NOT FOUND"
-
-    print(f"{path.resolve()}  ({source}, {state})")
-    sys.exit(0 if path.exists() else 1)
+    print(f"{path.resolve()}  ({_host_config_source(path)})")
+    sys.exit(0)
 
 
 def cmd_config_show(args):
-    """Print resolved configuration with the layer each value came from.
+    """Print the resolved host config, and an application's if given.
 
-    Takes an optional application target so application-level values are
-    visible. Without one, only the system layer and defaults apply.
+    Each host value is marked [host] when marigold-host.toml sets it and
+    [default] otherwise; application values are marked [application].
     """
-    system_path = system_config_path()
-    system = load_toml(system_path)
+    path = host_config_path()
+    host = load_host_config(path)
+    set_keys = host_keys_set(path)
+
+    print("sources")
+    print(f"  host        : {path.resolve() if path else '(none)'}  ({_host_config_source(path)})")
+
+    for section, values in host_dict(host).items():
+        if section == "environment":
+            continue
+
+        print(f"\n[{section}]")
+        for key, value in values.items():
+            source = "host" if key in set_keys.get(section, set()) else "default"
+            print(f"  {key:<14}: {value}  [{source}]")
+
+    print(f"\n  marigold version : {marigold_version()}")
 
     application: dict = {}
-    application_path = None
-    application_dir = None
 
     if args.target is not None:
         application_dir = applications.resolve_target(args.target)
         candidate = application_dir / APPLICATION_CONFIG_NAME
-
-        if candidate.exists():
-            application_path = candidate
-            application = load_application_toml(candidate)
-
-    print("sources")
-    print(f"  system      : {system_path.resolve()} "
-          f"({'found' if system_path.exists() else 'NOT FOUND'})")
-    print(f"  application : {application_path.resolve() if application_path else '(none)'}")
-
-    cache_dir, cache_src = resolve_with_source(
-        system, application, "cache", "dir", str(DEFAULT_CACHE_DIR))
-    tag, tag_src = resolve_with_source(
-        system, application, "platform", "tag", default_tag())
-    db_url, db_src = resolve_with_source(
-        system, application, "database", "url", "(compose default)")
-    compose_files, compose_src = resolve_with_source(
-        system, application, "platform", "compose_files", DEFAULT_PLATFORM_COMPOSE_FILES)
-
-    print("\nplatform")
-    print(f"  marigold version : {marigold_version()}")
-    print(f"  image tag        : {tag}  [{tag_src}]")
-    print(f"  cache dir        : {cache_dir}  [{cache_src}]")
-    print(f"  database url     : {db_url}  [{db_src}]")
-    print(f"  compose files    : {compose_files}  [{compose_src}]")
-
-    if application_dir is not None:
-        merged = merge_config(system, application)
-        _, image_src = resolve_with_source(
-            system, application, "execution", "image", DEFAULT_EXECUTION_IMAGE)
-        models_yaml, models_src = resolve_with_source(
-            system, application, "application", "models_yaml", ["models.yaml"])
+        application = load_application_toml(candidate) if candidate.exists() else {}
+        merged = merge_config(host_dict(host), application)
+        tag = host.platform.tag or default_tag()
         app_name, app_version = applications.application_identity(application_dir, merged)
         run_name = applications.application_name(application_dir, merged)
 
         print("\napplication")
+        print(f"  config           : {candidate if candidate.exists() else '(none)'}")
         print(f"  name             : {app_name} {app_version}")
         print(f"  root             : {application_dir}")
-        print(f"  models yaml      : {models_yaml}  [{models_src}]")
+        print(f"  models yaml      : {setting(merged, 'application', 'models_yaml', ['models.yaml'])}")
         print(f"  compose files    : {platform_compose_files(merged)}")
         print(f"  compose project  : {application_project(run_name)}")
-        print(f"  image            : {execution_image(merged, tag)}  [{image_src}]")
+        print(f"  image            : {execution_image(merged, tag)}")
         print(f"  command          : {execution_command(merged) or '(image default)'}")
 
     print("\ncache layout")
-    for name, path in cache_paths(Path(cache_dir)).items():
-        exists = "ok" if path.exists() else "missing"
-        print(f"  {name:<13}: {path}  ({exists})")
+    for name, cache_path in cache_paths(host.storage.dir).items():
+        exists = "ok" if cache_path.exists() else "missing"
+        print(f"  {name:<13}: {cache_path}  ({exists})")
 
-    environment = {**system.get("environment", {}), **application.get("environment", {})}
+    environment = {**host.environment, **application.get("environment", {})}
 
     if environment:
         print("\nenvironment passthrough")
         for key, value in sorted(environment.items()):
-            source = "application" if key in application.get("environment", {}) else "system"
+            source = "application" if key in application.get("environment", {}) else "host"
             print(f"  {key} = {value}  [{source}]")
 
     sys.exit(0)
 
 
 def _print_platform_config(config: dict, env: dict):
-    path = system_config_path()
-    found = "found" if path.exists() else "NOT FOUND -- using hardcoded defaults"
+    path = host_config_path()
 
     print("marigold: platform configuration", file=sys.stderr)
-    print(f"  system config    : {path} ({found})", file=sys.stderr)
+    print(f"  host config      : {path.resolve() if path else '(none: defaults)'}", file=sys.stderr)
     print(f"  marigold version : {marigold_version()}", file=sys.stderr)
     print(f"  image tag        : {env.get('TAG')}", file=sys.stderr)
     print(f"  compose files    : {platform_compose_files(config)}", file=sys.stderr)
     print(f"  cache dir        : {env.get('MARIGOLD_CACHE_DIR')}", file=sys.stderr)
-    print(f"  database url     : {env.get('MARIGOLD_DATABASE_URL', '(compose default)')}", file=sys.stderr)
+    print(f"  api              : {env.get('MARIGOLD_BIND')}:{env.get('MARIGOLD_API_PORT')}", file=sys.stderr)
 
 
 def _print_effective_config(application_dir: Path, config: dict, env: dict):
@@ -248,7 +235,7 @@ def _start_platform(application_dir: Path | None, config: dict, env: dict) -> in
 def cmd_platform_start(args):
     """Start the platform.
 
-    With no target everything comes from the system config: the
+    With no target everything comes from marigold-host.toml: the
     platform is a host concern and needs no application. A target adds
     that application's compose files, which is the path
     `application start` takes.
@@ -257,7 +244,7 @@ def cmd_platform_start(args):
         application_dir, config, env = _application(args.target)
         _print_effective_config(application_dir, config, env)
     else:
-        application_dir, config = None, load_system_config()
+        application_dir, config = None, load_platform_config()
         env = platform_env(config)
         _print_platform_config(config, env)
 

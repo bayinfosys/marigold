@@ -172,7 +172,7 @@ def extract_archive(archive: Path) -> tuple[Path, Path, str, Path]:
     root, is extracted once, and stop/status/logs reach the tree start
     used.
 
-    The cache location comes from the system config alone: the
+    The cache location comes from marigold-host.toml alone: the
     application config is inside the archive and cannot be read before
     it exists.
     """

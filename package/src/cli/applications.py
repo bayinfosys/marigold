@@ -273,7 +273,7 @@ def resolve_target(target: str) -> Path:
     directory.
 
     Namespaced references will resolve through the remotes in the
-    system config, fetching an archive that then takes the archive path
+    host config, fetching an archive that then takes the archive path
     above. Not implemented: see TODO.md, package distribution.
     """
     installed = load_installed().get(target)
