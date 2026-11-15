@@ -13,7 +13,7 @@ marigold cache populate platform-model-test
 marigold application start platform-model-test
 ```
 
-`registry add` records a registry in your system config. `install`
+`registry add` records a registry in `marigold-host.toml`. `install`
 finds the application in your registries, downloads its archive,
 checks it against the registry's index and installs it. `cache
 populate` downloads the models it declares. `start` runs it.
@@ -59,8 +59,7 @@ Registries are searched in the order they were added. The first that
 lists a name supplies it, so a registry further down the list can never
 replace an application from one above it.
 
-The list is `[registry] url` in the system config, and
-`MARIGOLD_REGISTRY_URLS`, comma-separated, overrides it. Registries are
+The list is `[registry] url` in `marigold-host.toml`. Registries are
 plain HTTP(S); Marigold sends no credentials.
 
 ## Models

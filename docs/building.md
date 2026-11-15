@@ -54,14 +54,15 @@ EXAMPLE_SETTING = "value"
 | `[environment]` | no | variables passed to the containers unchanged |
 
 Unknown sections and keys are errors, so a misspelt key fails when the
-file is read. Host settings (`[platform]`, `[cache]`, `[database]`)
-belong in the system config, never in an application; see
+file is read. Host settings (`[platform]`, `[storage]`, `[database]`,
+`[registry]`, `[network]`, `[resources]`) belong in
+`marigold-host.toml`, never in an application; see
 [Configuration](configuration.md).
 
 `[application].compose_files` adds services to the platform's own list.
 An application that brings open-webui lists `webui`, and starting it
 adds that service to the shared platform. Whether the host runs a GPU
-worker is the host's decision, made in the system config.
+worker is the host's decision, made in `marigold-host.toml`.
 
 `[execution].image` may carry a tag or a digest, and is then used as
 written. An untagged image gets the platform's tag. The default is

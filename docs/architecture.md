@@ -55,7 +55,7 @@ flowchart LR
 
 **Platform.** Postgres, the API, the worker and the cache container.
 One per host, shared by every application. Compose project `marigold`.
-Configured entirely by the system config, so it starts, stops and
+Configured entirely by `marigold-host.toml`, so it starts, stops and
 reports with no application in hand:
 
     marigold platform start
@@ -251,6 +251,7 @@ future work, recorded in TODO.md.
   on uncompressed size or member count.
 - The installed index is written by the CLI on the host, outside any
   container's ownership.
-- The system config is found relative to the working directory before
-  the home directory, so changing directory can change which cache and
-  platform the CLI addresses.
+- `marigold-host.toml` is found relative to the working directory
+  before the home directory, so changing directory can change which
+  cache and platform the CLI addresses. `--host-config` or
+  `MARIGOLD_HOST_CONFIG` fixes it.

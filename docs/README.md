@@ -28,7 +28,7 @@ A file with front matter is published; a file without it is not.
 
 ## Reference
 
-- [Configuration](configuration.md) -- the system config, output storage, authentication.
+- [Configuration](configuration.md) -- `marigold-host.toml`: every host setting, output storage, resource limits, authentication.
 - [Deployment](deployment.md) -- from a laptop to your own cloud account: managed Postgres, GPU worker hosts, S3 and Azure storage.
 - [Model types](model-types.md) -- every model type, its input and output.
 - [API](api.md) -- submitting and polling, binary outputs, the OpenAI-compatible endpoints.
