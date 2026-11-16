@@ -155,8 +155,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     reg_build_p.add_argument(
         "root", nargs="?", default=".",
-        help="registry root, holding marigold-registry.toml; every directory "
-             "under it holding marigold.toml is published (default: .)",
+        help="registry root, holding marigold-registry.toml; every "
+             "<root>/<name>/marigold.toml is published (default: .)",
     )
     reg_build_p.add_argument(
         "--version", required=True,

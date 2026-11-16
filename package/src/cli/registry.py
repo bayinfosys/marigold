@@ -131,7 +131,9 @@ def discover(root: Path, out: Path) -> list[Path]:
         dirnames[:] = [d for d in dirnames if not skipped(current / d)]
 
         depth = len(current.relative_to(root).parts)
-        if APPLICATION_CONFIG_NAME in filenames and depth > 1:
+        # depth 0 is the root, which holds marigold-registry.toml; a
+        # marigold.toml there would make the registry an application.
+        if APPLICATION_CONFIG_NAME in filenames and depth != 1:
             raise ValueError(
                 f"{current / APPLICATION_CONFIG_NAME}: applications sit one "
                 f"level below the registry root, as <root>/<name>/"
