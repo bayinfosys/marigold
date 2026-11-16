@@ -240,11 +240,14 @@ class ResourcesSection(_Section):
     )
 
 
+RegistryList = list[RegistryEntry]
+
+
 class HostConfig(_Section):
     platform: PlatformSection = Field(default_factory=PlatformSection)
     storage: StorageSection = Field(default_factory=StorageSection)
     database: DatabaseSection = Field(default_factory=DatabaseSection)
-    registry: list[RegistryEntry] = Field(
+    registry: RegistryList = Field(
         default=[],
         description="Registries searched for applications, in file order. The first registry listing a name supplies it.",
     )
