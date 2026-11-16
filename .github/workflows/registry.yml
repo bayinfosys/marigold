@@ -44,8 +44,15 @@ jobs:
       - name: Install marigold
         run: pip install "bayis-marigold==$MARIGOLD_VERSION"
 
+      # The registry's version is the tag being published. Branch pushes
+      # build with a development version and are never deployed.
       - name: Build registry
-        run: marigold registry build "$REGISTRY_ROOT" --out "$GITHUB_WORKSPACE/dist"
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/v*) VERSION="$GITHUB_REF_NAME" ;;
+            *)            VERSION="v0.0.0.dev0" ;;
+          esac
+          marigold registry build "$REGISTRY_ROOT" --out "$GITHUB_WORKSPACE/dist" --version "$VERSION"
 
       - id: pages
         uses: actions/configure-pages@v5
