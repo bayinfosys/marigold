@@ -49,8 +49,9 @@ compose_files = ["core", "cpu", "gpu"]
 [storage]
 dir = "/data/marigold"
 
-[registry]
-url = ["https://examples.marigold.run/"]
+[[registry]]
+url = "https://examples.marigold.run/"
+name = "examples"                  # optional
 
 [network]
 bind = "0.0.0.0"                   # reachable from other machines
@@ -94,11 +95,16 @@ Unknown sections and keys are errors.
 | `user` | `"marigold"` | Platform Postgres: user. |
 | `password` | `"marigold"` | Platform Postgres: password. |
 
-### `[registry]`
+### `[[registry]]`
+
+Registries searched for applications, in file order. The first registry listing a name supplies it.
 
 | Key | Default | Description |
 |---|---|---|
-| `url` | `[]` | Registries searched for applications, in order. The first registry listing a name supplies it. |
+| `url` | required | The registry's address: http:// or https://. |
+| `name` | unset | A local name for the registry, as with git remotes. Recorded only; nothing resolves by it yet. |
+
+Default: none.
 
 ### `[network]`
 

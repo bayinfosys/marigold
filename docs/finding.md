@@ -43,7 +43,7 @@ A mirror supplies the versions it holds only to hosts that list it
 first. A name the mirror lacks falls through to the next registry, and
 a requirement that names a registry URL fetches from that registry
 ([Installing](installing.md#several-registries)). The list itself is
-`[registry] url` in each host's `marigold-host.toml`. Registries are plain
+the `[[registry]]` entries in each host's `marigold-host.toml`. Registries are plain
 HTTP(S): an archive is checked against the sha256 in its registry's
 index, and trust rests with whoever runs the host.
 

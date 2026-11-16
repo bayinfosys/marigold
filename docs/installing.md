@@ -51,6 +51,7 @@ requires = ["https://demos.marigold.run/npc-voice>=0.1"]
 
 ```sh
 marigold registry add https://apps.example.org/
+marigold registry add apps https://apps.example.org/     # with a local name
 marigold registry list
 marigold registry remove https://apps.example.org/
 ```
@@ -59,8 +60,20 @@ Registries are searched in the order they were added. The first that
 lists a name supplies it, so a registry further down the list can never
 replace an application from one above it.
 
-The list is `[registry] url` in `marigold-host.toml`. Registries are
-plain HTTP(S); Marigold sends no credentials.
+Each registry is a `[[registry]]` entry in `marigold-host.toml`, in
+search order:
+
+```toml
+[[registry]]
+url = "https://examples.marigold.run/"
+name = "examples"                  # optional
+
+[[registry]]
+url = "https://apps.example.org/"
+```
+
+A name is recorded and shown by `registry list`; nothing resolves by
+it yet. Registries are plain HTTP(S); Marigold sends no credentials.
 
 ## Models
 
