@@ -25,7 +25,6 @@ files as it needs them.
 ```toml
 [application]
 name = "my-app"
-version = "0.1.0"
 description = "One sentence saying what the application does."
 models_yaml = ["models.yaml"]
 
@@ -42,7 +41,6 @@ EXAMPLE_SETTING = "value"
 | Key | Required | Meaning |
 |---|---|---|
 | `[application].name` | to package | lowercase letters and digits, single hyphens between them |
-| `[application].version` | to package | a quoted PEP 440 version, such as `"0.1.0"` |
 | `[application].description` | no | shown in registry listings and catalogue pages |
 | `[application].models_yaml` | no | model files to read, relative to the application root; default `["models.yaml"]` |
 | `[application].compose_files` | no | platform services the application adds, such as `["webui"]` |
@@ -163,20 +161,27 @@ adding a model, reinstall and run `cache populate` again.
 marigold application create ./my-app -o dist/
 ```
 
-This writes `dist/my-app-0.1.0.tar.gz`. The same directory always
-produces the same bytes, so the sha256 identifies the content.
-Archives leave out version control, virtual environments, caches,
-build output and `.env` files, and are written with ownership and
-permissions stripped to read and execute.
+This writes `dist/my-app-local.tar.gz` and prints the application's
+digest. An application carries no version of its own: its version is
+the tag of the registry that publishes it, and `--version v0.1.0`
+names the archive after one. Anything built outside a registry is
+`local`.
 
-Change `version` whenever the contents change. A registry publishes
-whatever version the directory declares, and users compare versions to
-know what they have.
+The same directory always produces the same bytes. Archives hold the
+files the application's [manifest](manifests.md) lists, leaving out
+version control, virtual environments, caches, build output and `.env`
+files, and are written with ownership stripped and permissions reduced
+to read and execute. `create` checks the archive's files against the
+directory's manifest before it finishes.
 
 `install` copies an archive to
 `data/applications/_archives/<sha256>.tar.gz`, extracts it to
 `data/applications/_src/<digest>/` and records it in
-`data/applications/installed.json` under its name. `uninstall` removes
+`data/applications/installed.json` under its name, with its version
+(`--version`, default `local`) and its digest. `application verify
+<name>` recomputes the digest from the installed files and reports any
+change; `application diff <old> <new>` compares two applications, each
+an installed name, a directory or an archive. `uninstall` removes
 the index entry and the extracted tree; the archive stays, so a
 reinstall is free, and the model cache is untouched.
 

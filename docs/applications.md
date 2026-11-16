@@ -10,7 +10,7 @@ A Marigold application is a declared set of models plus the code that
 uses them, packaged as one archive and run against a shared platform.
 It is a directory holding:
 
-- `marigold.toml`: the application's name, version and how it runs;
+- `marigold.toml`: the application's name and how it runs;
 - one or more `models.yaml` files: the models it uses;
 - its code, data and a `README.md`.
 
@@ -52,6 +52,7 @@ new application is written against:
 | The instance contract: mounts, environment, network | [Building](building.md#what-an-instance-can-rely-on) | stable |
 | The API: submit, poll, outputs, OpenAI-compatible endpoints | [API](api.md) | stable routes; new model types are additions |
 | The registry index, `protocol: 1` | [Publishing](publishing.md#the-index) | stable; a breaking change takes a new protocol number |
+| Manifests and digests | [Manifests](manifests.md) | stable |
 
 ## From source to running
 
