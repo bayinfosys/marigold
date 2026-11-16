@@ -151,7 +151,12 @@ def host_keys_set(path: Path | None) -> dict[str, set[str]]:
 
     for section in HostConfig.model_fields:
         value = getattr(host, section)
-        keys[section] = set(value) if isinstance(value, dict) else set(value.model_fields_set)
+        if isinstance(value, dict):
+            keys[section] = set(value)
+        elif isinstance(value, list):
+            keys[section] = {"entries"} if section in host.model_fields_set else set()
+        else:
+            keys[section] = set(value.model_fields_set)
 
     return keys
 

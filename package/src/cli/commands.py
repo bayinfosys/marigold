@@ -125,6 +125,16 @@ def cmd_config_show(args):
         if section == "environment":
             continue
 
+        if section == "registry":
+            source = "host" if set_keys.get("registry") else "default"
+            print(f"\n[[registry]]  [{source}]")
+            for position, entry in enumerate(values, start=1):
+                label = f" ({entry['name']})" if entry.get("name") else ""
+                print(f"  {position}. {entry['url']}{label}")
+            if not values:
+                print("  (none)")
+            continue
+
         print(f"\n[{section}]")
         for key, value in values.items():
             source = "host" if key in set_keys.get(section, set()) else "default"

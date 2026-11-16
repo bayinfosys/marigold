@@ -21,7 +21,7 @@ Sections, one per layer:
     [platform]   compose files, image tag, logging, worker idle timeout
     [storage]    the cache directory and where outputs are stored
     [database]   the platform Postgres, or an external database URL
-    [registry]   registries searched for applications, in order
+    [[registry]] registries searched for applications, in file order
     [network]    the ports and address the platform publishes
     [resources]  memory, CPU and process limits per service
     [environment] variables forwarded to every service
@@ -50,6 +50,9 @@ DEFAULT_HOST_CONFIG_PATH = Path.home() / ".marigold" / HOST_CONFIG_NAME
 DEFAULT_CACHE_DIR = Path.home() / ".marigold" / "cache"
 
 REGISTRY_SCHEMES = ("http://", "https://")
+
+# Registry names follow application names: lowercase, digits, single hyphens.
+_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 # Docker's size syntax: a number and an optional unit, as in "512m", "4g".
 _SIZE_RE = re.compile(r"^\d+(\.\d+)?[bkmg]?$")
@@ -152,19 +155,28 @@ class DatabaseSection(_Section):
         return self.url or f"postgresql://{self.user}:{self.password}@postgres:5432/{self.name}"
 
 
-class RegistrySection(_Section):
-    url: list[str] = Field(
-        default=[],
-        description="Registries searched for applications, in order. The first registry listing a name supplies it.",
+class RegistryEntry(_Section):
+    """One registry. [[registry]] entries are searched in file order."""
+
+    url: str = Field(description="The registry's address: http:// or https://.")
+    name: str | None = Field(
+        default=None,
+        description="A local name for the registry, as with git remotes. Recorded only; nothing resolves by it yet.",
     )
 
     @field_validator("url")
     @classmethod
-    def _urls(cls, value):
-        for url in value:
-            if not url.startswith(REGISTRY_SCHEMES):
-                raise ValueError(f"registry '{url}' must be http:// or https://")
-        return [url if url.endswith("/") else url + "/" for url in value]
+    def _url(cls, value):
+        if not value.startswith(REGISTRY_SCHEMES):
+            raise ValueError(f"registry '{value}' must be http:// or https://")
+        return value if value.endswith("/") else value + "/"
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, value):
+        if value is not None and not _NAME_RE.match(value):
+            raise ValueError(f"registry name '{value}': lowercase letters, digits and single hyphens")
+        return value
 
 
 class NetworkSection(_Section):
@@ -232,13 +244,31 @@ class HostConfig(_Section):
     platform: PlatformSection = Field(default_factory=PlatformSection)
     storage: StorageSection = Field(default_factory=StorageSection)
     database: DatabaseSection = Field(default_factory=DatabaseSection)
-    registry: RegistrySection = Field(default_factory=RegistrySection)
+    registry: list[RegistryEntry] = Field(
+        default=[],
+        description="Registries searched for applications, in file order. The first registry listing a name supplies it.",
+    )
     network: NetworkSection = Field(default_factory=NetworkSection)
     resources: ResourcesSection = Field(default_factory=ResourcesSection)
     environment: dict[str, str | int | float | bool] = Field(
         default={},
         description="Variables forwarded to every service. An application's [environment] wins per key.",
     )
+
+    @field_validator("registry")
+    @classmethod
+    def _unique_registries(cls, value):
+        urls = [entry.url for entry in value]
+        names = [entry.name for entry in value if entry.name]
+        for kind, items in (("url", urls), ("name", names)):
+            repeated = sorted({item for item in items if items.count(item) > 1})
+            if repeated:
+                raise ValueError(f"registry {kind} listed more than once: {', '.join(repeated)}")
+        return value
+
+    def registry_urls(self) -> list[str]:
+        """Registry addresses in search order."""
+        return [entry.url for entry in self.registry]
 
     def compose_env(self, tag: str) -> dict[str, str]:
         """The variables the platform compose files read.
