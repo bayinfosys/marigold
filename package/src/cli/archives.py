@@ -7,6 +7,10 @@ index; cli.applications decides what those trees are.
 
 Archives are copied into the cache and extracted there, because
 containers mount the result and outlive the command that started them.
+
+Which files an archive holds is cli.manifest's decision: an archive
+holds exactly the files its application's manifest lists, and
+write_archive checks that before returning.
 """
 
 import hashlib
@@ -16,25 +20,15 @@ import gzip
 
 from pathlib import Path
 
+from cli import manifest
 from cli.config import APPLICATION_CONFIG_NAME
+from cli.manifest import ARCHIVE_SUFFIXES
 from cli.paths import (
     archives_dir,
     cache_dir_from_system_config,
     ensure_cache_layout,
     extracted_applications_dir,
 )
-
-ARCHIVE_SUFFIXES = (".tar.gz", ".tgz", ".marigold")
-
-# Never archived: caches, VCS metadata, virtualenvs, build output.
-# TODO: use a .marigoldignore file instead of this hardcode
-EXCLUDED_NAMES = {
-    ".git", ".hg", ".svn", "__pycache__", ".venv", "venv", "node_modules",
-    ".mypy_cache", ".pytest_cache", ".ruff_cache", ".DS_Store", "dist", "build",
-    ".env"
-}
-EXCLUDED_SUFFIXES = (".pyc", ".pyo") + ARCHIVE_SUFFIXES
-
 
 def is_archive(target: str) -> bool:
     return target.endswith(ARCHIVE_SUFFIXES)
@@ -49,25 +43,6 @@ def archive_digest(archive: Path) -> str:
             digest.update(chunk)
 
     return digest.hexdigest()
-
-
-def _members(source: Path) -> list[Path]:
-    """Files to archive, sorted, excluding caches and build output."""
-    members = []
-
-    for path in sorted(source.rglob("*")):
-        relative = path.relative_to(source)
-
-        if any(part in EXCLUDED_NAMES for part in relative.parts):
-            continue
-        if path.name.endswith(EXCLUDED_SUFFIXES):
-            continue
-        if not path.is_file():
-            continue
-
-        members.append(path)
-
-    return members
 
 
 # Every member and the gzip header carry this timestamp. Fixed, and not
@@ -105,7 +80,7 @@ def write_archive(source: Path, archive: Path) -> int:
         raise FileNotFoundError(f"no {APPLICATION_CONFIG_NAME} in {source}")
 
     archive.parent.mkdir(parents=True, exist_ok=True)
-    members = _members(source)
+    members = manifest.application_files(source)
 
     with (
         open(archive, "wb") as raw,
@@ -123,7 +98,48 @@ def write_archive(source: Path, archive: Path) -> int:
                 filter=_member_filter,
             )
 
+    expected = manifest.manifest_text(source)
+    written = archive_manifest(archive)
+
+    if written != expected:
+        archive.unlink()
+        raise ValueError(
+            f"{archive}: the archive's files differ from {source}'s manifest; "
+            "the archive was removed"
+        )
+
     return len(members)
+
+
+def archive_manifest(archive: Path) -> str:
+    """The manifest of the application inside an archive, read in place.
+
+    Computed from the members without extracting them, by the same
+    rules as cli.manifest.manifest_text for a directory. An archive
+    holding one top-level directory is read from inside it.
+    """
+    with tarfile.open(archive) as tar:
+        files = [member for member in tar.getmembers() if member.isfile()]
+        names = [member.name for member in files]
+
+        prefix = ""
+        if APPLICATION_CONFIG_NAME not in names:
+            tops = {name.split("/", 1)[0] for name in names}
+            if len(tops) == 1:
+                prefix = tops.pop() + "/"
+
+        lines = []
+
+        for member in files:
+            path = member.name.removeprefix(prefix)
+            content = tar.extractfile(member)
+            digest = hashlib.sha256()
+            for chunk in iter(lambda: content.read(1 << 20), b""):
+                digest.update(chunk)
+            mode = manifest.file_mode(bool(member.mode & 0o100))
+            lines.append((path.encode("utf-8"), manifest.format_line(mode, digest.hexdigest(), path)))
+
+    return "".join(line for _, line in sorted(lines))
 
 
 def extract_to(archive: Path, target: Path) -> Path:

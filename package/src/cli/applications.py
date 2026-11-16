@@ -24,7 +24,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from cli import archives
+from cli import archives, manifest
 from cli.config import APPLICATION_CONFIG_NAME, load_application_toml, setting
 from cli.paths import (
     cache_dir_from_system_config,
@@ -39,40 +39,35 @@ _NAME_SEPARATORS = re.compile(r"[^a-z0-9]+")
 # identity
 # ---------------------------------------------------------------------------
 
-def application_identity(
+LOCAL_VERSION = "local"
+
+
+def declared_name(
     application_dir: Path,
     config: dict,
     require_declared: bool = False,
-) -> tuple[str, str]:
-    """(name, version) for an application.
+) -> str:
+    """An application's name: [application].name.
 
-    From [application].name and [application].version. Running straight
-    from a directory may leave them out: the directory name and version
-    "0" stand in. Building or installing an archive passes
+    Running straight from a directory may leave it out, and the
+    directory name stands in. Building or installing an archive passes
     require_declared, because an extracted archive sits in a
     content-addressed directory whose name says nothing about the
-    application, so the archive must carry its identity itself.
+    application, so the archive must carry its name itself.
 
-    The version is PEP 440, normalised when the config is read
-    (cli.application_config).
+    Applications carry no version. A version is the registry's tag,
+    given to the build that publishes it; anything built or installed
+    outside a registry is LOCAL_VERSION.
     """
-    section = config.get("application", {})
-    declared_name = section.get("name")
-    declared_version = section.get("version")
+    name = config.get("application", {}).get("name")
 
-    if require_declared:
-        missing = [
-            key for key, value in (("name", declared_name), ("version", declared_version))
-            if not value
-        ]
-        if missing:
-            raise ValueError(
-                f"{application_dir / APPLICATION_CONFIG_NAME}: "
-                f"[application] needs {' and '.join(missing)} to build or "
-                "install an archive"
-            )
+    if require_declared and not name:
+        raise ValueError(
+            f"{application_dir / APPLICATION_CONFIG_NAME}: [application] "
+            "needs name to build or install an archive"
+        )
 
-    name = str(declared_name or application_dir.name).lower()
+    name = str(name or application_dir.name).lower()
 
     if not NAME_RE.match(name):
         raise ValueError(
@@ -81,7 +76,7 @@ def application_identity(
             f"{APPLICATION_CONFIG_NAME}."
         )
 
-    return name, str(declared_version or "0")
+    return name
 
 
 def application_name(application_dir: Path, config: dict) -> str:
@@ -186,44 +181,62 @@ def save_installed(index: dict) -> None:
 # build and install
 # ---------------------------------------------------------------------------
 
-def build_archive(source: Path, output: Path) -> tuple[Path, int]:
+def build_archive(source: Path, output: Path, version: str = LOCAL_VERSION) -> tuple[Path, int, str]:
     """Build an application archive from an application directory.
 
     output is a directory, or a filename when it ends in an archive
-    suffix. Returns (archive path, file count).
+    suffix; a directory gets <name>-<version>.tar.gz. Returns (archive
+    path, file count, manifest digest).
     """
     config_path = source / APPLICATION_CONFIG_NAME
 
     if not config_path.exists():
         raise FileNotFoundError(f"no {APPLICATION_CONFIG_NAME} in {source}")
 
-    name, version = application_identity(
-        source, load_application_toml(config_path), require_declared=True
-    )
+    name = declared_name(source, load_application_toml(config_path), require_declared=True)
 
     if archives.is_archive(output.name):
         archive = output
     else:
         archive = output / f"{name}-{version}.tar.gz"
 
-    return archive, archives.write_archive(source, archive)
+    count = archives.write_archive(source, archive)
+    _, digest = manifest.application_manifest(source)
+
+    return archive, count, digest
 
 
-def install(archive: Path) -> tuple[str, str, Path, str, dict | None]:
+def install(
+    archive: Path,
+    version: str = LOCAL_VERSION,
+    expected_manifest: str | None = None,
+) -> tuple[str, Path, dict, dict | None]:
     """Install an application archive.
 
-    Returns (name, version, root, digest, previous record or None).
+    version is the registry tag it was published under, or
+    LOCAL_VERSION. expected_manifest, when given, is the digest the
+    registry's index records; the installed files must match it.
+
+    Returns (name, root, record, previous record or None).
     """
     extracted, root, digest, kept = archives.extract_archive(archive)
+    _, manifest_digest = manifest.application_manifest(root)
+
+    if expected_manifest is not None and manifest_digest != expected_manifest:
+        raise ValueError(
+            f"{archive}: files give digest {manifest.short(manifest_digest)}, "
+            f"the index records {manifest.short(expected_manifest)}"
+        )
 
     config = load_application_toml(root / APPLICATION_CONFIG_NAME)
-    name, version = application_identity(root, config, require_declared=True)
+    name = declared_name(root, config, require_declared=True)
 
     index = load_installed()
     previous = index.get(name)
 
     index[name] = {
         "version": version,
+        "manifest": manifest_digest,
         "digest": digest,
         "root": str(root),
         "extracted": str(extracted),
@@ -232,7 +245,18 @@ def install(archive: Path) -> tuple[str, str, Path, str, dict | None]:
     }
     save_installed(index)
 
-    return name, version, root, digest, previous
+    return name, root, index[name], previous
+
+
+def verify(name: str) -> tuple[dict, str]:
+    """(installed record, digest of the files now) for one application."""
+    record = load_installed().get(name)
+
+    if record is None:
+        raise FileNotFoundError(f"'{name}' is not installed")
+
+    _, digest = manifest.application_manifest(Path(record["root"]))
+    return record, digest
 
 
 def uninstall(name: str) -> dict:

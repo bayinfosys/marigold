@@ -21,7 +21,8 @@ default at the same path, and anything else is added. The template
 presents; the build supplies the data, in _data/marigold.json and each
 page's front matter. Commands shown to readers are part of that data.
 
-Every <root>/<name>/marigold.toml is published (discover). The
+Every <root>/<name>/marigold.toml is published (discover), all under
+one version: the registry's tag, passed to the build. The
 registry's identity comes from marigold-registry.toml at the root
 (cli.registry_config). Everything else is derived from the archives:
 the build writes each archive, extracts it to a temporary directory,
@@ -40,7 +41,7 @@ from pathlib import Path
 
 from packaging.version import Version
 
-from cli import applications, archives
+from cli import applications, archives, manifest
 from cli.application_config import ApplicationConfig
 from cli.config import (
     APPLICATION_CONFIG_NAME,
@@ -148,6 +149,7 @@ def build(
     root: Path,
     out: Path,
     *,
+    version: str,
     title: str,
     description: str,
     urls: dict[str, str] | None = None,
@@ -156,7 +158,8 @@ def build(
 ) -> tuple[dict, list[str]]:
     """Build the registry under root into out. Returns (index, warnings).
 
-    title, description and urls are the registry's identity, from
+    version is the registry's tag, such as v0.0.6: every application in
+    this build is published under it. title, description and urls are the registry's identity, from
     marigold-registry.toml. front_page is Markdown for registry visitors,
     shown on the front page above the usage. site is a template
     directory laid over the default.
@@ -171,6 +174,7 @@ def build(
         raise FileNotFoundError(f"no {APPLICATION_CONFIG_NAME} found under {root.resolve()}")
 
     identities = _identities(sources)
+    Version(version)  # raises InvalidVersion for a tag that is not a version
 
     _prepare_output(out)
     _write_template(out, site)
@@ -180,10 +184,10 @@ def build(
     links: dict[str, dict[str, str]] = {}
     warnings: list[str] = []
 
-    for name, (version, source) in sorted(identities.items()):
-        archive, _ = applications.build_archive(source, out / APPLICATIONS_SUBDIR)
+    for name, source in sorted(identities.items()):
+        archive, _, _ = applications.build_archive(source, out / APPLICATIONS_SUBDIR, version)
         contents = _read_archive(archive)
-        entry = _entry(archive, out=out, config=contents["config"])
+        entry = _entry(archive, out=out, config=contents["config"], digest=contents["digest"])
 
         index["applications"][name] = {"versions": {version: entry}}
         model_counts[name] = len(contents["models"])
@@ -220,25 +224,22 @@ def build(
     return index, warnings
 
 
-def _identities(sources: list[Path]) -> dict[str, tuple[str, Path]]:
-    """name -> (version, source), checked before anything is written.
+def _identities(sources: list[Path]) -> dict[str, Path]:
+    """name -> source, checked before anything is written.
 
-    Each application must declare name and version. Two directories
-    declaring one name is an error, since one would overwrite the
-    other's archive.
+    Each application must declare a name. Two directories declaring one
+    name is an error, since one would overwrite the other's archive.
     """
-    found: dict[str, tuple[str, Path]] = {}
+    found: dict[str, Path] = {}
 
     for source in sources:
         config = load_application_toml(source / APPLICATION_CONFIG_NAME)
-        name, version = applications.application_identity(
-            source, config, require_declared=True
-        )
+        name = applications.declared_name(source, config, require_declared=True)
 
         if name in found:
-            raise ValueError(f"'{name}' is declared by both {found[name][1]} and {source}")
+            raise ValueError(f"'{name}' is declared by both {found[name]} and {source}")
 
-        found[name] = (version, source)
+        found[name] = source
 
     return found
 
@@ -319,9 +320,9 @@ def _write_template(out: Path, site: Path | None) -> None:
 def _read_archive(archive: Path) -> dict:
     """What the index and the catalogue take from an archive.
 
-    The config, the README, the parsed models and the models.yaml text
-    as written. Read from the extracted archive, so every page and every
-    entry describes what was published.
+    The config, the README, the parsed models, the models.yaml text as
+    written and the manifest digest. Read from the extracted archive, so
+    every page and every entry describes what was published.
     """
     with tempfile.TemporaryDirectory() as tmp:
         root = archives.extract_to(archive, Path(tmp))
@@ -337,14 +338,28 @@ def _read_archive(archive: Path) -> dict:
         readme_path = root / README_NAME
         readme = readme_path.read_text(encoding="utf-8") if readme_path.is_file() else None
 
-    return {"config": config, "models": models, "model_files": model_files, "readme": readme}
+        _, digest = manifest.application_manifest(root)
+
+    return {
+        "config": config,
+        "models": models,
+        "model_files": model_files,
+        "readme": readme,
+        "digest": digest,
+    }
 
 
-def _entry(archive: Path, *, out: Path, config: ApplicationConfig) -> dict:
-    """The index entry for one archive."""
+def _entry(archive: Path, *, out: Path, config: ApplicationConfig, digest: str) -> dict:
+    """The index entry for one archive.
+
+    sha256 is of the archive's bytes, checked before unpacking. digest
+    is of the application's manifest (cli.manifest), checked after: it
+    identifies the files, whatever the packaging.
+    """
     return {
         "archive": archive.relative_to(out).as_posix(),
         "sha256": archives.archive_digest(archive),
+        "digest": digest,
         "description": config.application.description or "",
         "requires": config.application.requires,
     }
@@ -477,6 +492,7 @@ def _write_application_pages(
         "archive_name": archive_name,
         "archive_path": entry["archive"],
         "sha256": entry["sha256"],
+        "digest": entry["digest"],
         "requires": entry["requires"],
         "model_count": len(contents["models"]),
         "urls": contents["config"].application.urls,
@@ -520,6 +536,7 @@ def _write_data(
                 "page": f"{APPLICATIONS_SUBDIR}/{name}/",
                 "archive": entry["archive"],
                 "sha256": entry["sha256"],
+                "digest": entry["digest"],
                 "requires": entry["requires"],
                 "model_count": model_counts.get(name, 0),
                 "urls": links.get(name, {}),

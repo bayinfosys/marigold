@@ -4,14 +4,17 @@ Everything below raises; these functions decide what a failure means
 for the user and pick the exit code.
 """
 
+import contextlib
 import os
+import subprocess
 import sys
+import tempfile
 
 from pathlib import Path
 
 from shared.model_cache import cache_dir_bytes
 
-from cli import applications, archives, registry
+from cli import applications, archives, manifest, registry
 from cli.registry_config import REGISTRY_CONFIG_NAME, load_registry_config
 from cli.compose import (
     DEFAULT_EXECUTION_IMAGE,
@@ -150,12 +153,14 @@ def cmd_config_show(args):
         application = load_application_toml(candidate) if candidate.exists() else {}
         merged = merge_config(host_dict(host), application)
         tag = host.platform.tag or default_tag()
-        app_name, app_version = applications.application_identity(application_dir, merged)
+        app_name = applications.declared_name(application_dir, merged)
         run_name = applications.application_name(application_dir, merged)
+        _, app_digest = manifest.application_manifest(application_dir)
 
         print("\napplication")
         print(f"  config           : {candidate if candidate.exists() else '(none)'}")
-        print(f"  name             : {app_name} {app_version}")
+        print(f"  name             : {app_name}")
+        print(f"  digest           : {manifest.short(app_digest)}")
         print(f"  root             : {application_dir}")
         print(f"  models yaml      : {setting(merged, 'application', 'models_yaml', ['models.yaml'])}")
         print(f"  compose files    : {platform_compose_files(merged)}")
@@ -387,9 +392,12 @@ def cmd_application_create(args):
         if not (source / yaml_name).exists():
             print(f"marigold: warning: {yaml_name} declared but not present", file=sys.stderr)
 
-    archive, count = applications.build_archive(source, Path(args.output).resolve())
+    archive, count, digest = applications.build_archive(
+        source, Path(args.output).resolve(), args.version
+    )
 
     print(f"{archive}  ({count} files, {archive.stat().st_size / 1e6:.2f} MB)")
+    print(f"  digest : {manifest.short(digest)}")
     sys.exit(0)
 
 
@@ -406,18 +414,19 @@ def cmd_application_install(args):
             f"({', '.join(archives.ARCHIVE_SUFFIXES)})"
         )
 
-    name, version, root, digest, previous = applications.install(archive)
+    name, root, record, previous = applications.install(archive, args.version)
 
-    if previous and previous["digest"] != digest:
+    if previous and previous.get("manifest") != record["manifest"]:
         print(
             f"marigold: replaced {name} {previous['version']} "
-            f"({previous['digest'][:12]})",
+            f"({manifest.short(previous.get('manifest', ''))})",
             file=sys.stderr,
         )
 
-    print(f"installed {name} {version}")
-    print(f"  root : {root}")
-    print(f"  run  : marigold application start {name}")
+    print(f"installed {name} {record['version']}")
+    print(f"  digest : {manifest.short(record['manifest'])}")
+    print(f"  root   : {root}")
+    print(f"  run    : marigold application start {name}")
     sys.exit(0)
 
 
@@ -433,10 +442,75 @@ def cmd_application_list(args):
         record = index[name]
         root = Path(record["root"])
         state = "ok" if (root / APPLICATION_CONFIG_NAME).exists() else "MISSING"
-        print(f"  {name:<30} {record['version']:<12} {record['digest'][:12]}  {state}")
+        print(f"  {name:<30} {record['version']:<12} {manifest.short(record.get('manifest', '-')):<12}  {state}")
 
     print(f"\n{len(index)} application(s), index at {applications.installed_index_path()}")
     sys.exit(0)
+
+
+def cmd_application_verify(args):
+    """Check an installed application's files against its recorded digest."""
+    record, digest = applications.verify(args.name)
+
+    if digest == record["manifest"]:
+        print(f"{args.name} {record['version']}: ok ({manifest.short(digest)})")
+        sys.exit(0)
+
+    print(
+        f"{args.name} {record['version']}: files changed since install "
+        f"(recorded {manifest.short(record['manifest'])}, now {manifest.short(digest)})"
+    )
+    sys.exit(1)
+
+
+def _diff_side(target: str, stack: contextlib.ExitStack) -> tuple[str, Path]:
+    """(label, application directory) for one side of a diff.
+
+    An installed name, an application directory, or an archive, which
+    is extracted to a temporary directory for the length of the diff.
+    """
+    path = Path(target)
+
+    if archives.is_archive(target) and path.is_file():
+        tmp = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+        return target, archives.extract_to(path.resolve(), tmp)
+
+    return target, applications.resolve_target(target)
+
+
+def cmd_application_diff(args):
+    """Compare two applications file by file, through their manifests."""
+    with contextlib.ExitStack() as stack:
+        (label_a, root_a), (label_b, root_b) = (
+            _diff_side(args.old, stack),
+            _diff_side(args.new, stack),
+        )
+        text_a, digest_a = manifest.application_manifest(root_a)
+        text_b, digest_b = manifest.application_manifest(root_b)
+
+        print(f"--- {label_a}  {manifest.short(digest_a)}")
+        print(f"+++ {label_b}  {manifest.short(digest_b)}")
+
+        if digest_a == digest_b:
+            print("identical")
+            sys.exit(0)
+
+        changes = manifest.compare(text_a, text_b)
+
+        for mark, key in (("A", "added"), ("D", "removed"), ("M", "changed")):
+            for path in changes[key]:
+                print(f"{mark}  {path}")
+
+        if args.content:
+            for path in changes["changed"]:
+                sys.stdout.flush()
+                subprocess.run([
+                    "diff", "-u",
+                    "--label", f"{label_a}/{path}", "--label", f"{label_b}/{path}",
+                    str(root_a / path), str(root_b / path),
+                ])
+
+    sys.exit(1)
 
 
 def cmd_application_uninstall(args):
@@ -585,6 +659,7 @@ def cmd_registry_build(args):
     index, warnings = registry.build(
         root,
         out,
+        version=args.version,
         title=section.title,
         description=section.description,
         urls=section.urls,
@@ -599,7 +674,7 @@ def cmd_registry_build(args):
 
     for name, application in sorted(index["applications"].items()):
         for version, entry in sorted(application["versions"].items()):
-            print(f"  {name:<30} {version:<12} {entry['sha256'][:12]}")
+            print(f"  {name:<30} {version:<12} {manifest.short(entry['digest'])}")
             count += 1
 
     print(f"\n{count} application(s), index at {out.resolve() / registry.INDEX_NAME}")

@@ -120,11 +120,23 @@ def build_parser() -> argparse.ArgumentParser:
     create_p = app_sub.add_parser("create", help="build an application archive from a directory")
     create_p.add_argument("target", nargs="?", default=".", help="application directory")
     create_p.add_argument("-o", "--output", default=".", help="output directory, or a filename ending in .tar.gz")
+    create_p.add_argument("--version", default="local", help="version in the archive's filename, such as a registry tag (default: local)")
     create_p.set_defaults(func=commands.cmd_application_create)
 
     install_p = app_sub.add_parser("install", help="install an application archive")
     install_p.add_argument("archive", help="application archive to install")
+    install_p.add_argument("--version", default="local", help="version to record, such as the registry tag it came from (default: local)")
     install_p.set_defaults(func=commands.cmd_application_install)
+
+    verify_p = app_sub.add_parser("verify", help="check an installed application's files against its digest")
+    verify_p.add_argument("name", help="installed application name")
+    verify_p.set_defaults(func=commands.cmd_application_verify)
+
+    diff_p = app_sub.add_parser("diff", help="compare two applications file by file")
+    diff_p.add_argument("old", help="installed name, application directory or archive")
+    diff_p.add_argument("new", help="installed name, application directory or archive")
+    diff_p.add_argument("--content", action="store_true", help="show the changes inside changed files (diff -u)")
+    diff_p.set_defaults(func=commands.cmd_application_diff)
 
     list_p = app_sub.add_parser("list", help="list installed applications")
     list_p.set_defaults(func=commands.cmd_application_list)
@@ -145,6 +157,10 @@ def build_parser() -> argparse.ArgumentParser:
         "root", nargs="?", default=".",
         help="registry root, holding marigold-registry.toml; every directory "
              "under it holding marigold.toml is published (default: .)",
+    )
+    reg_build_p.add_argument(
+        "--version", required=True,
+        help="the registry's tag, such as v0.0.6; every application is published under it",
     )
     reg_build_p.add_argument(
         "-o", "--out", default=None,
