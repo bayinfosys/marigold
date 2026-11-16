@@ -21,7 +21,7 @@ default at the same path, and anything else is added. The template
 presents; the build supplies the data, in _data/marigold.json and each
 page's front matter. Commands shown to readers are part of that data.
 
-Every directory under the root holding marigold.toml is published. The
+Every <root>/<name>/marigold.toml is published (discover). The
 registry's identity comes from marigold-registry.toml at the root
 (cli.registry_config). Everything else is derived from the archives:
 the build writes each archive, extracts it to a temporary directory,
@@ -103,11 +103,11 @@ def _source_url(version: str) -> str:
 def discover(root: Path, out: Path) -> list[Path]:
     """Every application directory under root, sorted.
 
-    A directory holding marigold.toml is an application, at any depth.
-    Hidden directories and the output directory are not searched. A
-    marigold.toml inside another application's directory is an error,
-    since it would be both an application and part of the other's
-    archive. Nothing else is excluded: a directory leaves the registry
+    Applications sit one level below the root: <root>/<name>/marigold.toml,
+    the files the shell pattern 'root/*/marigold.toml' matches. Hidden
+    directories and the output directory are skipped. A marigold.toml at
+    any other depth is an error, so a misplaced application fails the
+    build instead of going unpublished. A directory leaves the registry
     when its marigold.toml does.
     """
     root = root.resolve()
@@ -116,28 +116,26 @@ def discover(root: Path, out: Path) -> list[Path]:
     if not root.is_dir():
         raise FileNotFoundError(f"not a directory: {root}")
 
-    found = []
+    def skipped(directory: Path) -> bool:
+        return directory.name.startswith(".") or directory.resolve() == out
+
+    found = sorted(
+        path.parent
+        for path in root.glob(f"*/{APPLICATION_CONFIG_NAME}")
+        if not skipped(path.parent)
+    )
 
     for dirpath, dirnames, filenames in os.walk(root):
         current = Path(dirpath)
+        dirnames[:] = [d for d in dirnames if not skipped(current / d)]
 
-        dirnames[:] = sorted(
-            d for d in dirnames
-            if not d.startswith(".") and (current / d).resolve() != out
-        )
-
-        if APPLICATION_CONFIG_NAME in filenames:
-            found.append(current)
-
-    found.sort()
-
-    for outer in found:
-        for inner in found:
-            if inner != outer and outer in inner.parents:
-                raise ValueError(
-                    f"{inner} holds {APPLICATION_CONFIG_NAME} inside the "
-                    f"application at {outer}; remove one of them"
-                )
+        depth = len(current.relative_to(root).parts)
+        if APPLICATION_CONFIG_NAME in filenames and depth > 1:
+            raise ValueError(
+                f"{current / APPLICATION_CONFIG_NAME}: applications sit one "
+                f"level below the registry root, as <root>/<name>/"
+                f"{APPLICATION_CONFIG_NAME}; move it or remove it"
+            )
 
     return found
 

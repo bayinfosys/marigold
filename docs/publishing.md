@@ -32,9 +32,11 @@ my-registry/
     ...
 ```
 
-Every directory under the root holding a `marigold.toml` is published.
-To leave one out, remove its `marigold.toml`. An application inside
-another application's directory is an error.
+Applications sit one level below the root: every
+`<root>/<name>/marigold.toml`, the files `ls */marigold.toml` lists, is
+published. To leave one out, remove its `marigold.toml`. A
+`marigold.toml` at any other depth fails the build, and the root itself
+holds `marigold-registry.toml`, never `marigold.toml`.
 
 ### marigold-registry.toml
 
