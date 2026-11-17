@@ -48,6 +48,8 @@ import logging
 import os
 import sys
 
+import httpx
+
 from cli import commands
 from cli.config import marigold_version
 from cli.host_config import HOST_CONFIG_ENV, HOST_CONFIG_NAME
@@ -123,8 +125,8 @@ def build_parser() -> argparse.ArgumentParser:
     create_p.add_argument("--version", default="local", help="version in the archive's filename, such as a registry tag (default: local)")
     create_p.set_defaults(func=commands.cmd_application_create)
 
-    install_p = app_sub.add_parser("install", help="install an application archive")
-    install_p.add_argument("archive", help="application archive to install")
+    install_p = app_sub.add_parser("install", help="install an application from a registry, or an archive file")
+    install_p.add_argument("target", help="a name or name@version from a registry, or an archive file")
     install_p.add_argument("--version", default="local", help="version to record, such as the registry tag it came from (default: local)")
     install_p.set_defaults(func=commands.cmd_application_install)
 
@@ -146,8 +148,19 @@ def build_parser() -> argparse.ArgumentParser:
     uninstall_p.set_defaults(func=commands.cmd_application_uninstall)
 
     # registry
-    reg = sub.add_parser("registry", help="build application registries")
+    reg = sub.add_parser("registry", help="the registries this host installs from, and building one")
     reg_sub = reg.add_subparsers(dest="registry_command", required=True)
+
+    reg_add_p = reg_sub.add_parser("add", help="add a registry, searched after those already listed")
+    reg_add_p.add_argument("args", nargs="+", metavar="[NAME] URL", help="an optional local name, then the registry's address")
+    reg_add_p.set_defaults(func=commands.cmd_registry_add)
+
+    reg_list_p = reg_sub.add_parser("list", help="the registries, in search order")
+    reg_list_p.set_defaults(func=commands.cmd_registry_list)
+
+    reg_remove_p = reg_sub.add_parser("remove", help="remove a registry")
+    reg_remove_p.add_argument("key", help="the registry's name or address")
+    reg_remove_p.set_defaults(func=commands.cmd_registry_remove)
 
     reg_build_p = reg_sub.add_parser(
         "build",
@@ -244,6 +257,8 @@ def main():
         PermissionError,
         ValueError,
         CacheNotWritable,
+        LookupError,
+        httpx.HTTPError,
     ) as e:
         print(f"marigold: {e}", file=sys.stderr)
         sys.exit(1)

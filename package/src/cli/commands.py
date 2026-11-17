@@ -14,7 +14,7 @@ from pathlib import Path
 
 from shared import model_cache
 
-from cli import applications, archives, manifest, registry
+from cli import applications, archives, manifest, registries, registry
 from cli.registry_config import REGISTRY_CONFIG_NAME, load_registry_config
 from cli.compose import (
     DEFAULT_EXECUTION_IMAGE,
@@ -402,19 +402,31 @@ def cmd_application_create(args):
 
 
 def cmd_application_install(args):
-    """Install an application archive so it can be started by name."""
-    archive = Path(args.archive).resolve()
+    """Install an application: an archive file, or a name from a registry.
 
-    if not archive.is_file():
-        raise FileNotFoundError(f"archive not found: {args.archive}")
+    A target that is a file is installed as an archive. Anything else is
+    a name, or name@version, looked up in the [[registry]] entries of
+    marigold-host.toml, in order.
+    """
+    path = Path(args.target)
 
-    if not archives.is_archive(args.archive):
-        raise ValueError(
-            f"'{args.archive}' is not an application archive "
-            f"({', '.join(archives.ARCHIVE_SUFFIXES)})"
-        )
+    if path.is_file():
+        if not archives.is_archive(args.target):
+            raise ValueError(
+                f"'{args.target}' is not an application archive "
+                f"({', '.join(archives.ARCHIVE_SUFFIXES)})"
+            )
+        name, root, record, previous = applications.install(path.resolve(), args.version)
+    else:
+        with registries.temporary_directory() as tmp:
+            archive, url, version, entry = registries.fetch(
+                args.target, load_host_config().registry, Path(tmp)
+            )
+            print(f"marigold: {Path(entry['archive']).name} from {url}", file=sys.stderr)
+            name, root, record, previous = applications.install(
+                archive, version, expected_manifest=entry["digest"], registry=url
+            )
 
-    name, root, record, previous = applications.install(archive, args.version)
 
     if previous and previous.get("manifest") != record["manifest"]:
         print(
@@ -424,6 +436,8 @@ def cmd_application_install(args):
         )
 
     print(f"installed {name} {record['version']}")
+    if record.get("registry"):
+        print(f"  from   : {record['registry']}")
     print(f"  digest : {manifest.short(record['manifest'])}")
     print(f"  root   : {root}")
     print(f"  run    : marigold application start {name}")
@@ -442,7 +456,8 @@ def cmd_application_list(args):
         record = index[name]
         root = Path(record["root"])
         state = "ok" if (root / APPLICATION_CONFIG_NAME).exists() else "MISSING"
-        print(f"  {name:<30} {record['version']:<12} {manifest.short(record.get('manifest', '-')):<12}  {state}")
+        source = record.get("registry") or "local"
+        print(f"  {name:<30} {record['version']:<12} {manifest.short(record.get('manifest', '-')):<12}  {state:<8} {source}")
 
     print(f"\n{len(index)} application(s), index at {applications.installed_index_path()}")
     sys.exit(0)
@@ -647,6 +662,42 @@ def cmd_cache_stub(args):
 # ---------------------------------------------------------------------------
 # registry
 # ---------------------------------------------------------------------------
+
+def cmd_registry_add(args):
+    """Append a registry to marigold-host.toml: registry add [NAME] URL."""
+    if len(args.args) == 1:
+        name, url = None, args.args[0]
+    elif len(args.args) == 2:
+        name, url = args.args
+    else:
+        raise ValueError("usage: marigold registry add [NAME] URL")
+
+    path, entry = registries.add(url, name)
+    label = f" ({entry.name})" if entry.name else ""
+    print(f"added {entry.url}{label} to {path}")
+    sys.exit(0)
+
+
+def cmd_registry_list(args):
+    """The registries, in the order they are searched."""
+    entries = load_host_config().registry
+
+    if not entries:
+        print("no registries; marigold registry add [NAME] URL", file=sys.stderr)
+
+    for position, entry in enumerate(entries, start=1):
+        label = f"  ({entry.name})" if entry.name else ""
+        print(f"{position}. {entry.url}{label}")
+
+    sys.exit(0)
+
+
+def cmd_registry_remove(args):
+    """Remove a registry by name or url."""
+    path, removed = registries.remove(args.key)
+    print(f"removed {removed['url']} from {path}")
+    sys.exit(0)
+
 
 def cmd_registry_build(args):
     """Build a static registry from every application under a root.
