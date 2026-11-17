@@ -110,7 +110,7 @@ compose_files = ["cpu", "gpu"]      # a worker only: no API, no Postgres
 url = "postgresql://marigold:<password>@db.example.internal:5432/marigold"
 
 [storage]
-dir = "/data/marigold"
+location = "/data/marigold"
 ```
 
 Populate each host's cache with the models it should serve, then start

@@ -63,13 +63,13 @@ def installed_index_path(cache_dir: Path) -> Path:
 
 
 def cache_dir_from_config(config: dict) -> Path:
-    """The cache root from a merged config: [storage] dir."""
-    return Path(config["storage"]["dir"])
+    """The cache root from a merged config: [storage] location."""
+    return Path(config["storage"]["location"])
 
 
 def cache_dir_from_system_config() -> Path:
     """The cache root for commands with no application in hand."""
-    return load_host_config().storage.dir
+    return load_host_config().storage.location
 
 
 def container_path(path: Path, cache_dir: Path) -> str:

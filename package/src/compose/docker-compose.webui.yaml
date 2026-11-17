@@ -21,7 +21,11 @@ services:
       - RAG_EMBEDDING_MODEL_AUTO_UPDATE=false
       - RAG_RERANKING_MODEL_AUTO_UPDATE=false
     volumes:
-      - ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/webui:/app/backend/data
+      - type: bind
+        source: ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/webui
+        target: /app/backend/data
+        bind:
+          create_host_path: false
     labels:
       - "svc.marigold.description=OpenWebUI interface for chat access to LLMs in the marigold cache"
     mem_limit: ${MARIGOLD_WEBUI_MEMORY:-2g}

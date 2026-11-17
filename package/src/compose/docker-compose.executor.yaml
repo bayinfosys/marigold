@@ -36,8 +36,17 @@ services:
       LOG_LEVEL: ${MARIGOLD_LOG_LEVEL:-INFO}
       HOME: /tmp
     volumes:
-      - ${MARIGOLD_APPLICATION_DIR:-.}:/app:ro
-      - ${MARIGOLD_APPLICATIONS_DIR:-~/.marigold/cache/data/applications}/${MARIGOLD_APPLICATION_NAME:-application}/outputs:/outputs
+      - type: bind
+        source: ${MARIGOLD_APPLICATION_DIR:-.}
+        target: /app
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${MARIGOLD_APPLICATIONS_DIR:-~/.marigold/cache/data/applications}/${MARIGOLD_APPLICATION_NAME:-application}/outputs
+        target: /outputs
+        bind:
+          create_host_path: false
     restart: "no"
     labels:
       svc.marigold.description: "Application code for one application, running against the API"

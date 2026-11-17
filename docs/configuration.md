@@ -47,7 +47,7 @@ marigold config show [name]   # every resolved value, marked [host] or [default]
 compose_files = ["core", "cpu", "gpu"]
 
 [storage]
-dir = "/data/marigold"
+location = "/data/marigold"
 
 [[registry]]
 url = "https://examples.marigold.run/"
@@ -79,7 +79,7 @@ Unknown sections and keys are errors.
 
 | Key | Default | Description |
 |---|---|---|
-| `dir` | `"~/.marigold/cache"` | The cache directory: models, the platform database, outputs and installed applications. |
+| `location` | `"~/.marigold/cache"` | The cache directory: models, the platform database, outputs and installed applications. A local path or a mounted network share. |
 | `outputs` | `"fs"` | Where images, audio and video outputs are stored: files under the cache, S3, or Azure Blob Storage. |
 | `bucket` | unset | s3: the bucket, which must already exist. |
 | `endpoint` | unset | s3: the endpoint of an S3-compatible service. Unset means AWS S3. |

@@ -169,7 +169,7 @@ def cmd_config_show(args):
         print(f"  command          : {execution_command(merged) or '(image default)'}")
 
     print("\ncache layout")
-    for name, cache_path in cache_paths(host.storage.dir).items():
+    for name, cache_path in cache_paths(host.storage.location).items():
         exists = "ok" if cache_path.exists() else "missing"
         print(f"  {name:<13}: {cache_path}  ({exists})")
 

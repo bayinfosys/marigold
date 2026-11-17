@@ -159,7 +159,7 @@ def platform_env(config: dict) -> dict:
 
     # MARIGOLD_MODELS_DIR, MARIGOLD_TMP_DIR, MARIGOLD_OUTPUTS_DIR,
     # MARIGOLD_APPLICATIONS_DIR: one per entry in paths.CACHE_SUBDIRS.
-    for name, path in cache_paths(host.storage.dir).items():
+    for name, path in cache_paths(host.storage.location).items():
         env[f"MARIGOLD_{name.upper()}_DIR"] = str(path)
 
     # Each instance runs as the host user, so the files it writes to

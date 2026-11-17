@@ -5,6 +5,10 @@
 # takes its value from the environment when set, otherwise the default
 # shown, which matches the HostConfig default.
 
+# Bind mounts set create_host_path: false. The CLI creates each source
+# directory as the current user first; Docker would create a missing one
+# as root.
+
 services:
   postgres:
     image: postgres:17
@@ -13,7 +17,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-marigold}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-marigold}
     volumes:
-      - ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/postgres:/var/lib/postgresql/data
+      - type: bind
+        source: ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/postgres
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: false
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-marigold}"]
       interval: 5s
@@ -36,8 +44,17 @@ services:
       MARIGOLD_DATABASE_URL: ${MARIGOLD_DATABASE_URL:-postgresql://marigold:marigold@postgres:5432/marigold}
       MARIGOLD_MODEL_CATALOGUE_TABLE: model_catalogue
     volumes:
-      - ${MARIGOLD_APPLICATIONS_DIR:-~/.marigold/cache/data/applications}:/applications:ro
-      - ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/models:/models
+      - type: bind
+        source: ${MARIGOLD_APPLICATIONS_DIR:-~/.marigold/cache/data/applications}
+        target: /applications
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/models
+        target: /models
+        bind:
+          create_host_path: false
     restart: "no"
     labels:
       - "svc.marigold.description=Local state management: cache, queues, model catalogue, etc"
@@ -70,7 +87,12 @@ services:
       AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:-}
       AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
     volumes:
-      - ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/outputs:/data/outputs:ro
+      - type: bind
+        source: ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/outputs
+        target: /data/outputs
+        read_only: true
+        bind:
+          create_host_path: false
     labels:
       - "svc.marigold.description=Access to the marigold core services from outside the network"
     mem_limit: ${MARIGOLD_API_MEMORY:-1g}

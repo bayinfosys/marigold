@@ -150,3 +150,16 @@ models.
 Implication: decisions about replacing, reconfiguring or retiring a
 model are made from recorded behaviour, not inspection of individual
 jobs.
+
+---
+
+## 9. Standard tools, few new concepts
+
+Marigold uses the conventions people already know: git tags for
+versions, sha256 for identity, TOML for configuration, Compose for
+containers, static files over HTTP for registries. Anything Marigold
+computes can be reproduced with standard command-line tools. A new
+concept is accepted only when there is no existing prior.
+
+Implication: changes favour the familiar form over the novel one, and
+documentation stays short enough to read in full.

@@ -94,9 +94,9 @@ class PlatformSection(_Section):
 
 
 class StorageSection(_Section):
-    dir: Path = Field(
+    location: Path = Field(
         default=DEFAULT_CACHE_DIR,
-        description="The cache directory: models, the platform database, outputs and installed applications.",
+        description="The cache directory: models, the platform database, outputs and installed applications. A local path or a mounted network share.",
     )
     outputs: Literal["fs", "s3", "azure"] = Field(
         default="fs",
@@ -119,9 +119,9 @@ class StorageSection(_Section):
         description="azure: the blob container, which must already exist.",
     )
 
-    @field_validator("dir", mode="before")
+    @field_validator("location", mode="before")
     @classmethod
-    def _dir(cls, value):
+    def _location(cls, value):
         return Path(str(value)).expanduser()
 
     @model_validator(mode="after")
@@ -285,7 +285,7 @@ class HostConfig(_Section):
             "TAG": tag,
             "MARIGOLD_LOG_LEVEL": self.platform.log_level,
             "MARIGOLD_IDLE_TIMEOUT": str(self.platform.idle_timeout),
-            "MARIGOLD_CACHE_DIR": str(self.storage.dir),
+            "MARIGOLD_CACHE_DIR": str(self.storage.location),
             "MARIGOLD_STORAGE": self.storage.outputs,
             "MARIGOLD_STORAGE_BUCKET": self.storage.bucket or "",
             "MARIGOLD_STORAGE_ENDPOINT": self.storage.endpoint or "",

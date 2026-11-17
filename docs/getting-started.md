@@ -42,7 +42,7 @@ Set its location in `marigold-host.toml`:
 compose_files = ["core", "cpu"]     # ["core", "cpu", "gpu"] for an NVIDIA worker
 
 [storage]
-dir = "/data/marigold"              # default: ~/.marigold/cache
+location = "/data/marigold"              # default: ~/.marigold/cache
 ```
 
 The CLI reads `--host-config PATH`, then `$MARIGOLD_HOST_CONFIG`, then

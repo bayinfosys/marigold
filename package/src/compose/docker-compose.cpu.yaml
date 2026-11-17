@@ -31,9 +31,22 @@ services:
       AZURE_STORAGE_ACCOUNT: ${AZURE_STORAGE_ACCOUNT:-}
       AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-}
     volumes:
-      - ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/models:/models:ro
-      - ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/tmp:/tmp/models
-      - ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/outputs:/data/outputs
+      - type: bind
+        source: ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/models
+        target: /models
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/tmp
+        target: /tmp/models
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/outputs
+        target: /data/outputs
+        bind:
+          create_host_path: false
     restart: on-failure:3
     mem_limit: ${MARIGOLD_WORKER_MEMORY:-0}
     cpus: ${MARIGOLD_WORKER_CPUS:-0}
