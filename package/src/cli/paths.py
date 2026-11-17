@@ -15,6 +15,12 @@ CACHE_SUBDIRS = {
     "applications": "data/applications",
 }
 
+# Mounted by platform services that write as their own users. Created
+# here as the host user before compose runs: a bind mount whose source
+# is missing makes Docker create it, and its parents, owned by root,
+# which leaves the rest of the cache unwritable to the CLI.
+SERVICE_SUBDIRS = ("data/postgres", "data/webui")
+
 # Inside the applications directory, anything that is not one
 # application's own directory starts with an underscore or contains a
 # dot. Application names are [a-z0-9-] only, so neither can collide.
@@ -95,6 +101,7 @@ def ensure_cache_layout(cache_dir: Path) -> dict[str, Path]:
     """
     paths = cache_paths(cache_dir)
     extra = [archives_dir(cache_dir), extracted_applications_dir(cache_dir)]
+    extra += [cache_dir / relative for relative in SERVICE_SUBDIRS]
 
     for path in list(paths.values()) + extra:
         if path.exists():
