@@ -7,7 +7,7 @@ nav_order: 13
 # Deployment
 
 Marigold is the same platform at every size. Applications do not change
-between a laptop and a cloud account: only the system config does --
+between a laptop and a cloud account: only `marigold-host.toml` does --
 where the database is, where outputs are stored, and where the workers
 run. In every shape the data stays on infrastructure you control.
 
@@ -42,13 +42,12 @@ The default: everything under one cache directory, started by
 Point every host at the same Postgres:
 
 ```toml
-# system config
+# marigold-host.toml
 [database]
 url = "postgresql://marigold:<password>@db.example.internal:5432/marigold"
 ```
 
-`MARIGOLD_DATABASE_URL` in the environment overrides it. With a database
-URL set, the platform does not start its own Postgres.
+With a database URL set, the platform does not start its own Postgres.
 
 Managed services that work as they are:
 
@@ -67,11 +66,13 @@ bucket every host can reach.
 
 **S3, or any S3-compatible service:**
 
-```sh
-MARIGOLD_STORAGE=s3
-MARIGOLD_STORAGE_BUCKET=marigold-outputs     # must already exist
-MARIGOLD_STORAGE_ENDPOINT=                   # unset for AWS S3
-AWS_DEFAULT_REGION=eu-west-2
+```toml
+# marigold-host.toml
+[storage]
+outputs = "s3"
+bucket = "marigold-outputs"        # must already exist
+region = "eu-west-2"
+# endpoint = "http://..."          # an S3-compatible service; unset for AWS S3
 ```
 
 On AWS, give the instances an IAM role with read and write on the
@@ -79,17 +80,21 @@ bucket rather than access keys.
 
 **Azure Blob Storage:**
 
-```sh
-MARIGOLD_STORAGE=azure
-MARIGOLD_STORAGE_CONTAINER=marigold-outputs   # must already exist
-AZURE_STORAGE_ACCOUNT=<account>
+```toml
+# marigold-host.toml
+[storage]
+outputs = "azure"
+container = "marigold-outputs"     # must already exist
 ```
+
+with `AZURE_STORAGE_ACCOUNT=<account>` in the shell environment.
 
 On Azure, give the instances a managed identity with the Storage Blob
 Data Contributor role on the container.
 
 The worker writes outputs; the API only reads them. See
-[Configuration](configuration.md) for every storage variable.
+[Configuration](configuration.md) for every storage key and the
+secrets each store reads from the shell.
 
 ## GPU worker hosts
 
@@ -97,14 +102,14 @@ Each worker host runs a worker against the shared database, with its
 own model cache:
 
 ```toml
-# system config on a worker host
+# marigold-host.toml on a worker host
 [platform]
 compose_files = ["cpu", "gpu"]      # a worker only: no API, no Postgres
 
 [database]
 url = "postgresql://marigold:<password>@db.example.internal:5432/marigold"
 
-[cache]
+[storage]
 dir = "/data/marigold"
 ```
 
@@ -130,6 +135,28 @@ Marigold has no authentication of its own. Outside a private network,
 put your own in front of the API -- a reverse proxy, a load balancer
 with your identity provider -- and have it set `X-User-Id` for each
 caller. See [Configuration](configuration.md#authentication).
+
+## Restricting instances
+
+Marigold limits what each container can use: memory, CPUs and
+processes per service from `[resources]`, and hardened application
+instances (see [Configuration](configuration.md#resource-limits)). It
+leaves the network to the host. Both platform networks are ordinary
+Docker bridges, so application instances can reach the internet.
+
+To restrict that, use the host's own controls:
+
+- a security group, network ACL or host firewall denying outbound
+  traffic from the machine, with exceptions for model downloads and
+  object storage;
+- private endpoints (AWS VPC endpoints, Azure Private Link) for object
+  storage and the database;
+- Docker's `DOCKER-USER` iptables chain, for rules on container traffic
+  alone.
+
+`[network] bind` decides who reaches the API: `127.0.0.1`, the
+default, admits this machine only; `0.0.0.0` admits any host on the
+network, each trusted by its `X-User-Id`.
 
 ## Air gaps
 

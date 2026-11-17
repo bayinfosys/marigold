@@ -11,7 +11,7 @@ directory of static files any web server can serve:
 
 ```
 marigold-applications.json              the index
-applications/<name>-<version>.tar.gz    the archives
+applications/<name>-<tag>.tar.gz        the archives
 applications/<name>/                    catalogue pages
 llms.txt, sitemap.xml                   discovery
 ```
@@ -32,9 +32,11 @@ my-registry/
     ...
 ```
 
-Every directory under the root holding a `marigold.toml` is published.
-To leave one out, remove its `marigold.toml`. An application inside
-another application's directory is an error.
+Applications sit one level below the root: every
+`<root>/<name>/marigold.toml`, the files `ls */marigold.toml` lists, is
+published. To leave one out, remove its `marigold.toml`. A
+`marigold.toml` at any other depth fails the build, and the root itself
+holds `marigold-registry.toml`, never `marigold.toml`.
 
 ### marigold-registry.toml
 
@@ -127,6 +129,15 @@ publishes it:
 git tag v1.0.0 && git push origin v1.0.0
 ```
 
+The tag is the registry's version, and every application in it is
+published under that version. Applications carry no version of their
+own: an application unchanged since the last tag gets the new version
+and the same [digest](manifests.md). To build by hand, pass the tag:
+
+```sh
+marigold registry build . --version v1.0.0
+```
+
 The permissions block is required: GitHub deploys a repository's site
 only when that repository's own workflow grants it. A re-run uses the
 workflow as it was when the run started, so after changing the
@@ -155,9 +166,10 @@ artifact in a later job.
   "applications": {
     "my-app": {
       "versions": {
-        "0.1.0": {
-          "archive": "applications/my-app-0.1.0.tar.gz",
+        "v1.0.0": {
+          "archive": "applications/my-app-v1.0.0.tar.gz",
           "sha256": "...",
+          "digest": "...",
           "description": "...",
           "requires": []
         }
@@ -168,7 +180,9 @@ artifact in a later job.
 ```
 
 Archive paths are relative to the index, so one build works at any
-address. Every value is taken from the archive it describes; nothing in
+address. `sha256` is of the archive's bytes, checked before it is
+unpacked; `digest` is of the application's [manifest](manifests.md),
+checked after, and identifies the files whatever the packaging. Every value is taken from the archive it describes; nothing in
 the index is written by hand.
 
 ## Customising the catalogue

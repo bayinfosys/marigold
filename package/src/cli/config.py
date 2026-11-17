@@ -1,33 +1,24 @@
-"""Configuration: two TOML layers; application values win over system values.
+"""Configuration: the host config and the application config, merged.
 
-A system-level config (config.toml in the current directory,
-~/.marigold/config.toml, or $MARIGOLD_CONFIG) carries host defaults --
-cache location, database URL, which compose files the platform runs. An
-application-level marigold.toml in the application root declares what
-the application is and what it runs. Application values win per key;
-anything neither sets falls back to a hardcoded default.
+Two files, each with its own validated model:
 
-Sections:
+    marigold-host.toml  how this machine runs the platform (cli.host_config)
+    marigold.toml       what one application is and runs (cli.application_config)
 
-    [platform]     host: compose files, image tag
-    [cache]        host: where the cache lives
-    [database]     host: connection string
-    [application]  the application: name, version, models_yaml, extra
-                   compose files it needs
-    [execution]    the application's containers: name, image, command
-    [environment]  variables forwarded to every service
+The host sections are [platform], [storage], [database], [registry],
+[network] and [resources]. An application config that sets one is
+rejected. Both files may set [environment]; the application's values
+win per key.
 
-[package] and [deployment] are earlier section names. An application
-config that still uses either is rejected with a message naming the
-change.
+Every other module reads configuration through these models, or through
+the merged dictionary load_config() returns, which holds both models
+dumped with their defaults. Nothing reads TOML or the environment for
+settings anywhere else.
 
-Nothing here touches the filesystem beyond reading those two files, and
-nothing here exits: callers decide what a missing or malformed config
+Nothing here exits: callers decide what a missing or malformed config
 means for them.
 """
 
-import logging
-import os
 import tomllib
 
 # PackageNotFoundError is importlib's term for a Python distribution
@@ -36,88 +27,33 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from cli.application_config import ApplicationConfig, validate_application_config
-
-logger = logging.getLogger("marigold.cli.config")
+from cli.host_config import HostConfig, host_config_path, load_host_config
 
 APPLICATION_CONFIG_NAME = "marigold.toml"
-SYSTEM_CONFIG_NAME = "config.toml"
-DEFAULT_SYSTEM_CONFIG_PATH = Path.home() / ".marigold" / "config.toml"
 
-# Earlier section names in an application config, and what to do instead.
-RENAMED_SECTIONS = {
-    "package": "rename [package] to [application]",
-    "deployment": (
-        "[deployment] is no longer read: host settings go in [platform] "
-        "in the system config, application settings in [application]"
-    ),
-}
+# Host settings. An application config that sets one is rejected: the
+# host decides how the platform runs, and an application adds services
+# to it through [application].compose_files.
+HOST_SECTIONS = tuple(name for name in HostConfig.model_fields if name != "environment")
 
 
 def marigold_version() -> str:
-    """The installed marigold version, which is also the image tag."""
+    """The installed marigold version, which is also the default image tag."""
     try:
         return version("bayis-marigold")
     except PackageNotFoundError:
         return "0.0.0-dev"
 
 
-def system_config_path() -> Path:
-    """The system config file in use.
-
-    $MARIGOLD_CONFIG wins and must exist; then config.toml in the
-    current directory, which makes a checkout self-contained; then the
-    home directory.
-    """
-    override = os.environ.get("MARIGOLD_CONFIG")
-
-    if override:
-        path = Path(override)
-        if not path.exists():
-            raise FileNotFoundError(
-                f"MARIGOLD_CONFIG set to '{path}', but it doesn't exist"
-            )
-        return path
-
-    cwd_config = Path(SYSTEM_CONFIG_NAME)
-
-    if cwd_config.exists():
-        return cwd_config
-
-    return DEFAULT_SYSTEM_CONFIG_PATH
-
-
-def load_toml(path: Path) -> dict:
-    """Parse one TOML file. A missing file is an empty config."""
-    if not path.exists():
-        return {}
-
-    with open(path, "rb") as f:
-        try:
-            return tomllib.load(f)
-        except tomllib.TOMLDecodeError as e:
-            logger.exception("cannot parse %s", path)
-            raise ValueError(f"cannot parse {path}: {e}") from e
-
-
-# Host settings. An application config that sets them is rejected: the
-# host decides how the platform runs, and an application adds services
-# to it through [application].compose_files.
-HOST_SECTIONS = ("platform", "cache", "database")
-
-
-def check_application_config(data: dict, path: Path) -> dict:
-    """Reject earlier section names and host settings in an application config."""
-    for section, message in RENAMED_SECTIONS.items():
-        if section in data:
-            raise ValueError(f"{path}: {message}")
-
+def check_application_config(data: dict, path) -> dict:
+    """Reject host sections in an application config."""
     host = [f"[{s}]" for s in HOST_SECTIONS if s in data]
 
     if host:
         raise ValueError(
-            f"{path}: {', '.join(host)} must be set in the system "
-            "config.toml, not in an application. An application adds "
-            "platform services with [application].compose_files."
+            f"{path}: {', '.join(host)} must be set in marigold-host.toml, "
+            "not in an application. An application adds platform services "
+            "with [application].compose_files."
         )
 
     return data
@@ -143,32 +79,40 @@ def load_application_config(path: Path) -> ApplicationConfig:
 
 
 def load_application_toml(path: Path) -> dict:
-    """An application's marigold.toml as a dict of validated values.
-
-    Only keys the file sets are present, so merge_config lets system
-    values stand wherever the application is silent, as before.
-    """
+    """An application's marigold.toml as a dict of the keys it sets."""
     return load_application_config(path).model_dump(exclude_unset=True)
 
 
-def merge_config(system: dict, application: dict) -> dict:
+def host_dict(host: HostConfig) -> dict:
+    """The host config as plain values, defaults included."""
+    return host.model_dump(mode="json")
+
+
+def merge_config(host: dict, application: dict) -> dict:
     """Shallow-merge each top-level section; application values win per key.
 
-    [environment] merges the same way -- an application can set one
-    variable without repeating any others the system config already set.
+    The sections only overlap in [environment], since an application may
+    not set host sections.
     """
     merged: dict = {}
 
-    for section in set(system) | set(application):
-        sys_section = system.get(section, {})
+    for section in set(host) | set(application):
+        host_section = host.get(section, {})
         app_section = application.get(section, {})
 
-        if isinstance(sys_section, dict) and isinstance(app_section, dict):
-            merged[section] = {**sys_section, **app_section}
+        if isinstance(host_section, dict) and isinstance(app_section, dict):
+            merged[section] = {**host_section, **app_section}
         else:
-            merged[section] = app_section if section in application else sys_section
+            merged[section] = app_section if section in application else host_section
 
     return merged
+
+
+def host_from_config(config: dict) -> HostConfig:
+    """The HostConfig inside a merged config, with the merged [environment]."""
+    data = {section: config[section] for section in HOST_SECTIONS if section in config}
+    data["environment"] = config.get("environment", {})
+    return HostConfig.model_validate(data)
 
 
 def setting(config: dict, section: str, key: str, default=None):
@@ -186,27 +130,53 @@ def load_config(application_dir: Path) -> dict:
             "-- doesn't look like a marigold application"
         )
 
-    system_config = load_toml(system_config_path())
-    application_config = load_application_toml(application_config_path)
+    host = host_dict(load_host_config())
+    application = load_application_toml(application_config_path)
 
-    return merge_config(system_config, application_config)
-
-
-def load_system_config() -> dict:
-    """The system layer alone, for commands with no application in hand."""
-    return load_toml(system_config_path())
+    return merge_config(host, application)
 
 
-def resolve_with_source(system: dict, application: dict, section: str, key: str, default):
-    """Resolve one config value and say which layer set it.
+def load_platform_config() -> dict:
+    """The host config alone, as a merged config, for commands with no application."""
+    return host_dict(load_host_config())
 
-    Mirrors merge_config's precedence: application beats system, and a
-    hardcoded default is the floor. Returned separately rather than
-    merged, so `config show` can report provenance -- the thing that
-    makes a surprising value diagnosable.
-    """
-    for layer, source in ((application, "application"), (system, "system")):
-        if key in layer.get(section, {}):
-            return layer[section][key], source
 
-    return default, "default"
+def host_keys_set(path: Path | None) -> dict[str, set[str]]:
+    """The keys the host config file sets, per section, for provenance."""
+    if path is None:
+        return {}
+
+    host = load_host_config(path)
+    keys = {}
+
+    for section in HostConfig.model_fields:
+        value = getattr(host, section)
+        if isinstance(value, dict):
+            keys[section] = set(value)
+        elif isinstance(value, list):
+            keys[section] = {"entries"} if section in host.model_fields_set else set()
+        else:
+            keys[section] = set(value.model_fields_set)
+
+    return keys
+
+
+__all__ = [
+    "APPLICATION_CONFIG_NAME",
+    "HOST_SECTIONS",
+    "HostConfig",
+    "check_application_config",
+    "host_config_path",
+    "host_dict",
+    "host_from_config",
+    "host_keys_set",
+    "load_application_config",
+    "load_application_toml",
+    "load_config",
+    "load_host_config",
+    "load_platform_config",
+    "marigold_version",
+    "merge_config",
+    "parse_application_config",
+    "setting",
+]

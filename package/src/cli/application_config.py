@@ -2,7 +2,7 @@
 
 An application config has three sections:
 
-    [application]  identity and contents: name, version, description,
+    [application]  identity and contents: name, description,
                    models_yaml, compose_files, requires
     [execution]    the application's containers: name, image, command
     [environment]  variables forwarded to every service
@@ -16,14 +16,11 @@ Names are in PEP 503 normal form: lowercase letters and digits with
 single hyphens between them. A declared name must already be in that
 form. canonical_name() is for lookups, where a user typing
 'platform_model_test' means 'platform-model-test'.
-
-Versions are PEP 440, stored normalised ('1.0-alpha1' becomes '1.0a1').
 """
 
 import re
 
 from packaging.requirements import InvalidRequirement, Requirement
-from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
@@ -91,7 +88,6 @@ class _Section(BaseModel):
 
 class ApplicationSection(_Section):
     name: str | None = None
-    version: str | None = None
     description: str | None = None
     models_yaml: list[str] = ["models.yaml"]
     compose_files: list[str] = []
@@ -102,21 +98,6 @@ class ApplicationSection(_Section):
     @classmethod
     def _name(cls, value):
         return None if value is None else check_name(value)
-
-    @field_validator("version", mode="before")
-    @classmethod
-    def _version(cls, value):
-        if value is None:
-            return None
-
-        # TOML reads 1.10 as the float 1.1: a version must be a string.
-        if not isinstance(value, str):
-            raise ValueError(f"version {value!r} must be a quoted string")
-
-        try:
-            return str(Version(value))
-        except InvalidVersion:
-            raise ValueError(f"'{value}' is not a PEP 440 version") from None
 
     @field_validator("requires")
     @classmethod

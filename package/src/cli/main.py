@@ -4,7 +4,7 @@ Three nouns
 -----------
 platform     postgres, api, worker, cache-init. One per host, shared by
              every application, in its own compose project. Configured
-             entirely from the system config, so it starts, stops and
+             entirely from marigold-host.toml, so it starts, stops and
              reports with no application in hand.
 application  a directory or archive holding marigold.toml, models.yaml
              files and application code. Installing one puts it in the
@@ -20,7 +20,8 @@ is 'marigold platform stop'.
 
 Layout
 ------
-config.py        the two TOML layers
+host_config.py   marigold-host.toml schema, location and compose variables
+config.py        the host and application configs, merged
 paths.py         the cache layout and its creation
 archives.py      writing and extracting application archives
 applications.py  identity, declared models, installation, resolution
@@ -49,6 +50,7 @@ import sys
 
 from cli import commands
 from cli.config import marigold_version
+from cli.host_config import HOST_CONFIG_ENV, HOST_CONFIG_NAME
 from cli.paths import CacheNotWritable
 
 TARGET_HELP = "installed application name, directory, or archive"
@@ -58,6 +60,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="marigold")
     parser.add_argument(
         "--version", action="version", version=f"marigold {marigold_version()}"
+    )
+    parser.add_argument(
+        "--host-config", metavar="PATH", default=None,
+        help=f"host config file; sets ${HOST_CONFIG_ENV}. Default: ./{HOST_CONFIG_NAME}, "
+        f"then ~/.marigold/{HOST_CONFIG_NAME}",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -113,11 +120,23 @@ def build_parser() -> argparse.ArgumentParser:
     create_p = app_sub.add_parser("create", help="build an application archive from a directory")
     create_p.add_argument("target", nargs="?", default=".", help="application directory")
     create_p.add_argument("-o", "--output", default=".", help="output directory, or a filename ending in .tar.gz")
+    create_p.add_argument("--version", default="local", help="version in the archive's filename, such as a registry tag (default: local)")
     create_p.set_defaults(func=commands.cmd_application_create)
 
     install_p = app_sub.add_parser("install", help="install an application archive")
     install_p.add_argument("archive", help="application archive to install")
+    install_p.add_argument("--version", default="local", help="version to record, such as the registry tag it came from (default: local)")
     install_p.set_defaults(func=commands.cmd_application_install)
+
+    verify_p = app_sub.add_parser("verify", help="check an installed application's files against its digest")
+    verify_p.add_argument("name", help="installed application name")
+    verify_p.set_defaults(func=commands.cmd_application_verify)
+
+    diff_p = app_sub.add_parser("diff", help="compare two applications file by file")
+    diff_p.add_argument("old", help="installed name, application directory or archive")
+    diff_p.add_argument("new", help="installed name, application directory or archive")
+    diff_p.add_argument("--content", action="store_true", help="show the changes inside changed files (diff -u)")
+    diff_p.set_defaults(func=commands.cmd_application_diff)
 
     list_p = app_sub.add_parser("list", help="list installed applications")
     list_p.set_defaults(func=commands.cmd_application_list)
@@ -136,8 +155,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     reg_build_p.add_argument(
         "root", nargs="?", default=".",
-        help="registry root, holding marigold-registry.toml; every directory "
-             "under it holding marigold.toml is published (default: .)",
+        help="registry root, holding marigold-registry.toml; every "
+             "<root>/<name>/marigold.toml is published (default: .)",
+    )
+    reg_build_p.add_argument(
+        "--version", required=True,
+        help="the registry's tag, such as v0.0.6; every application is published under it",
     )
     reg_build_p.add_argument(
         "-o", "--out", default=None,
@@ -157,7 +180,7 @@ def build_parser() -> argparse.ArgumentParser:
     cfg = sub.add_parser("config", help="inspect marigold configuration")
     cfg_sub = cfg.add_subparsers(dest="config_command", required=True)
 
-    path_p = cfg_sub.add_parser("path", help="print the system config file in use")
+    path_p = cfg_sub.add_parser("path", help=f"print the {HOST_CONFIG_NAME} in use")
     path_p.set_defaults(func=commands.cmd_config_path)
 
     show_p = cfg_sub.add_parser("show", help="print resolved config and where each value came from")
@@ -200,6 +223,11 @@ def main():
     )
 
     args = build_parser().parse_args()
+
+    # One route for the host config: the option sets the variable, and
+    # cli.host_config reads only the variable and the default paths.
+    if args.host_config:
+        os.environ[HOST_CONFIG_ENV] = args.host_config
 
     try:
         args.func(args)

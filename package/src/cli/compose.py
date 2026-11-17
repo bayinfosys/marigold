@@ -24,8 +24,8 @@ from importlib.resources import files
 from pathlib import Path
 
 from cli.applications import application_name
-from cli.config import marigold_version, setting
-from cli.paths import cache_dir_from_config, cache_paths
+from cli.config import host_from_config, marigold_version, setting
+from cli.paths import cache_paths
 
 COMPOSE_FILES = {
     "core": "docker-compose.core.yaml",
@@ -36,8 +36,6 @@ COMPOSE_FILES = {
 }
 
 PLATFORM_PROJECT = "marigold"
-
-DEFAULT_PLATFORM_COMPOSE_FILES = ["core", "cpu"]
 
 # Compose files describing an application's containers. Not
 # configurable: an application is one service definition, parameterised
@@ -69,7 +67,7 @@ def platform_compose_files(config: dict) -> list[str]:
     or a service it brings (webui). Appended in order, so an overlay
     lands after the file it overlays.
     """
-    names = list(setting(config, "platform", "compose_files", DEFAULT_PLATFORM_COMPOSE_FILES))
+    names = list(config["platform"]["compose_files"])
 
     for name in setting(config, "application", "compose_files", []):
         if name not in names:
@@ -144,34 +142,29 @@ def compose_base_cmd(
 def platform_env(config: dict) -> dict:
     """Everything the platform's compose files read.
 
+    The host's values come from HostConfig.compose_env(), the one place
+    host settings become variables. The shell environment is kept for
+    secrets (HF_TOKEN, AWS_*, AZURE_*) and for docker itself.
+
     No application: nothing in the platform's services reads one. The
     cache container mounts the applications directory, which is where an
     installed application lives, and is told which one to read when
     `cache populate` runs it.
     """
-    env = dict(os.environ)
-    env["TAG"] = setting(config, "platform", "tag", default_tag())
+    host = host_from_config(config)
+    tag = host.platform.tag or default_tag()
 
-    cache_dir = cache_dir_from_config(config)
-    env["MARIGOLD_CACHE_DIR"] = str(cache_dir)
+    env = dict(os.environ)
+    env.update(host.compose_env(tag))
 
     # MARIGOLD_MODELS_DIR, MARIGOLD_TMP_DIR, MARIGOLD_OUTPUTS_DIR,
     # MARIGOLD_APPLICATIONS_DIR: one per entry in paths.CACHE_SUBDIRS.
-    for name, path in cache_paths(cache_dir).items():
+    for name, path in cache_paths(host.storage.dir).items():
         env[f"MARIGOLD_{name.upper()}_DIR"] = str(path)
 
-    # Only set the database URL if some config layer provided one. Left
-    # unset otherwise, so docker-compose.core.yaml's own fallback
-    # applies rather than duplicating that default here.
-    db_url = config.get("database", {}).get("url")
-    if db_url:
-        env["MARIGOLD_DATABASE_URL"] = db_url
-
-    # Application-declared variables for services other than
-    # api/worker/cache -- e.g. RAG_EMBEDDING_MODEL for open-webui. The
-    # CLI doesn't know or care what these mean; it just forwards them.
-    for key, value in config.get("environment", {}).items():
-        env[str(key)] = str(value)
+    # Each instance runs as the host user, so the files it writes to
+    # /outputs belong to whoever runs marigold.
+    env["MARIGOLD_EXECUTOR_USER"] = f"{os.getuid()}:{os.getgid()}"
 
     return env
 

@@ -21,7 +21,8 @@ default at the same path, and anything else is added. The template
 presents; the build supplies the data, in _data/marigold.json and each
 page's front matter. Commands shown to readers are part of that data.
 
-Every directory under the root holding marigold.toml is published. The
+Every <root>/<name>/marigold.toml is published (discover), all under
+one version: the registry's tag, passed to the build. The
 registry's identity comes from marigold-registry.toml at the root
 (cli.registry_config). Everything else is derived from the archives:
 the build writes each archive, extracts it to a temporary directory,
@@ -40,7 +41,7 @@ from pathlib import Path
 
 from packaging.version import Version
 
-from cli import applications, archives
+from cli import applications, archives, manifest
 from cli.application_config import ApplicationConfig
 from cli.config import (
     APPLICATION_CONFIG_NAME,
@@ -103,11 +104,11 @@ def _source_url(version: str) -> str:
 def discover(root: Path, out: Path) -> list[Path]:
     """Every application directory under root, sorted.
 
-    A directory holding marigold.toml is an application, at any depth.
-    Hidden directories and the output directory are not searched. A
-    marigold.toml inside another application's directory is an error,
-    since it would be both an application and part of the other's
-    archive. Nothing else is excluded: a directory leaves the registry
+    Applications sit one level below the root: <root>/<name>/marigold.toml,
+    the files the shell pattern 'root/*/marigold.toml' matches. Hidden
+    directories and the output directory are skipped. A marigold.toml at
+    any other depth is an error, so a misplaced application fails the
+    build instead of going unpublished. A directory leaves the registry
     when its marigold.toml does.
     """
     root = root.resolve()
@@ -116,28 +117,28 @@ def discover(root: Path, out: Path) -> list[Path]:
     if not root.is_dir():
         raise FileNotFoundError(f"not a directory: {root}")
 
-    found = []
+    def skipped(directory: Path) -> bool:
+        return directory.name.startswith(".") or directory.resolve() == out
+
+    found = sorted(
+        path.parent
+        for path in root.glob(f"*/{APPLICATION_CONFIG_NAME}")
+        if not skipped(path.parent)
+    )
 
     for dirpath, dirnames, filenames in os.walk(root):
         current = Path(dirpath)
+        dirnames[:] = [d for d in dirnames if not skipped(current / d)]
 
-        dirnames[:] = sorted(
-            d for d in dirnames
-            if not d.startswith(".") and (current / d).resolve() != out
-        )
-
-        if APPLICATION_CONFIG_NAME in filenames:
-            found.append(current)
-
-    found.sort()
-
-    for outer in found:
-        for inner in found:
-            if inner != outer and outer in inner.parents:
-                raise ValueError(
-                    f"{inner} holds {APPLICATION_CONFIG_NAME} inside the "
-                    f"application at {outer}; remove one of them"
-                )
+        depth = len(current.relative_to(root).parts)
+        # depth 0 is the root, which holds marigold-registry.toml; a
+        # marigold.toml there would make the registry an application.
+        if APPLICATION_CONFIG_NAME in filenames and depth != 1:
+            raise ValueError(
+                f"{current / APPLICATION_CONFIG_NAME}: applications sit one "
+                f"level below the registry root, as <root>/<name>/"
+                f"{APPLICATION_CONFIG_NAME}; move it or remove it"
+            )
 
     return found
 
@@ -150,6 +151,7 @@ def build(
     root: Path,
     out: Path,
     *,
+    version: str,
     title: str,
     description: str,
     urls: dict[str, str] | None = None,
@@ -158,7 +160,8 @@ def build(
 ) -> tuple[dict, list[str]]:
     """Build the registry under root into out. Returns (index, warnings).
 
-    title, description and urls are the registry's identity, from
+    version is the registry's tag, such as v0.0.6: every application in
+    this build is published under it. title, description and urls are the registry's identity, from
     marigold-registry.toml. front_page is Markdown for registry visitors,
     shown on the front page above the usage. site is a template
     directory laid over the default.
@@ -173,6 +176,7 @@ def build(
         raise FileNotFoundError(f"no {APPLICATION_CONFIG_NAME} found under {root.resolve()}")
 
     identities = _identities(sources)
+    Version(version)  # raises InvalidVersion for a tag that is not a version
 
     _prepare_output(out)
     _write_template(out, site)
@@ -182,10 +186,10 @@ def build(
     links: dict[str, dict[str, str]] = {}
     warnings: list[str] = []
 
-    for name, (version, source) in sorted(identities.items()):
-        archive, _ = applications.build_archive(source, out / APPLICATIONS_SUBDIR)
+    for name, source in sorted(identities.items()):
+        archive, _, _ = applications.build_archive(source, out / APPLICATIONS_SUBDIR, version)
         contents = _read_archive(archive)
-        entry = _entry(archive, out=out, config=contents["config"])
+        entry = _entry(archive, out=out, config=contents["config"], digest=contents["digest"])
 
         index["applications"][name] = {"versions": {version: entry}}
         model_counts[name] = len(contents["models"])
@@ -222,25 +226,22 @@ def build(
     return index, warnings
 
 
-def _identities(sources: list[Path]) -> dict[str, tuple[str, Path]]:
-    """name -> (version, source), checked before anything is written.
+def _identities(sources: list[Path]) -> dict[str, Path]:
+    """name -> source, checked before anything is written.
 
-    Each application must declare name and version. Two directories
-    declaring one name is an error, since one would overwrite the
-    other's archive.
+    Each application must declare a name. Two directories declaring one
+    name is an error, since one would overwrite the other's archive.
     """
-    found: dict[str, tuple[str, Path]] = {}
+    found: dict[str, Path] = {}
 
     for source in sources:
         config = load_application_toml(source / APPLICATION_CONFIG_NAME)
-        name, version = applications.application_identity(
-            source, config, require_declared=True
-        )
+        name = applications.declared_name(source, config, require_declared=True)
 
         if name in found:
-            raise ValueError(f"'{name}' is declared by both {found[name][1]} and {source}")
+            raise ValueError(f"'{name}' is declared by both {found[name]} and {source}")
 
-        found[name] = (version, source)
+        found[name] = source
 
     return found
 
@@ -321,9 +322,9 @@ def _write_template(out: Path, site: Path | None) -> None:
 def _read_archive(archive: Path) -> dict:
     """What the index and the catalogue take from an archive.
 
-    The config, the README, the parsed models and the models.yaml text
-    as written. Read from the extracted archive, so every page and every
-    entry describes what was published.
+    The config, the README, the parsed models, the models.yaml text as
+    written and the manifest digest. Read from the extracted archive, so
+    every page and every entry describes what was published.
     """
     with tempfile.TemporaryDirectory() as tmp:
         root = archives.extract_to(archive, Path(tmp))
@@ -339,14 +340,28 @@ def _read_archive(archive: Path) -> dict:
         readme_path = root / README_NAME
         readme = readme_path.read_text(encoding="utf-8") if readme_path.is_file() else None
 
-    return {"config": config, "models": models, "model_files": model_files, "readme": readme}
+        _, digest = manifest.application_manifest(root)
+
+    return {
+        "config": config,
+        "models": models,
+        "model_files": model_files,
+        "readme": readme,
+        "digest": digest,
+    }
 
 
-def _entry(archive: Path, *, out: Path, config: ApplicationConfig) -> dict:
-    """The index entry for one archive."""
+def _entry(archive: Path, *, out: Path, config: ApplicationConfig, digest: str) -> dict:
+    """The index entry for one archive.
+
+    sha256 is of the archive's bytes, checked before unpacking. digest
+    is of the application's manifest (cli.manifest), checked after: it
+    identifies the files, whatever the packaging.
+    """
     return {
         "archive": archive.relative_to(out).as_posix(),
         "sha256": archives.archive_digest(archive),
+        "digest": digest,
         "description": config.application.description or "",
         "requires": config.application.requires,
     }
@@ -479,6 +494,7 @@ def _write_application_pages(
         "archive_name": archive_name,
         "archive_path": entry["archive"],
         "sha256": entry["sha256"],
+        "digest": entry["digest"],
         "requires": entry["requires"],
         "model_count": len(contents["models"]),
         "urls": contents["config"].application.urls,
@@ -522,6 +538,7 @@ def _write_data(
                 "page": f"{APPLICATIONS_SUBDIR}/{name}/",
                 "archive": entry["archive"],
                 "sha256": entry["sha256"],
+                "digest": entry["digest"],
                 "requires": entry["requires"],
                 "model_count": model_counts.get(name, 0),
                 "urls": links.get(name, {}),

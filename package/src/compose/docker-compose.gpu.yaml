@@ -3,13 +3,14 @@
 # Overlay on docker-compose.cpu.yaml. Only the two things that differ from
 # the CPU worker: the image suffix and the device reservation. Every other
 # setting -- environment, volumes, restart policy, dependencies -- is
-# inherited, so there is one place to change them.
+# inherited, so there is one place to change them. Resource limits come
+# from [resources] worker in marigold-host.toml, also inherited.
 #
 # Requires cpu to be listed first: compose_files = ["core", "cpu", "gpu"]
 
 services:
   worker:
-    image: ${WORKER_IMAGE:-ghcr.io/bayinfosys/marigold-worker}:${TAG}-gpu
+    image: ${WORKER_IMAGE:-ghcr.io/bayinfosys/marigold-worker}:${TAG:-latest}-gpu
     environment:
       PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
     deploy:

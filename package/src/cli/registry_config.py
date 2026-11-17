@@ -3,9 +3,9 @@
 The registry counterpart of marigold.toml. It sits at the root of a
 repository of applications and declares the registry's title,
 description and links, and optionally a site template and visitor text.
-It is required: a registry always declares what it is. Every directory
-under the root holding marigold.toml is published; this file does not
-select applications.
+It is required: a registry always declares what it is. Every
+<root>/<name>/marigold.toml is published; this file does not select
+applications.
 
 Not named marigold.toml: registry discovery treats any directory holding
 marigold.toml as an application, which would make the root one.

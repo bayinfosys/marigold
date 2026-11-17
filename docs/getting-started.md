@@ -34,21 +34,22 @@ installed applications, outputs -- lives under one cache directory. No
 named volumes, no external database, no state held only inside a
 container.
 
-Set its location in the system config:
+Set its location in `marigold-host.toml`:
 
 ```toml
-# ~/.marigold/config.toml
+# ~/.marigold/marigold-host.toml
 [platform]
 compose_files = ["core", "cpu"]     # ["core", "cpu", "gpu"] for an NVIDIA worker
 
-[cache]
+[storage]
 dir = "/data/marigold"              # default: ~/.marigold/cache
 ```
 
-The CLI reads `$MARIGOLD_CONFIG` if set, then `config.toml` in the
-current directory, then `~/.marigold/config.toml`. Keep one config in
-your home directory and set `MARIGOLD_CONFIG` in scripts. The full
-format is in [Configuration](configuration.md).
+The CLI reads `--host-config PATH`, then `$MARIGOLD_HOST_CONFIG`, then
+`marigold-host.toml` in the current directory, then
+`~/.marigold/marigold-host.toml`. Keep one file in your home directory
+and set `MARIGOLD_HOST_CONFIG` in scripts. Every key is in
+[Configuration](configuration.md).
 
 Create the layout:
 
@@ -76,7 +77,7 @@ marigold application install platform-model-test
 marigold application list
 ```
 
-`registry add` records the examples registry in your system config.
+`registry add` records the examples registry in `marigold-host.toml`.
 `install` finds `platform-model-test` there, downloads its archive,
 checks it against the registry's index and installs it under its name.
 [Installing](installing.md) covers versions, dependencies and several

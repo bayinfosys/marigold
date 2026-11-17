@@ -6,9 +6,7 @@ composing them itself, so the host and the containers cannot disagree.
 
 from pathlib import Path
 
-from cli.config import load_system_config
-
-DEFAULT_CACHE_DIR = Path.home() / ".marigold" / "cache"
+from cli.host_config import load_host_config
 
 CACHE_SUBDIRS = {
     "models":       "data/models",
@@ -59,18 +57,13 @@ def installed_index_path(cache_dir: Path) -> Path:
 
 
 def cache_dir_from_config(config: dict) -> Path:
-    """The cache root from a merged config.
-
-    Cache location is a host concern, so this reads whatever the config
-    resolved to, or a last resort if neither layer set one at all (e.g.
-    no system config written yet).
-    """
-    return Path(config.get("cache", {}).get("dir", str(DEFAULT_CACHE_DIR)))
+    """The cache root from a merged config: [storage] dir."""
+    return Path(config["storage"]["dir"])
 
 
 def cache_dir_from_system_config() -> Path:
     """The cache root for commands with no application in hand."""
-    return cache_dir_from_config(load_system_config())
+    return load_host_config().storage.dir
 
 
 def container_path(path: Path, cache_dir: Path) -> str:

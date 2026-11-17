@@ -40,10 +40,10 @@ the registry and where it is reachable:
 | Air-gapped | anyone | the registry files copied onto an isolated network |
 
 A mirror supplies the versions it holds only to hosts that list it
-first. A name the mirror lacks falls through to the next registry, a
-requirement that names a registry URL fetches from that registry, and
-`MARIGOLD_REGISTRY_URLS` overrides the configured list
-([Installing](installing.md#several-registries)). Registries are plain
+first. A name the mirror lacks falls through to the next registry, and
+a requirement that names a registry URL fetches from that registry
+([Installing](installing.md#several-registries)). The list itself is
+the `[[registry]]` entries in each host's `marigold-host.toml`. Registries are plain
 HTTP(S): an archive is checked against the sha256 in its registry's
 index, and trust rests with whoever runs the host.
 
