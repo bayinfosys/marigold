@@ -93,7 +93,8 @@ declares it. Uninstalling an application leaves the cache unchanged;
 does not declare.
 
 ```sh
-marigold cache inspect            # what is cached, sizes, location
+marigold cache list               # cached model names
+marigold cache inspect [name]     # sizes, revisions, location
 marigold cache validate <name>    # check its models.yaml, no download
 ```
 

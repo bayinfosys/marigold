@@ -12,7 +12,7 @@ import tempfile
 
 from pathlib import Path
 
-from shared.model_cache import cache_dir_bytes
+from shared import model_cache
 
 from cli import applications, archives, manifest, registry
 from cli.registry_config import REGISTRY_CONFIG_NAME, load_registry_config
@@ -589,40 +589,52 @@ def cmd_cache_populate(args):
     ))
 
 
-def _hf_cache_dirname_to_model_name(dirname: str) -> str:
-    """'models--org--name' -> 'org/name', HuggingFace's own cache
-    directory convention."""
-    if dirname.startswith("models--"):
-        parts = dirname[len("models--"):].split("--", 1)
-        if len(parts) == 2:
-            return f"{parts[0]}/{parts[1]}"
-    return dirname
+def _models_dir() -> Path:
+    """The model cache directory, which must exist."""
+    models_dir = cache_paths(cache_dir_from_system_config())["models"]
+
+    if not models_dir.is_dir():
+        raise FileNotFoundError(f"no model cache at {models_dir}; run marigold cache init")
+
+    return models_dir
+
+
+def cmd_cache_list(args):
+    """Cached model names, one per line."""
+    for name in model_cache.cached_models(_models_dir()):
+        print(name)
+
+    sys.exit(0)
 
 
 def cmd_cache_inspect(args):
-    """List what is on disk, with sizes. Pure filesystem scan."""
-    cache_dir = cache_dir_from_system_config()
-    models_dir = cache_paths(cache_dir)["models"]
+    """Size, revision and file count per cached model, and the total.
 
-    if not models_dir.exists():
-        print(f"cache dir  : {cache_dir}", file=sys.stderr)
-        print(f"models dir does not exist: {models_dir}", file=sys.stderr)
-        sys.exit(1)
+    Sizes follow links into the shared blob store, so each model shows
+    its full size; the total counts every file under the cache once.
+    """
+    models_dir = _models_dir()
+    models = model_cache.cached_models(models_dir)
 
-    entries = []
-    total_bytes = 0
-
-    for child in sorted(models_dir.iterdir()):
-        if not child.is_dir():
-            continue
-        size = cache_dir_bytes(child)
-        total_bytes += size
-        entries.append((_hf_cache_dirname_to_model_name(child.name), size))
+    if args.name is not None:
+        if args.name not in models:
+            raise FileNotFoundError(f"'{args.name}' is not in the cache at {models_dir}")
+        models = {args.name: models[args.name]}
 
     print(f"cache location: {models_dir}\n")
-    for name, size in entries:
-        print(f"  {name:<55} {size / 1e9:>8.2f} GB")
-    print(f"\n{len(entries)} model(s), {total_bytes / 1e9:.2f} GB total")
+    print(f"  {'model':<55} {'GB':>8}  {'revision':<12}  files")
+
+    for name, path in models.items():
+        size = model_cache.model_bytes(name, models_dir) / model_cache.GB
+        revision = (model_cache.model_revision(name, models_dir) or "-")[:12]
+        files = model_cache.model_files(name, models_dir)
+        print(f"  {name:<55} {size:>8.2f}  {revision:<12}  {files}")
+        if args.name is not None:
+            print(f"\n  {path}")
+
+    if args.name is None:
+        total = model_cache.files_bytes(models_dir) / model_cache.GB
+        print(f"\n{len(models)} model(s), {total:.2f} GB on disk")
 
     sys.exit(0)
 

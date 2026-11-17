@@ -206,7 +206,11 @@ def build_parser() -> argparse.ArgumentParser:
     populate_p.add_argument("--prune", action="store_true", help="remove cached models this application does not declare")
     populate_p.set_defaults(func=commands.cmd_cache_populate)
 
-    inspect_p = cache_sub.add_parser("inspect", help="list cached models, disk usage, and cache location")
+    list_p = cache_sub.add_parser("list", help="cached model names, one per line")
+    list_p.set_defaults(func=commands.cmd_cache_list)
+
+    inspect_p = cache_sub.add_parser("inspect", help="size, revision and file count per cached model")
+    inspect_p.add_argument("name", nargs="?", help="one model, such as qwen/qwen3-8b")
     inspect_p.set_defaults(func=commands.cmd_cache_inspect)
 
     seed_p = cache_sub.add_parser("seed", help="share cached models with the network via torrent (not yet implemented)")
