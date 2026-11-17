@@ -7,7 +7,7 @@
 # The CLI sets every variable here (cli/compose.py, compose_env), the
 # host's values from marigold-host.toml (cli/host_config.py). Run without
 # the CLI, each takes the environment's value or the default shown;
-# MARIGOLD_EXECUTOR_USER left blank runs as the image's own user.
+# MARIGOLD_USER left blank runs as the image's own user.
 # The application root is mounted read-only at /app, so a flat application runs
 # main.py and a larger one adds modules and data beside it.
 
@@ -20,7 +20,7 @@ services:
     # Hardening: no capabilities, no privilege gain, a read-only root
     # filesystem with a writable /tmp, and the host user's identity so
     # files written to /outputs belong to whoever runs marigold.
-    user: ${MARIGOLD_EXECUTOR_USER:-}
+    user: ${MARIGOLD_USER:-}
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     read_only: true

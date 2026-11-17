@@ -6,7 +6,11 @@ services:
 
   worker:
     image: ${WORKER_IMAGE:-ghcr.io/bayinfosys/marigold-worker}:${TAG:-latest}
+    # Runs as the host user, so the outputs it writes belong to whoever
+    # runs marigold. Blank runs as the image's own user.
+    user: ${MARIGOLD_USER:-}
     environment:
+      HOME: /tmp
       MARIGOLD_VERSION: ${TAG:-latest}
       MARIGOLD_DATABASE_URL: ${MARIGOLD_DATABASE_URL:-postgresql://marigold:marigold@postgres:5432/marigold}
       MARIGOLD_VISIBILITY_TIMEOUT: "300"

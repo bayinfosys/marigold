@@ -162,9 +162,10 @@ def platform_env(config: dict) -> dict:
     for name, path in cache_paths(host.storage.location).items():
         env[f"MARIGOLD_{name.upper()}_DIR"] = str(path)
 
-    # Each instance runs as the host user, so the files it writes to
-    # /outputs belong to whoever runs marigold.
-    env["MARIGOLD_EXECUTOR_USER"] = f"{os.getuid()}:{os.getgid()}"
+    # The cache container, the worker and each instance run as the host
+    # user, so the files they write under the cache belong to whoever
+    # runs marigold. Postgres and Open WebUI own their data directories.
+    env["MARIGOLD_USER"] = f"{os.getuid()}:{os.getgid()}"
 
     return env
 

@@ -37,7 +37,11 @@ services:
   cache-init:
     image: ${CACHE_IMAGE:-ghcr.io/bayinfosys/marigold-cache}:${TAG:-latest}
     command: ["python3", "-m", "tools.cache_cli", "populate"]
+    # Runs as the host user, so the weights it writes belong to whoever
+    # runs marigold. Blank runs as the image's own user.
+    user: ${MARIGOLD_USER:-}
     environment:
+      HOME: /tmp
       HF_TOKEN: ${HF_TOKEN:-}
       CACHE_DIR: /models
       HF_HUB_OFFLINE: 0

@@ -219,10 +219,11 @@ limit by default, because model sizes vary with the host: set
 `[resources.worker] memory` below the host's total so a model too large
 for the machine fails inside its container, leaving the host running.
 
-Application instances also run hardened: no Linux capabilities, no
-privilege escalation, a read-only root filesystem with a writable
-`/tmp`, and the host user's identity, so the files an instance writes
-to `/outputs` belong to whoever runs `marigold`.
+The cache container, the worker and application instances run as the
+user who runs `marigold`, so the files they write under the cache
+belong to that user. Application instances also run hardened: no Linux
+capabilities, no privilege escalation, and a read-only root filesystem
+with a writable `/tmp`.
 
 ## Authentication
 
