@@ -55,6 +55,10 @@ from cli.config import marigold_version
 from cli.host_config import HOST_CONFIG_ENV, HOST_CONFIG_NAME
 from cli.paths import CacheNotWritable
 
+
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
 TARGET_HELP = "installed application name, directory, or archive"
 
 
