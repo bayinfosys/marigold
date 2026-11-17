@@ -37,7 +37,8 @@ services:
     networks:
       - applications
 
+# Open WebUI joins the platform project, which creates this network from
+# docker-compose.core.yaml; declared the same way here.
 networks:
   applications:
     name: marigold-applications
-    external: true
