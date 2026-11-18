@@ -175,7 +175,7 @@ class ModelCatalogueItem(DBItem, BaseModel):
     output: str
     timeout: int = 180
     memory_size: int = 2048
-    extra_env: dict = {}
+    extra_env: dict[str, str] = {}
     description: str = ""
     source_file: str = ""
     failed_reason: Optional[str] = None
@@ -200,3 +200,13 @@ class ModelCatalogueItem(DBItem, BaseModel):
         carried across a reconcile unchanged.
         """
         return self.failed_reason is not None
+
+    @field_validator("extra_env", mode="before")
+    @classmethod
+    def _env_strings(cls, value: dict | None) -> dict[str, str]:
+        """Environment values are strings. YAML reads true, 1 and 0.5 as
+        other types; booleans become "true" or "false", the rest str()."""
+        return {
+            str(key): str(val).lower() if isinstance(val, bool) else str(val)
+            for key, val in (value or {}).items()
+        }
