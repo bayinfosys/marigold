@@ -276,6 +276,7 @@ async def _poll(user_id: str, message_id: str, results_cache) -> tuple[int, dict
         if code == 404:
             return 404, {}
 
+    logger.warning("[%s] no result after %ss, returning 504", message_id, _MAX_WAIT)
     return 504, {}
 
 
