@@ -1,6 +1,9 @@
 # Breakdown
 
-1. Replace extra_env with settings in benchmark-image-gen,
-   benchmark-llm, chat and simple-rag, using lower-case names.
-2. Pin the publish workflow to registry.yml@v0.8.3 and marigold 0.8.3.
-3. Tag the registry once marigold 0.8.3 is released.
+1. Pass MARIGOLD_MODEL_SETTINGS to the API service, empty by default.
+2. Read a model's recent events from the table, newest first, with a
+   fixed limit.
+3. Resolve the model's settings in the API from the catalogue entry
+   and MARIGOLD_MODEL_SETTINGS.
+4. Add `settings` and `events` to the detail response.
+5. Describe the response in docs/api.md.

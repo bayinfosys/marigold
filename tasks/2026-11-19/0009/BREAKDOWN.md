@@ -1,7 +1,9 @@
 # Breakdown
 
-1. Add `models inspect [name]` to the parser.
-2. Fetch the catalogue list or the model detail from the API.
-3. Print the list; print the detail with the model's cache entry.
-4. Open a "When a model fails" section in getting-started.md with the
-   command; add it to the README.
+1. Add a "Data directories" section to architecture.md: data/postgres,
+   data/models, data/applications and data/webui, each with its
+   contents and the effect of deleting it.
+2. Document the reset: platform stop, remove data/postgres, platform
+   start, cache populate.
+3. Add verify across installs, host model settings and models inspect
+   to the README feature list.

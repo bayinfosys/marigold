@@ -1,6 +1,13 @@
 # Breakdown
 
-1. Set the registry address in marigold-registry.toml and the README.
-2. Pin the publish workflow to registry.yml@v0.8.3 and marigold 0.8.3.
-3. Send a nonce per run from the evals.
-4. Tag v0.0.3 once marigold 0.8.3 is released.
+1. Give LocalNotificationBackend the table backend, and save each
+   published event as a WorkerEvent row.
+2. Order the WorkerEvent sort key by timestamp, then event type.
+3. Construct the backend with the table backend in the worker and in
+   the API, and pass the app's backend from the OpenAI routes, which
+   pass None today.
+4. Remove the unused duplicate in backend/local/events.py.
+5. Add the resolved settings with sources, footprint, dtype, placement
+   on each device and error to the load event payloads.
+6. Describe the events, their payloads and their table in
+   architecture.md.
