@@ -169,7 +169,7 @@ Open WebUI, when an application adds it.
 
 ### `[environment]`
 
-Variables forwarded to every service. An application's [environment] wins per key.
+Compose variables. A service receives one where its compose file names it. An application's [environment] wins per key.
 
 Default: none.
 

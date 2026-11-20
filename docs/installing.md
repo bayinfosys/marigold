@@ -104,10 +104,21 @@ marigold application list                  # name, version, registry
 marigold application status <name>
 marigold application logs <name>
 marigold application stop <name>
+marigold application verify [name]         # files against the installed digest
 marigold application uninstall <name>
 ```
 
 `marigold app` is an alias for `marigold application`.
+
+`verify` recomputes an application's [digest](manifests.md) from its
+installed files and prints one line: `ok`, or `files changed since
+install` with both digests. With no name it checks every installed
+application, one line each, and exits 1 when any has changed, so it
+runs unattended from cron or CI:
+
+```sh
+marigold application verify || echo "an installed application has changed"
+```
 
 ## What to check first
 

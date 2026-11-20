@@ -267,19 +267,18 @@ def cmd_platform_start(args):
 
 
 def cmd_platform_stop(args):
-    """Stop the platform.
+    """Stop every application, then the platform.
 
-    Applications are left running unless --applications is given: they
-    are separate projects, and several may share one platform. An
-    application whose platform has gone keeps running and fails its API
-    calls, which is visible in its logs.
+    Each application's containers join the applications network, which
+    the platform's compose project creates and removes. Bringing the
+    applications down first means the network is never removed beneath
+    a stopped container, which would then fail to start.
     """
     returncode = 0
 
-    if args.applications:
-        for project in application_projects():
-            print(f"marigold: stopping {project}", file=sys.stderr)
-            returncode |= run_project_compose(project, ["down"])
+    for project in application_projects():
+        print(f"marigold: stopping {project}", file=sys.stderr)
+        returncode |= run_project_compose(project, ["down"])
 
     sys.exit(returncode | run_project_compose(PLATFORM_PROJECT, ["down"]))
 
@@ -464,18 +463,29 @@ def cmd_application_list(args):
 
 
 def cmd_application_verify(args):
-    """Check an installed application's files against its recorded digest."""
-    record, digest = applications.verify(args.name)
+    """Check installed applications' files against their recorded digests.
 
-    if digest == record["manifest"]:
-        print(f"{args.name} {record['version']}: ok ({manifest.short(digest)})")
-        sys.exit(0)
+    One line per application: the named one, or with no name every
+    installed application. Exits 1 when any has changed, for use from
+    cron or CI.
+    """
+    names = [args.name] if args.name else sorted(applications.load_installed())
+    changed = 0
 
-    print(
-        f"{args.name} {record['version']}: files changed since install "
-        f"(recorded {manifest.short(record['manifest'])}, now {manifest.short(digest)})"
-    )
-    sys.exit(1)
+    for name in names:
+        record, digest = applications.verify(name)
+
+        if digest == record["manifest"]:
+            print(f"{name} {record['version']}: ok ({manifest.short(digest)})")
+            continue
+
+        changed += 1
+        print(
+            f"{name} {record['version']}: files changed since install "
+            f"(recorded {manifest.short(record['manifest'])}, now {manifest.short(digest)})"
+        )
+
+    sys.exit(1 if changed else 0)
 
 
 def _diff_side(target: str, stack: contextlib.ExitStack) -> tuple[str, Path]:

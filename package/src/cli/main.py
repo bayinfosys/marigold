@@ -15,8 +15,8 @@ instance     an application's running containers, in compose project
              without touching the platform or any other application.
 
 'marigold app ...' is an alias for 'marigold application ...'. Stopping
-an application stops its containers alone: bringing the platform down
-is 'marigold platform stop'.
+an application stops its containers alone; 'marigold platform stop'
+stops every application, then the platform.
 
 Layout
 ------
@@ -85,11 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plat_start_p.set_defaults(func=commands.cmd_platform_start)
 
-    plat_stop_p = plat_sub.add_parser("stop", help="stop the platform")
-    plat_stop_p.add_argument(
-        "--applications", action="store_true",
-        help="stop applications first",
-    )
+    plat_stop_p = plat_sub.add_parser("stop", help="stop every application, then the platform")
     plat_stop_p.set_defaults(func=commands.cmd_platform_stop)
 
     plat_status_p = plat_sub.add_parser("status", help="show platform and application container status")
@@ -134,8 +130,8 @@ def build_parser() -> argparse.ArgumentParser:
     install_p.add_argument("--version", default="local", help="version to record, such as the registry tag it came from (default: local)")
     install_p.set_defaults(func=commands.cmd_application_install)
 
-    verify_p = app_sub.add_parser("verify", help="check an installed application's files against its digest")
-    verify_p.add_argument("name", help="installed application name")
+    verify_p = app_sub.add_parser("verify", help="check installed applications' files against their digests")
+    verify_p.add_argument("name", nargs="?", default=None, help="installed application name; default: every installed application")
     verify_p.set_defaults(func=commands.cmd_application_verify)
 
     diff_p = app_sub.add_parser("diff", help="compare two applications file by file")

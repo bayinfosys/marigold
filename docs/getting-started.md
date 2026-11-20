@@ -141,7 +141,7 @@ are in [API](api.md).
 
 ```sh
 marigold application stop platform-model-test   # the application only
-marigold platform stop --applications           # everything
+marigold platform stop                          # every application, then the platform
 ```
 
 Several applications share one platform. Stopping one leaves the
@@ -153,7 +153,7 @@ The model cache is expensive to rebuild and safe to keep. To reset
 everything else:
 
 ```sh
-marigold platform stop --applications
+marigold platform stop
 sudo rm -rf /data/marigold/data/postgres
 ```
 

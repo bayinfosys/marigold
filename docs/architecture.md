@@ -61,7 +61,7 @@ reports with no application in hand:
     marigold platform start
     marigold platform status
     marigold platform logs [service]
-    marigold platform stop [--applications]
+    marigold platform stop
 
 **Application.** A directory or archive holding `marigold.toml`, one or
 more `models.yaml` files, and the code that uses them. Installed into
@@ -78,7 +78,10 @@ without touching the platform or any other application.
 
 `application start` brings the platform up first when it is not already
 running. Several applications share one platform; stopping one leaves
-the others and the platform running.
+the others and the platform running. `platform stop` stops every
+application first, then the platform: the platform's compose project
+owns the `marigold-applications` network, and removing it beneath a
+stopped instance leaves that instance unable to start.
 
 ---
 

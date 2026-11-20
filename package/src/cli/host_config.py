@@ -92,6 +92,17 @@ class PlatformSection(_Section):
         description="Seconds the worker keeps a model loaded with an empty queue. 0 never unloads.",
     )
 
+    @field_validator("compose_files")
+    @classmethod
+    def _gpu_overlay(cls, value):
+        """gpu is an overlay on cpu, and compose applies files in order."""
+        if "gpu" in value and ("cpu" not in value or value.index("cpu") > value.index("gpu")):
+            raise ValueError(
+                f'{value}: "gpu" is an overlay on "cpu" and needs "cpu" before it: '
+                '["core", "cpu", "gpu"]'
+            )
+        return value
+
 
 class StorageSection(_Section):
     location: Path = Field(
