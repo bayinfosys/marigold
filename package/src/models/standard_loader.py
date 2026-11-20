@@ -38,9 +38,9 @@ def env_flag(name: str, default: bool = False) -> bool:
     false. Absent or empty returns the default, so a caller-supplied
     value survives an unset variable.
 
-    Environment wins over the caller when set, which is what makes
-    extra_env in models.yaml effective without every loader growing a
-    kwargs path.
+    Environment wins over the caller when set, which is what makes a
+    model's settings effective without every loader growing a kwargs
+    path: load_in_4bit in settings arrives here as LOAD_IN_4BIT.
     """
     raw = os.getenv(name, "").strip().lower()
 

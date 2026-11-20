@@ -13,16 +13,18 @@ from hashlib import md5 as _md5
 from typing import ClassVar, Optional
 
 from dynawrap import DBItem
-from pydantic import BaseModel, Field, computed_field, field_validator
+from pydantic import BaseModel, Field, computed_field
 
 from .schedule_models import LifecycleEvent
 from .enums import ModelType, ModelProvider, StatusCode
+from .model_settings import ModelSettings
 
 
 _DEFAULT_TTL_OFFSET = 86400 * 30  # 30 days
 
 
-_ENV_KEYS = ("LOAD_IN_4BIT", "USE_FAST", "TRUST_REMOTE_CODE", "LOW_CPU_MEM_USAGE")
+# The loader settings, as environment variables.
+_ENV_KEYS = tuple(name.upper() for name in ModelSettings.model_fields)
 
 # The keys the last call to set_model_config_env set. The next call
 # clears them, so a handler setting such as NUM_STEPS applies to the
@@ -30,20 +32,23 @@ _ENV_KEYS = ("LOAD_IN_4BIT", "USE_FAST", "TRUST_REMOTE_CODE", "LOW_CPU_MEM_USAGE
 _applied_keys: set[str] = set()
 
 
-def set_model_config_env(config_entry: "ModelCatalogueItem") -> None:
-    """Apply a catalogue entry's extra_env to the process environment.
+def set_model_config_env(settings: ModelSettings) -> None:
+    """Apply model settings to the process environment.
 
-    Clears the loader keys and every key the previous call set first.
-    Shared between worker.py (serve time) and model_cache_shared.py
-    (cache-init time) so both load a model under the same settings.
+    Each set setting becomes its name upper-cased, booleans as "true" or
+    "false" and other values as strings. Clears the loader keys and
+    every key the previous call set first. Shared between worker.py
+    (serve time) and model_cache_shared.py (cache-init time) so both
+    load a model under the same settings.
     """
     for key in (*_ENV_KEYS, *_applied_keys):
         os.environ.pop(key, None)
 
     _applied_keys.clear()
 
-    for key, value in config_entry.extra_env.items():
-        os.environ[key] = value
+    for name, value in settings.model_dump(exclude_none=True).items():
+        key = name.upper()
+        os.environ[key] = str(value).lower() if isinstance(value, bool) else str(value)
         _applied_keys.add(key)
 
 
@@ -185,7 +190,7 @@ class ModelCatalogueItem(DBItem, BaseModel):
     output: str
     timeout: int = 180
     memory_size: int = 2048
-    extra_env: dict[str, str] = {}
+    settings: ModelSettings = Field(default_factory=ModelSettings)
     description: str = ""
     source_file: str = ""
     failed_reason: Optional[str] = None
@@ -210,13 +215,3 @@ class ModelCatalogueItem(DBItem, BaseModel):
         carried across a reconcile unchanged.
         """
         return self.failed_reason is not None
-
-    @field_validator("extra_env", mode="before")
-    @classmethod
-    def _env_strings(cls, value: dict | None) -> dict[str, str]:
-        """Environment values are strings. YAML reads true, 1 and 0.5 as
-        other types; booleans become "true" or "false", the rest str()."""
-        return {
-            str(key): str(val).lower() if isinstance(val, bool) else str(val)
-            for key, val in (value or {}).items()
-        }

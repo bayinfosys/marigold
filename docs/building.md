@@ -87,6 +87,7 @@ models:
 | `type` | the model type; every type is listed in [Model types](model-types.md) |
 | `provider` | `huggingface` |
 | `input`, `output` | optional; filled from the type when absent |
+| `settings` | optional; how the model loads and runs, below |
 
 `_templates` holds YAML anchors for repeated fields. An application
 lists as many model files as it needs:
@@ -101,6 +102,51 @@ Check a file without downloading anything:
 ```sh
 marigold cache validate ./my-app
 ```
+
+### Model settings
+
+`settings:` holds values the worker applies before it loads the model.
+A setting's name is its environment variable in lower case:
+`load_in_4bit` reaches the loader as `LOAD_IN_4BIT`.
+
+```yaml
+models:
+  - name: qwen/qwen3-8b
+    type: instruct
+    provider: huggingface
+    settings:
+      load_in_4bit: true
+  - name: stabilityai/stable-diffusion-xl-base-1.0
+    type: txt2img
+    provider: huggingface
+    settings:
+      num_steps: 30
+```
+
+The loaders read four settings, each a boolean:
+
+| Setting | Meaning | Default |
+|---|---|---|
+| `load_in_4bit` | quantise the weights to 4-bit as they load; needs a GPU | `false` |
+| `use_fast` | load the fast tokenizer | `false` |
+| `trust_remote_code` | run Python code from the model's repository during the load | `false` |
+| `low_cpu_mem_usage` | load the weights without a full copy in host memory | `true` |
+
+Handlers read further settings, each a string, number or boolean:
+
+| Type | Setting | Default |
+|---|---|---|
+| `txt2img` | `num_steps`; `diffusers_quant_components`, a comma-separated list of the components to quantise; `diffusers_device_map`, JSON mapping a component to a device | `10`; by model; `cuda:0` |
+| `txt2vid` | `num_steps` | `50` |
+| `img2vid` | `num_steps`; `keyframe_mode`: `single`, `start_end` or `multi` | `25`; `single` |
+| `vid2vid` | `num_steps`; `max_input_frames` | `50`; `24` |
+| `vid2txt` | `input_mode`: `image_frames` or `video`; `max_frames` | `image_frames`; `8` |
+| `obs2act` | `action_dim`; `prompt_template`; `proprioception_mode`: `text` or `none` | `7`; the OpenVLA prompt; `text` |
+| `txt2audio` | `num_inference_steps`, for AudioLDM2 | `200` |
+| `image-embedding` | `precision`, decimal places in each value | `3` |
+| `tts` | `model_langcode`, the language the model speaks | unset |
+
+A setting applies to the model that declares it and to no other.
 
 ## What an instance can rely on
 

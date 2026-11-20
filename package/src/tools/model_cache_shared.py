@@ -110,8 +110,7 @@ class HuggingFaceProvider(Provider):
         os.environ["HF_HUB_OFFLINE"] = "0"
         os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "0"
 
-        # set any env vars given in extra_env
-        set_model_config_env(model)
+        set_model_config_env(model.settings)
 
         try:
             _SPECS[model_type].loader(

@@ -6,7 +6,7 @@ Uses diffusers DiffusionPipeline. Compatible with any diffusers-compatible
 checkpoint. The pipeline is stored as both self.model (base class contract)
 and self.pipe (local alias used in _run).
 
-NUM_STEPS defaults to 10; override per-model via extra_env in models.yaml.
+num_steps defaults to 10; set it in the model's settings in models.yaml.
 """
 
 import logging
@@ -32,8 +32,8 @@ def _make_quant_config(modelname: str) -> PipelineQuantizationConfig | None:
     """Return a PipelineQuantizationConfig for 4-bit NF4 quantisation.
 
     Components are resolved in order:
-      1. DIFFUSERS_QUANT_COMPONENTS env var -- comma-separated list,
-         set per-model via extra_env in models.yaml
+      1. diffusers_quant_components in the model's settings -- a
+         comma-separated list, read as DIFFUSERS_QUANT_COMPONENTS
       2. Known model prefix table
       3. Default: ["transformer"]
 

@@ -161,7 +161,7 @@ def resident_model(
 
     try:
         try:
-            set_model_config_env(entry)
+            set_model_config_env(entry.settings)
             model = spec.handler_class(entry.name)
             publisher.publish(EventType.MODEL_LOADED, payload=get_vram_state())
 

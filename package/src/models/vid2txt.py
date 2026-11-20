@@ -3,30 +3,31 @@
 Takes a video input and returns generated text. Frames are sampled uniformly
 from the video and passed to a vision-language model.
 
-Two input modes are supported, selected via the INPUT_MODE env var in
-models.yaml extra_env:
+Two input modes are supported, selected by input_mode in the model's
+settings in models.yaml:
 
-    INPUT_MODE=image_frames  (default)
+    input_mode: image_frames  (default)
         Sampled frames are passed as a list of images. The chat template
         receives one {"type": "image"} token per frame. Works with any
         model that accepts multi-image input, including LLaVA-OneVision,
         InternVL2, and Idefics3.
 
-    INPUT_MODE=video
+    input_mode: video
         Frames are passed as a single video sequence. The chat template
         receives one {"type": "video"} token. Required for models with
         native video encoders such as Qwen2-VL and InternVideo2-Chat.
 
-The number of sampled frames is controlled by the MAX_FRAMES env var,
-defaulting to 8. Models with short context windows (InternVL2-2B) should
-use 4-8 frames. Models with longer context (Qwen2-VL-72B) can handle 32+.
+The number of sampled frames is controlled by max_frames in the
+settings, defaulting to 8. Models with short context windows
+(InternVL2-2B) should use 4-8 frames. Models with longer context
+(Qwen2-VL-72B) can handle 32+.
 
 Compatible models (non-exhaustive):
-    llava-hf/llava-onevision-qwen2-7b-ov-hf    INPUT_MODE=image_frames
-    OpenGVLab/InternVL2-8B                      INPUT_MODE=image_frames
-    HuggingFaceM4/idefics3-8b-llama3            INPUT_MODE=image_frames
-    Qwen/Qwen2-VL-7B-Instruct                   INPUT_MODE=video
-    DAMO-NLP-SG/Video-LLaMA-2-7B-Finetuned      INPUT_MODE=video
+    llava-hf/llava-onevision-qwen2-7b-ov-hf    input_mode: image_frames
+    OpenGVLab/InternVL2-8B                      input_mode: image_frames
+    HuggingFaceM4/idefics3-8b-llama3            input_mode: image_frames
+    Qwen/Qwen2-VL-7B-Instruct                   input_mode: video
+    DAMO-NLP-SG/Video-LLaMA-2-7B-Finetuned      input_mode: video
 """
 
 import logging
