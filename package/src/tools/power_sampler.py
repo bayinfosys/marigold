@@ -131,48 +131,42 @@ def check_model_vram(model_name: str, model):
     across cuda:0 and cuda:1 is equally fine for this check. It exists to
     catch CPU/disk offload, not to report device placement; get_vram_state
     and get_vram_usage are the multi-GPU-aware reporting functions.
+
+    The error message logged: off-GPU tensor count and bytes, on-GPU bytes,
+    free and total memory for each device. It also becomes the failed_reason,
+    a 409 response explains the load failure using this message.
     """
     named_params = _extract_named_parameters(model_name, model)
 
-    cpu_params = [
-        name for name, param in named_params
-        if param.device.type in ("cpu", "meta")
-    ]
+    off_gpu = [param for _, param in named_params if param.device.type in ("cpu", "meta")]
 
-    if not cpu_params:
+    if not off_gpu:
         return
 
-    gpu_params = [
-        name for name, param in named_params
-        if param.device.type in ("cuda",)
-    ]
-
-    gpu_bytes = sum(
+    off_gpu_bytes = sum(param.numel() * param.element_size() for param in off_gpu)
+    on_gpu_bytes = sum(
         param.numel() * param.element_size()
         for _, param in named_params
-        if param.device.type in ("cuda",)
-    )
-    cpu_bytes = sum(
-        param.numel() * param.element_size()
-        for _, param in named_params
-        if param.device.type in ("cpu", "meta")
+        if param.device.type == "cuda"
     )
 
-    vram = get_vram_state()
+    devices = ", ".join(
+        "cuda:%d %.1f of %.1f GB free" % (index, free / 1024**3, total / 1024**3)
+        for index, (free, total) in enumerate(
+            torch.cuda.mem_get_info(i) for i in range(torch.cuda.device_count())
+        )
+    )
 
-    logger.critical(
-        "'%s' did not fit on GPU -- %d tensors on CPU (%.1fGB) "
-        "%d on GPU (%.1fGB) vram_free=%.1fGB vram_total=%.1fGB",
+    message = "'%s' did not fit on GPU: %d tensors (%.1f GB) off GPU, %.1f GB on GPU; %s" % (
         model_name,
-        len(cpu_params),
-        cpu_bytes / 1024**3,
-        len(gpu_params),
-        gpu_bytes / 1024**3,
-        vram["free_vram_b"] / 1024**3,
-        vram["total_vram_b"] / 1024**3,
+        len(off_gpu),
+        off_gpu_bytes / 1024**3,
+        on_gpu_bytes / 1024**3,
+        devices,
     )
 
-    raise ModelVRAMError(model_name)
+    logger.critical("%s", message)
+    raise ModelVRAMError(message)
 
 
 class PowerSampler:

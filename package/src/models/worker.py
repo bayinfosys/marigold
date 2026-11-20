@@ -131,11 +131,14 @@ def resident_model(
 ) -> Iterator[Any]:
     """Make entry's model resident for the duration of the block.
 
-    Raises ModelLoadError if the model cannot be loaded or does not fit,
-    having already released whatever was allocated. The VRAM check
-    failing is an ordinary exit from this scope: the weights that landed
-    before it ran are unloaded on the way out, which is what stops one
-    oversized model from crowding out every model after it.
+    The load is three steps: apply the entry's settings to the
+    environment, construct the handler, check the weights fit in VRAM.
+    Raises ModelLoadError if any step fails, having already released
+    whatever was allocated, so a setting that cannot be applied fails
+    this model and no other. The VRAM check failing is an ordinary exit
+    from this scope: the weights that landed before it ran are unloaded
+    on the way out, which is what stops one oversized model from
+    crowding out every model after it.
     """
     publisher.publish(EventType.MODEL_LOADING)
 
@@ -158,6 +161,7 @@ def resident_model(
 
     try:
         try:
+            set_model_config_env(entry)
             model = spec.handler_class(entry.name)
             publisher.publish(EventType.MODEL_LOADED, payload=get_vram_state())
 
@@ -675,7 +679,6 @@ class ModelScheduler:
                     entry.name, entry.type, entry.queue_name,
                 )
 
-                set_model_config_env(entry)
                 publisher = self._publisher_for(entry)
 
                 try:

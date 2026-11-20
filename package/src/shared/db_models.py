@@ -13,7 +13,7 @@ from hashlib import md5 as _md5
 from typing import ClassVar, Optional
 
 from dynawrap import DBItem
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, field_validator
 
 from .schedule_models import LifecycleEvent
 from .enums import ModelType, ModelProvider, StatusCode
@@ -24,17 +24,27 @@ _DEFAULT_TTL_OFFSET = 86400 * 30  # 30 days
 
 _ENV_KEYS = ("LOAD_IN_4BIT", "USE_FAST", "TRUST_REMOTE_CODE", "LOW_CPU_MEM_USAGE")
 
+# The keys the last call to set_model_config_env set. The next call
+# clears them, so a handler setting such as NUM_STEPS applies to the
+# model that declares it and to no other.
+_applied_keys: set[str] = set()
+
 
 def set_model_config_env(config_entry: "ModelCatalogueItem") -> None:
-    """Apply a catalogue entry's extra_env to the process environment,
-    clearing any previous entry's values first. Shared between worker.py
-    (serve time) and model_cache_shared.py (cache-init time) so both load
-    a model under the same settings.
+    """Apply a catalogue entry's extra_env to the process environment.
+
+    Clears the loader keys and every key the previous call set first.
+    Shared between worker.py (serve time) and model_cache_shared.py
+    (cache-init time) so both load a model under the same settings.
     """
-    for key in _ENV_KEYS:
+    for key in (*_ENV_KEYS, *_applied_keys):
         os.environ.pop(key, None)
+
+    _applied_keys.clear()
+
     for key, value in config_entry.extra_env.items():
         os.environ[key] = value
+        _applied_keys.add(key)
 
 
 class ResultsItem(DBItem, BaseModel):
