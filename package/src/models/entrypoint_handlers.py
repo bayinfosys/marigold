@@ -10,6 +10,7 @@ Environment variables
     MARIGOLD_MODEL_CATALOGUE_TABLE  catalogue table (default: model_catalogue)
     MARIGOLD_RESULTS_TABLE          results table (default: results)
     MARIGOLD_WORKERS_TABLE          workers table (default: workers)
+    MARIGOLD_EVENTS_TABLE           lifecycle events table (default: events)
     MARIGOLD_VISIBILITY_TIMEOUT     seconds a claimed message stays
                                     invisible to other workers (default: 300)
     MARIGOLD_QUEUE_IDLE_TIMEOUT     seconds a model stays resident once its
@@ -32,8 +33,8 @@ def local_handler():
 
     Constructs Postgres backends from MARIGOLD_DATABASE_URL and runs a
     ModelScheduler against the model catalogue table, which the cache
-    container populates. Creates the results, workers and catalogue
-    tables if they do not exist (idempotent); table creation belongs to
+    container populates. Creates the results, workers, events and
+    catalogue tables if they do not exist (idempotent); table creation belongs to
     the cache container, and this is the one remaining exception,
     recorded in ARCHITECTURE.md.
 
@@ -63,13 +64,16 @@ def local_handler():
     results_table = os.getenv("MARIGOLD_RESULTS_TABLE", "results")
     models_table = os.getenv("MARIGOLD_MODEL_CATALOGUE_TABLE", "model_catalogue")
     workers_table = os.getenv("MARIGOLD_WORKERS_TABLE", "workers")
+    events_table = os.getenv("MARIGOLD_EVENTS_TABLE", "events")
 
     conn = get_database_connection()
 
     queue_backend = PostgresQueueBackend(conn)
-    notification_backend = LocalNotificationBackend()
 
     db_backend = PostgresBackend(conn)
+
+    PostgresBackend.create_table(conn, events_table)
+    notification_backend = LocalNotificationBackend(db_backend, events_table)
 
     PostgresBackend.create_table(conn, results_table)
     results_cache = ResultsCache(db_backend, results_table)

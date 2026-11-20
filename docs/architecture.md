@@ -162,10 +162,11 @@ connects as the same Postgres user.
 | queue tables | create | read, update, delete | insert, read |
 | results, usage | create | write | read |
 | workers | create | write | -- |
+| events | create | write | write, read |
 
 Table creation belongs to the cache container, which runs before
 anything is served on every platform start. The worker still creates
-three tables of its own at startup; that is the one remaining
+four tables of its own at startup; that is the one remaining
 exception, recorded in TODO.md.
 
 Model failure state (`failed_reason`) is written by the worker onto the
@@ -196,6 +197,42 @@ sequenceDiagram
 
 Text and vector outputs are stored in Postgres. Binary outputs are
 written under the cache's `data/outputs`.
+
+---
+
+## Lifecycle events
+
+The API and the worker publish an event at each change of state, and
+each is stored as a row in the `events` table, keyed by model
+(`WORKER#<model hash>`) and sorted by timestamp, then event type
+(`EVENT#<timestamp>#<event type>`). A model's history survives
+restarts and log rotation. Rows have no TTL and accumulate.
+
+| Event | Published by | When |
+|---|---|---|
+| `REQUEST_QUEUED` | api | a submission is queued |
+| `MODEL_LOADING` | worker | a load starts |
+| `MODEL_LOADED` | worker | the model is resident and fits |
+| `MODEL_LOAD_FAILED` | worker | the load failed |
+| `WORKER_STARTED` | worker | the model's queue starts draining |
+| `REQUEST_DEQUEUED`, `REQUEST_PROCESSING` | worker | a message is claimed, then run |
+| `REQUEST_COMPLETE`, `REQUEST_ERROR` | worker | a request ends |
+| `WORKER_IDLE` | worker | the queue empties, once per idle period |
+| `WORKER_EXITING` | worker | the model is released |
+
+Every worker event carries `model_name`, `model_type`, `model_hash`,
+`worker_id` and `hostname`; request events carry the `message_id` and
+`user_id`, and `REQUEST_ERROR` the error. The load events carry what a
+load decided:
+
+| Field | `MODEL_LOADED` | `MODEL_LOAD_FAILED` |
+|---|---|---|
+| `settings` | each resolved setting, `{"value", "source"}` | as far as the load reached |
+| `footprint_bytes` | the weights' memory footprint | as far as the load reached |
+| `dtype` | the model's dtype | as far as the load reached |
+| `placement` | bytes on each device, such as `{"cuda:0": ..., "cuda:1": ...}`; `{"cpu": footprint}` on a worker with no CUDA device | -- |
+| `free_vram_b`, `total_vram_b`, `usable_vram_b` | VRAM across devices after the load | -- |
+| `error` | -- | the message recorded as `failed_reason` |
 
 ---
 

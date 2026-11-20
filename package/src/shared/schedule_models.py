@@ -68,7 +68,8 @@ class LifecycleEvent(BaseModel):
     """A lifecycle event: a request, model or worker changing state.
 
     Published by the API's submission path and the worker, through a
-    NotificationBackend; locally, LocalNotificationBackend logs them.
+    NotificationBackend; LocalNotificationBackend stores each one as a
+    WorkerEvent row.
     """
     event_type: str
     model_name: str

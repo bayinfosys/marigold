@@ -119,29 +119,38 @@ class WorkerEnvironment(DBItem, BaseModel):
 
 
 class WorkerEvent(DBItem, BaseModel):
-    """model worker events show when models start, stop, error etc"""
+    """One lifecycle event for one model: a request, a load, the worker.
+
+    Keyed by model, sorted by timestamp then event type, so a query on
+    one model returns its history in time order, and reversed, newest
+    first. timestamp is ISO-8601 UTC for the same reason as
+    WorkerEnvironment.started_at.
+
+    No TTL: rows accumulate, so a model's history survives restarts and
+    log rotation.
+    """
 
     pk_pattern: ClassVar[str] = "WORKER#{model_hash}"
-    sk_pattern: ClassVar[str] = "EVENT#{event_type}#{timestamp}"
+    sk_pattern: ClassVar[str] = "EVENT#{timestamp}#{event_type}"
 
     model_hash: str
     model_name: str
     model_type: str
     event_type: str
     timestamp: str
+    message_id: Optional[str] = None
     payload: dict = {}
-    ttl: Optional[int] = None
 
     @classmethod
     def from_lifecycle_event(cls, evt: LifecycleEvent) -> "WorkerEvent":
         return cls(
             model_hash=evt.model_hash,
             model_name=evt.model_name,
-            model_type=evt.payload.get("model_type", ""),
+            model_type=str(evt.payload.get("model_type", "")),
             event_type=evt.event_type,
             timestamp=evt.timestamp,
+            message_id=evt.message_id,
             payload=evt.payload,
-            ttl=ResultsItem.make_ttl(),
         )
 
 

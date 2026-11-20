@@ -5,8 +5,9 @@ implementations the platform uses:
 
 - `postgres.py` -- `PostgresQueueBackend`: queue tables in the platform
   database, claimed with `SELECT ... FOR UPDATE SKIP LOCKED`.
-- `local.py` -- `LocalNotificationBackend`: logs lifecycle events at
-  DEBUG level, with no network calls, threads or tables.
+- `local.py` -- `LocalNotificationBackend`: stores each lifecycle event
+  as a `WorkerEvent` row in the events table, with no network calls or
+  threads.
 
 Import the backend you need directly.
 
@@ -18,10 +19,13 @@ import psycopg2
 from backend.messaging.local import LocalNotificationBackend
 from backend.messaging.postgres import PostgresQueueBackend
 
+from dynawrap.backends.postgres import PostgresBackend
+
 conn = psycopg2.connect(dsn)
 
 queue = PostgresQueueBackend(conn)
 queue.create_queue("my-queue")
 
-notifications = LocalNotificationBackend()
+PostgresBackend.create_table(conn, "events")
+notifications = LocalNotificationBackend(PostgresBackend(conn), "events")
 ```

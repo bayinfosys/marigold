@@ -143,6 +143,12 @@ def resident_model(
     loader defaults, the entry and host_settings, apply them to the
     environment and log them with their sources; construct the handler;
     check the weights fit in VRAM.
+
+    The load ends in one event. MODEL_LOADED carries the settings with
+    their sources, the footprint, the dtype and the bytes on each
+    device; on a worker with no CUDA device the placement is the
+    footprint on "cpu". MODEL_LOAD_FAILED carries what the load reached
+    and the error.
     Raises ModelLoadError if any step fails, having already released
     whatever was allocated, so a setting that cannot be applied fails
     this model and no other. The VRAM check failing is an ordinary exit
@@ -168,20 +174,27 @@ def resident_model(
     )
 
     model = None
+    load: dict = {}
 
     try:
         try:
             settings = resolve_settings(entry.type, entry.name, entry.settings, host_settings)
+            load["settings"] = settings
             logger.info("settings for '%s': %s", entry.name, describe_settings(settings))
             set_model_config_env(resolved_values(settings))
 
             model = spec.handler_class(entry.name)
-            publisher.publish(EventType.MODEL_LOADED, payload=get_vram_state())
+            load["footprint_bytes"] = model.model_size_bytes
+            load["dtype"] = str(getattr(model.model, "dtype", ""))
 
             if torch.cuda.is_available():
-                check_model_vram(entry.name, model)
+                load["placement"] = check_model_vram(entry.name, model)
+            else:
+                load["placement"] = {"cpu": model.model_size_bytes}
+
+            publisher.publish(EventType.MODEL_LOADED, payload={**load, **get_vram_state()})
         except Exception as e:
-            publisher.publish(EventType.MODEL_LOAD_FAILED, payload={"error": str(e)})
+            publisher.publish(EventType.MODEL_LOAD_FAILED, payload={**load, "error": str(e)})
             raise ModelLoadError(str(e)) from e
 
         yield model
@@ -443,9 +456,14 @@ class QueueRunner:
     # -----------------------------------------------------------------------
 
     def run(self) -> None:
-        """Poll the queue and process messages until idle_timeout elapses."""
+        """Poll the queue and process messages until idle_timeout elapses.
+
+        WORKER_IDLE is published once when the queue empties, not on
+        every empty poll: each event is a stored row.
+        """
         self.publisher.publish(EventType.WORKER_STARTED)
         last_message_at = time.monotonic()
+        idle = False
 
         while True:
             msg, receipt_handle = self._get_message()
@@ -460,8 +478,13 @@ class QueueRunner:
                     self.publisher.publish(EventType.WORKER_EXITING)
                     break
 
-                self.publisher.publish(EventType.WORKER_IDLE)
+                if not idle:
+                    self.publisher.publish(EventType.WORKER_IDLE)
+                    idle = True
+
                 continue
+
+            idle = False
 
             try:
                 with self._heartbeat_context(receipt_handle):

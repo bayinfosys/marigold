@@ -12,6 +12,7 @@ Environment variables
     MARIGOLD_RESULTS_TABLE          results table name
     MARIGOLD_MODEL_CATALOGUE_TABLE  catalogue table name
     MARIGOLD_USAGE_TABLE            usage table name (default: usage)
+    MARIGOLD_EVENTS_TABLE           lifecycle events table (default: events)
     LIFECYCLE_TOPIC                 notification topic name (default: lifecycle)
 """
 
@@ -53,6 +54,7 @@ def _build_backends(app: FastAPI) -> None:
 
     results_table = os.environ["MARIGOLD_RESULTS_TABLE"]
     model_catalogue_table = os.environ["MARIGOLD_MODEL_CATALOGUE_TABLE"]
+    events_table = os.getenv("MARIGOLD_EVENTS_TABLE", "events")
 
     conn = get_database_connection()
 
@@ -60,9 +62,11 @@ def _build_backends(app: FastAPI) -> None:
     PostgresBackend.create_table(conn, results_table)
     PostgresBackend.create_table(conn, model_catalogue_table)
     PostgresBackend.create_table(conn, os.getenv("MARIGOLD_USAGE_TABLE", "usage"))
+    PostgresBackend.create_table(conn, events_table)
 
     app.state.queue_backend = PostgresQueueBackend(conn)
-    app.state.notification_backend = LocalNotificationBackend()
+    app.state.notification_backend = LocalNotificationBackend(table_backend, events_table)
+    app.state.events_table = events_table
     app.state.results_cache = ResultsCache(table_backend, results_table)
     app.state.table_backend = table_backend
     app.state.topic = os.getenv("LIFECYCLE_TOPIC", "lifecycle")

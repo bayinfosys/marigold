@@ -95,6 +95,7 @@ PLATFORM_TABLES = {
     "MARIGOLD_RESULTS_TABLE": "results",
     "MARIGOLD_USAGE_TABLE": "usage",
     "MARIGOLD_WORKERS_TABLE": "workers",
+    "MARIGOLD_EVENTS_TABLE": "events",
 }
 
 

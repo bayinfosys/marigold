@@ -120,8 +120,11 @@ def _extract_named_parameters(model_name: str, model) -> list:
 # VRAM check
 # ---------------------------------------------------------------------------
 
-def check_model_vram(model_name: str, model):
+def check_model_vram(model_name: str, model) -> dict[str, int]:
     """Raise ModelVRAMError if any model parameters were offloaded to CPU.
+
+    Returns the placement of a model that fits: the bytes of its
+    parameters on each device, such as {"cuda:0": ..., "cuda:1": ...}.
 
     Dispatches parameter extraction via _extract_named_parameters. Raises
     NotImplementedError for unhandled model backing types.
@@ -129,8 +132,8 @@ def check_model_vram(model_name: str, model):
     Note: this only distinguishes "cpu"/"meta" from "cuda" -- it does not
     check which CUDA device a parameter landed on, since a tensor split
     across cuda:0 and cuda:1 is equally fine for this check. It exists to
-    catch CPU/disk offload, not to report device placement; get_vram_state
-    and get_vram_usage are the multi-GPU-aware reporting functions.
+    catch CPU/disk offload; the placement it returns is the per-device
+    report.
 
     The error message logged: off-GPU tensor count and bytes, on-GPU bytes,
     free and total memory for each device. It also becomes the failed_reason,
@@ -138,17 +141,19 @@ def check_model_vram(model_name: str, model):
     """
     named_params = _extract_named_parameters(model_name, model)
 
-    off_gpu = [param for _, param in named_params if param.device.type in ("cpu", "meta")]
+    placement: dict[str, int] = {}
+    off_gpu = 0
+
+    for _, param in named_params:
+        device = str(param.device)
+        placement[device] = placement.get(device, 0) + param.numel() * param.element_size()
+        off_gpu += param.device.type in ("cpu", "meta")
 
     if not off_gpu:
-        return
+        return placement
 
-    off_gpu_bytes = sum(param.numel() * param.element_size() for param in off_gpu)
-    on_gpu_bytes = sum(
-        param.numel() * param.element_size()
-        for _, param in named_params
-        if param.device.type == "cuda"
-    )
+    off_gpu_bytes = sum(n for device, n in placement.items() if not device.startswith("cuda"))
+    on_gpu_bytes = sum(n for device, n in placement.items() if device.startswith("cuda"))
 
     devices = ", ".join(
         "cuda:%d %.1f of %.1f GB free" % (index, free / 1024**3, total / 1024**3)
@@ -159,7 +164,7 @@ def check_model_vram(model_name: str, model):
 
     message = "'%s' did not fit on GPU: %d tensors (%.1f GB) off GPU, %.1f GB on GPU; %s" % (
         model_name,
-        len(off_gpu),
+        off_gpu,
         off_gpu_bytes / 1024**3,
         on_gpu_bytes / 1024**3,
         devices,
