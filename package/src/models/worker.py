@@ -145,10 +145,13 @@ def resident_model(
     check the weights fit in VRAM.
 
     The load ends in one event. MODEL_LOADED carries the settings with
-    their sources, the footprint, the dtype and the bytes on each
-    device; on a worker with no CUDA device the placement is the
-    footprint on "cpu". MODEL_LOAD_FAILED carries what the load reached
-    and the error.
+    their sources, the footprint, the dtype, the bytes on each device
+    and the bytes off the GPU; on a worker with no CUDA device the
+    placement is the footprint on "cpu". MODEL_LOAD_FAILED carries what
+    the load reached and the error.
+
+    Yields the model and the MODEL_LOADED payload.
+
     Raises ModelLoadError if any step fails, having already released
     whatever was allocated, so a setting that cannot be applied fails
     this model and no other. The VRAM check failing is an ordinary exit
@@ -192,12 +195,16 @@ def resident_model(
             else:
                 load["placement"] = {"cpu": model.model_size_bytes}
 
+            load["cpu_offload_bytes"] = sum(
+                n for device, n in load["placement"].items() if not device.startswith("cuda")
+            )
+
             publisher.publish(EventType.MODEL_LOADED, payload={**load, **get_vram_state()})
         except Exception as e:
             publisher.publish(EventType.MODEL_LOAD_FAILED, payload={**load, "error": str(e)})
             raise ModelLoadError(str(e)) from e
 
-        yield model
+        yield model, load
 
     finally:
         if model is not None:
@@ -254,6 +261,8 @@ class QueueRunner:
         hostname:             Host this process runs on.
         idle_timeout:         Seconds to keep polling after the queue
                               empties. -1 means poll indefinitely.
+        cpu_offload_bytes:    Model bytes off the GPU at load, recorded
+                              with each request's usage.
     """
 
     def __init__(
@@ -268,8 +277,10 @@ class QueueRunner:
         worker_id: str,
         hostname: str,
         idle_timeout: int = None,
+        cpu_offload_bytes: int = 0,
     ):
         self.model = model
+        self.cpu_offload_bytes = cpu_offload_bytes
         self.queue = entry.queue_name
         self.model_name = entry.name
         self.model_type = entry.type
@@ -406,8 +417,7 @@ class QueueRunner:
                 result = self.model.process(msg.user_id, msg.message_id, request)
 
             usage_update = sampler.as_usage_fields()
-            # FIXME: we need to capture this in power sampler
-            # usage_update["cpu_offload_bytes"] = self._cpu_offload_bytes
+            usage_update["cpu_offload_bytes"] = self.cpu_offload_bytes
             usage_update["worker_id"] = self.worker_id
             usage_update["hostname"] = self.hostname
             usage_update["application_id"] = msg.model_inputs.get("application_id") or ""
@@ -722,7 +732,7 @@ class ModelScheduler:
                 publisher = self._publisher_for(entry)
 
                 try:
-                    with resident_model(entry, publisher, self.host_settings) as model:
+                    with resident_model(entry, publisher, self.host_settings) as (model, load):
                         QueueRunner(
                             model=model,
                             entry=entry,
@@ -734,6 +744,7 @@ class ModelScheduler:
                             worker_id=self.worker_id,
                             hostname=self.hostname,
                             idle_timeout=self.idle_timeout,
+                            cpu_offload_bytes=load["cpu_offload_bytes"],
                         ).run()
 
                 except ModelLoadError as e:

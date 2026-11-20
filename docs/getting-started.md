@@ -148,7 +148,7 @@ With no name, `models inspect` lists the catalogue: each model's name,
 type, status and the application that declared it. With a name, it
 prints the model's settings and where each came from, its status and
 failure reason, its last load -- the worker, footprint, dtype and the
-bytes on each device -- and its recent events. Everything comes from
+bytes on each device -- a summary of its usage, and its recent events. Everything comes from
 the API at the address in `[network]`, so it reads any platform that
 address reaches. `marigold cache inspect <name>` gives the same model's
 files on disk.

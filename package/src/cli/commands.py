@@ -705,7 +705,7 @@ def _gb(value: int) -> str:
 
 
 def _print_model(model: dict) -> None:
-    """One model: status, settings with sources, last load, recent events."""
+    """One model: status, settings with sources, last load, usage, recent events."""
     print(f"{model['name']} ({model['type']})")
     print(f"  application : {_model_applications(model['source_file'])}")
     print(f"  status      : {'failed' if model['failed_reason'] else 'ok'}")
@@ -733,6 +733,20 @@ def _print_model(model: dict) -> None:
     else:
         print(f"  none in the {len(events)} most recent events")
 
+    usage = model["usage"]
+
+    print("\nusage")
+    if usage["requests"]:
+        duration = usage["duration_ms"]
+        print(f"  requests  : {usage['requests']}")
+        print(f"  tokens    : {usage['input_tokens']} in, {usage['output_tokens']} out")
+        print(f"  duration  : p50 {duration['p50'] / 1000:.2f}s  p90 {duration['p90'] / 1000:.2f}s  p99 {duration['p99'] / 1000:.2f}s")
+        print(f"  load time : {usage['load_time_ms_mean'] / 1000:.1f}s mean")
+        print(f"  peak VRAM : {_gb(usage['vram_bytes_peak'])}")
+        print(f"  power     : {usage['power_watts_mean']:.0f} W mean, {usage['power_watts_peak']:.0f} W peak")
+    else:
+        print("  none recorded")
+
     print("\nrecent events")
     for event in reversed(events):
         detail = event["message_id"] or ""
@@ -748,7 +762,7 @@ def cmd_models_inspect(args):
 
     With no name, each model's name, type, application and status. With
     a name, its settings and their sources, its status and failure
-    reason, its last load and its recent events.
+    reason, its last load, a summary of its usage and its recent events.
     """
     base = load_host_config().api_url()
     catalogue = _api_get(base, "/models")

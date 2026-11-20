@@ -2,10 +2,12 @@
 
 record_usage() is the single call site for all handler modules. It
 builds a ModelUsageStats, writes to the usage table, and returns the
-stats for inclusion in the handler response.
+stats for inclusion in the handler response. model_usage_summary()
+reads back every row recorded for one model.
 """
 
 import logging
+import math
 import os
 
 from dynawrap.backends.postgres import PostgresBackend
@@ -74,3 +76,49 @@ def update_metrics(item: UsageItem):
             "[%s/%s] failed to write metrics to '%s' [%s]",
             item.user_id, item.operation, table, str(e),
         )
+
+
+def summarise_usage(stats: list[ModelUsageStats]) -> dict:
+    """Totals, percentiles, means and peaks over a model's usage rows.
+
+    Percentiles are nearest-rank over each request's total duration.
+    Power is the mean of each request's mean draw, and the highest peak.
+    """
+    if not stats:
+        return {"requests": 0}
+
+    durations = sorted(s.duration for s in stats)
+
+    def percentile(p: int) -> int:
+        return durations[max(0, math.ceil(p / 100 * len(durations)) - 1)]
+
+    return {
+        "requests": len(stats),
+        "input_tokens": sum(s.input_tokens for s in stats),
+        "output_tokens": sum(s.output_tokens for s in stats),
+        "duration_ms": {"p50": percentile(50), "p90": percentile(90), "p99": percentile(99)},
+        "load_time_ms_mean": sum(s.load_time_ms for s in stats) / len(stats),
+        "vram_bytes_peak": max(s.vram_usage_bytes_peak for s in stats),
+        "power_watts_mean": sum(s.power_watts_mean for s in stats) / len(stats),
+        "power_watts_peak": max(s.power_watts_peak for s in stats),
+    }
+
+
+def model_usage_summary(conn, table: str, model_type: str, model_name: str) -> dict:
+    """Summarise every usage row recorded for one model.
+
+    Usage rows are keyed by user, so a model's rows are found by their
+    operation, which reads the whole table: suited to one host's usage.
+    """
+    operation = "%s/%s" % (model_type, model_name)
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            f"SELECT data->'model_stats' FROM {table} WHERE data->>'operation' = %s",
+            (operation,),
+        )
+        rows = cursor.fetchall()
+
+    return summarise_usage(
+        [ModelUsageStats.model_validate(row[0]) for row in rows if row[0]]
+    )

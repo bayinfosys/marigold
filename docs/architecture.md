@@ -231,6 +231,7 @@ load decided:
 | `footprint_bytes` | the weights' memory footprint | as far as the load reached |
 | `dtype` | the model's dtype | as far as the load reached |
 | `placement` | bytes on each device, such as `{"cuda:0": ..., "cuda:1": ...}`; `{"cpu": footprint}` on a worker with no CUDA device | -- |
+| `cpu_offload_bytes` | bytes off the GPU, also recorded with each request's usage | -- |
 | `free_vram_b`, `total_vram_b`, `usable_vram_b` | VRAM across devices after the load | -- |
 | `error` | -- | the message recorded as `failed_reason` |
 

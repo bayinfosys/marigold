@@ -67,7 +67,7 @@ a local instruct model. The walkthrough is in
 
 ```sh
 marigold models inspect                  # every model: type, status, application
-marigold models inspect qwen/qwen3-8b    # settings and sources, failure, last load, events
+marigold models inspect qwen/qwen3-8b    # settings and sources, failure, last load, usage, events
 ```
 
 `models inspect` is the first command to run when a model fails; see

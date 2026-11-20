@@ -208,7 +208,7 @@ def build_parser() -> argparse.ArgumentParser:
     models_sub = models.add_subparsers(dest="models_command", required=True)
 
     models_inspect_p = models_sub.add_parser(
-        "inspect", help="list the catalogue, or one model's settings, status and events",
+        "inspect", help="list the catalogue, or one model's settings, status, usage and events",
     )
     models_inspect_p.add_argument("name", nargs="?", help="one model, such as qwen/qwen3-8b")
     models_inspect_p.set_defaults(func=commands.cmd_models_inspect)

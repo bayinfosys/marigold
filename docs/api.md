@@ -1,6 +1,6 @@
 ---
 title: API
-description: Submitting and polling jobs, binary outputs, the catalogue and the OpenAI-compatible endpoints of the Marigold API.
+description: Submitting and polling jobs, binary outputs, the catalogue with each model's settings, events and usage, and the OpenAI-compatible endpoints of the Marigold API.
 nav_order: 11
 ---
 
@@ -40,13 +40,12 @@ bytes come from `GET /output/{mode}/{task}/{message_id}/{field}`; the
 reference's `sha256` checks what arrived. Where they are stored is set
 in [Configuration](configuration.md).
 
-## Catalogue and usage
+## Catalogue
 
 | Route | Returns |
 |---|---|
 | `GET /models` | every model in the catalogue |
-| `GET /models/{model_type}/{model_name}` | one model |
-| `GET /usage/{key}/{period}` | usage recorded against a key |
+| `GET /models/{model_type}/{model_name}` | one model, with its settings, recent events and usage |
 
 A model appears in the catalogue once `marigold cache populate` has
 downloaded it.
@@ -54,9 +53,9 @@ downloaded it.
 ### One model
 
 `GET /models/{model_type}/{model_name}` returns the catalogue entry,
-with `failed_reason` set while the model is marked failed, and two
-fields that describe what applies to the model and what has happened
-to it:
+with `failed_reason` set while the model is marked failed, and three
+fields that describe what applies to the model, what has happened to
+it and what it costs to run:
 
 - `settings` -- every setting a load of the model resolves, each with
   its value and the level it came from: `default`, `application`,
@@ -67,6 +66,20 @@ to it:
   first, each with `timestamp`, `event_type`, `message_id` and
   `payload`. The events and their payloads are listed in
   [Architecture](architecture.md#lifecycle-events).
+- `usage` -- a summary of every usage row recorded for the model, from
+  every user and application:
+
+  | Field | Meaning |
+  |---|---|
+  | `requests` | requests recorded; the only field when there are none |
+  | `input_tokens`, `output_tokens` | totals |
+  | `duration_ms` | `p50`, `p90` and `p99` of each request's total duration |
+  | `load_time_ms_mean` | mean model load time |
+  | `vram_bytes_peak` | the highest peak VRAM of any request |
+  | `power_watts_mean`, `power_watts_peak` | mean of each request's mean GPU power draw; the highest peak |
+
+  Usage rows are keyed by user, so the summary reads the whole usage
+  table, which suits the usage of one host.
 
 ```json
 {
@@ -86,7 +99,17 @@ to it:
       "message_id": null,
       "payload": {"footprint_bytes": 5926000000, "dtype": "torch.bfloat16", "placement": {"cuda:0": 3100000000, "cuda:1": 2826000000}}
     }
-  ]
+  ],
+  "usage": {
+    "requests": 214,
+    "input_tokens": 182330,
+    "output_tokens": 61207,
+    "duration_ms": {"p50": 2310, "p90": 6120, "p99": 11840},
+    "load_time_ms_mean": 21430.0,
+    "vram_bytes_peak": 7120000000,
+    "power_watts_mean": 141.2,
+    "power_watts_peak": 228.5
+  }
 }
 ```
 

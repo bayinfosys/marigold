@@ -2,7 +2,8 @@
 
 The detail adds to the catalogue entry what applies to the model and
 what has happened to it: its resolved settings, from the application
-and the host's [models], and its recent lifecycle events.
+and the host's [models], its recent lifecycle events, and a summary of
+all usage recorded for it.
 """
 
 
@@ -13,6 +14,7 @@ from api.auth import apikey_auth
 from shared.db_models import WorkerEvent
 from shared.enums import ModelType
 from shared.model_settings import resolve_settings
+from shared.usage import model_usage_summary
 from models.catalogue import get_all_models, get_model
 
 
@@ -62,5 +64,8 @@ async def model_detail(
         event.model_dump(mode="json", include={"timestamp", "event_type", "message_id", "payload"})
         for event in events
     ]
+    content["usage"] = model_usage_summary(
+        request.app.state.connection, request.app.state.usage_table, item.type, item.name
+    )
 
     return JSONResponse(status_code=200, content=content)
