@@ -150,6 +150,40 @@ as the database's: the worker writes, the API reads.
 
 ---
 
+## Data directories
+
+Every piece of state lives under the cache root's `data/`. Delete a
+directory only with the platform stopped (`marigold platform stop`).
+
+| Directory | Holds | Deleting it |
+|---|---|---|
+| `data/postgres` | the platform database: the catalogue and failure marks, queues, results, usage, worker environments, lifecycle events | loses queued requests, results, usage and event history. The next start creates empty tables, and `cache populate` re-registers each application's models without downloading them |
+| `data/models` | downloaded weights, shared by every application | removes every model. Catalogue rows remain and their loads fail; `cache populate` downloads each application's models again |
+| `data/applications` | the installed index (`installed.json`), archives (`_archives/`), extracted trees (`_src/`) and each application's `outputs/` | uninstalls every application and removes its outputs. Cached models and catalogue rows remain; reinstall each application |
+| `data/webui` | Open WebUI's own database: chats, users, settings | resets Open WebUI to a first start |
+| `data/outputs` | binary inference outputs | breaks `GET /output/.../{field}` for every completed job that wrote one |
+| `data/tmp` | worker offload space | nothing a stopped worker needs |
+
+`data/postgres` and `data/webui` belong to the users those containers
+run as, so deleting them takes `sudo`.
+
+### Resetting the database
+
+Clearing the database keeps every downloaded weight:
+
+```sh
+marigold platform stop
+sudo rm -rf <cache root>/data/postgres
+marigold platform start
+marigold cache populate <application>     # for each installed application
+```
+
+`platform start` creates a fresh database and its tables. `cache
+populate` finds each model already in the cache, downloads nothing,
+and writes its catalogue row and queue.
+
+---
+
 ## Access model
 
 Each component owns what it writes. The table is the design; roles and
