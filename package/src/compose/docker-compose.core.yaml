@@ -47,6 +47,8 @@ services:
       HF_HUB_OFFLINE: 0
       MARIGOLD_DATABASE_URL: ${MARIGOLD_DATABASE_URL:-postgresql://marigold:marigold@postgres:5432/marigold}
       MARIGOLD_MODEL_CATALOGUE_TABLE: model_catalogue
+      # [models] in marigold-host.toml, as JSON; empty without the CLI
+      MARIGOLD_MODEL_SETTINGS: ${MARIGOLD_MODEL_SETTINGS:-}
     volumes:
       - type: bind
         source: ${MARIGOLD_APPLICATIONS_DIR:-~/.marigold/cache/data/applications}

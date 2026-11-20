@@ -45,6 +45,12 @@ from pydantic import ValidationError
 from models.catalogue import get_all_models
 from shared.db_models import ModelCatalogueItem, set_model_config_env
 from shared.enums import StatusCode
+from shared.model_settings import (
+    HostModelSettings,
+    describe_settings,
+    resolve_settings,
+    resolved_values,
+)
 from shared.registry import _SPECS
 from shared.results_cache import ResultsCache
 from shared.schedule_models import EventType, LifecycleEvent, MarigoldMessage
@@ -127,12 +133,16 @@ class LifecyclePublisher:
 
 @contextmanager
 def resident_model(
-    entry: ModelCatalogueItem, publisher: LifecyclePublisher
+    entry: ModelCatalogueItem,
+    publisher: LifecyclePublisher,
+    host_settings: HostModelSettings,
 ) -> Iterator[Any]:
     """Make entry's model resident for the duration of the block.
 
-    The load is three steps: apply the entry's settings to the
-    environment, construct the handler, check the weights fit in VRAM.
+    The load is three steps: resolve the model's settings from the
+    loader defaults, the entry and host_settings, apply them to the
+    environment and log them with their sources; construct the handler;
+    check the weights fit in VRAM.
     Raises ModelLoadError if any step fails, having already released
     whatever was allocated, so a setting that cannot be applied fails
     this model and no other. The VRAM check failing is an ordinary exit
@@ -161,7 +171,10 @@ def resident_model(
 
     try:
         try:
-            set_model_config_env(entry.settings)
+            settings = resolve_settings(entry.type, entry.name, entry.settings, host_settings)
+            logger.info("settings for '%s': %s", entry.name, describe_settings(settings))
+            set_model_config_env(resolved_values(settings))
+
             model = spec.handler_class(entry.name)
             publisher.publish(EventType.MODEL_LOADED, payload=get_vram_state())
 
@@ -491,6 +504,8 @@ class ModelScheduler:
                               next model can be loaded promptly.
         sweep_interval:       Seconds to sleep when every queue is empty.
         worker_id:            Overrides MARIGOLD_WORKER_ID and hostname.
+        host_settings:        The host's [models], resolved against each
+                              entry at its load.
     """
 
     def __init__(
@@ -505,6 +520,7 @@ class ModelScheduler:
         idle_timeout: int = 0,
         sweep_interval: int = 10,
         worker_id: str = None,
+        host_settings: HostModelSettings = None,
     ):
         self.catalogue_backend = catalogue_backend
         self.catalogue_table = catalogue_table
@@ -515,6 +531,7 @@ class ModelScheduler:
         self.results_cache = results_cache
         self.idle_timeout = idle_timeout
         self.sweep_interval = sweep_interval
+        self.host_settings = host_settings or HostModelSettings()
 
         self.hostname = socket.gethostname()
         self.worker_id = (
@@ -682,7 +699,7 @@ class ModelScheduler:
                 publisher = self._publisher_for(entry)
 
                 try:
-                    with resident_model(entry, publisher) as model:
+                    with resident_model(entry, publisher, self.host_settings) as model:
                         QueueRunner(
                             model=model,
                             entry=entry,

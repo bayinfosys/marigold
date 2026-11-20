@@ -24,6 +24,7 @@ Sections, one per layer:
     [[registry]] registries searched for applications, in file order
     [network]    the ports and address the platform publishes
     [resources]  memory, CPU and process limits per service
+    [models]     model loader settings: global, by type and by name
     [environment] variables forwarded to every service
 
 Secrets stay in the shell environment and never go in this file:
@@ -31,7 +32,8 @@ HF_TOKEN, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION,
 AZURE_STORAGE_ACCOUNT, AZURE_STORAGE_CONNECTION_STRING.
 
 This module imports nothing from the rest of the CLI, so every other
-module can import it.
+module can import it. [models] is shared.model_settings.HostModelSettings,
+the type the worker reads back from MARIGOLD_MODEL_SETTINGS.
 """
 
 import ipaddress
@@ -43,6 +45,8 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+
+from shared.model_settings import HostModelSettings
 
 HOST_CONFIG_NAME = "marigold-host.toml"
 HOST_CONFIG_ENV = "MARIGOLD_HOST_CONFIG"
@@ -264,6 +268,7 @@ class HostConfig(_Section):
     )
     network: NetworkSection = Field(default_factory=NetworkSection)
     resources: ResourcesSection = Field(default_factory=ResourcesSection)
+    models: HostModelSettings = Field(default_factory=HostModelSettings)
     environment: dict[str, str | int | float | bool] = Field(
         default={},
         description="Variables forwarded to every service. An application's [environment] wins per key.",
@@ -309,6 +314,7 @@ class HostConfig(_Section):
             "MARIGOLD_API_PORT": str(self.network.api_port),
             "MARIGOLD_WEBUI_PORT": str(self.network.webui_port),
             "MARIGOLD_WORKER_SHM": self.resources.worker.shm,
+            "MARIGOLD_MODEL_SETTINGS": self.models.model_dump_json(exclude_defaults=True),
         }
 
         if self.storage.region:

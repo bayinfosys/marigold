@@ -50,6 +50,19 @@ def env_flag(name: str, default: bool = False) -> bool:
     return raw in ("1", "true", "yes", "on")
 
 
+def check_4bit(modelname: str, load_in_4bit: bool) -> None:
+    """Fail a 4-bit load on a worker with no CUDA device.
+
+    bitsandbytes quantises as the weights reach a GPU. Without one the
+    load fails here, with a message that names the cause, rather than
+    inside the library or by loading full-size weights instead.
+    """
+    if load_in_4bit and not torch.cuda.is_available():
+        raise RuntimeError(
+            "'%s': load_in_4bit needs a GPU, and this worker has no CUDA device" % modelname
+        )
+
+
 # ---------------------------------------------------------------------------
 # VRAM utilities
 # ---------------------------------------------------------------------------
@@ -230,6 +243,8 @@ def standard_loader(
     remote_code = env_flag("TRUST_REMOTE_CODE", remote_code)
     load_in_4bit = env_flag("LOAD_IN_4BIT", load_in_4bit)
     low_cpu_mem_usage = env_flag("LOW_CPU_MEM_USAGE", low_cpu_mem_usage)
+
+    check_4bit(modelname, load_in_4bit)
 
     T0 = clock()
 

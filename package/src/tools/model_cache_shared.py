@@ -34,6 +34,12 @@ from pathlib import Path
 
 from shared.db_models import ModelCatalogueItem, set_model_config_env
 from shared.enums import ModelProvider
+from shared.model_settings import (
+    describe_settings,
+    load_host_settings,
+    resolve_settings,
+    resolved_values,
+)
 from shared.model_cache import GB, cached_models, model_bytes, model_dir_name
 from shared.registry import _SPECS
 
@@ -110,14 +116,19 @@ class HuggingFaceProvider(Provider):
         os.environ["HF_HUB_OFFLINE"] = "0"
         os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "0"
 
-        set_model_config_env(model.settings)
+        # The worker's settings, so the files a load reads are the ones
+        # downloaded. 4-bit off: quantisation happens as the weights reach
+        # a GPU, and needs none to download.
+        settings = resolve_settings(model_type, name, model.settings, load_host_settings())
+        settings["load_in_4bit"] = {"value": False, "source": "cache-init"}
+        log.info("settings for '%s': %s", name, describe_settings(settings))
+        set_model_config_env(resolved_values(settings))
 
         try:
             _SPECS[model_type].loader(
                 name,
                 cache_dir=str(cache_path),
                 local_files_only=False,
-                low_cpu_mem_usage=False,
             )
             return True
         except Exception as e:

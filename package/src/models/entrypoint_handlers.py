@@ -14,6 +14,8 @@ Environment variables
                                     invisible to other workers (default: 300)
     MARIGOLD_QUEUE_IDLE_TIMEOUT     seconds a model stays resident once its
                                     queue empties (default: 0)
+    MARIGOLD_MODEL_SETTINGS         the host's [models] as JSON, read once
+                                    here (default: empty)
     LIFECYCLE_TOPIC                 lifecycle topic name (default: lifecycle)
 """
 
@@ -50,6 +52,7 @@ def local_handler():
     from dynawrap.backends.postgres import PostgresBackend
     from models.worker import ModelScheduler
     from shared.database import get_database_connection
+    from shared.model_settings import load_host_settings
     from shared.results_cache import ResultsCache
     from tools.environment import collect_environment
 
@@ -76,6 +79,9 @@ def local_handler():
     # sweep on a fresh database.
     PostgresBackend.create_table(conn, models_table)
 
+    host_settings = load_host_settings()
+    logger.info("host model settings: %s", host_settings.model_dump_json(exclude_defaults=True))
+
     environment = collect_environment()
     PostgresBackend.create_table(conn, workers_table)
     db_backend.save(workers_table, environment)
@@ -96,6 +102,7 @@ def local_handler():
         results_cache=results_cache,
         idle_timeout=int(os.getenv("MARIGOLD_QUEUE_IDLE_TIMEOUT", "0")),
         worker_id=environment.worker_id,
+        host_settings=host_settings,
     )
 
     scheduler.run()

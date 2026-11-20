@@ -10,7 +10,7 @@ Marigold reads two files:
 
 | File | Where | What it holds |
 |---|---|---|
-| `marigold-host.toml` | on the host | how this machine runs the platform: compose files, storage, database, registries, network, resource limits |
+| `marigold-host.toml` | on the host | how this machine runs the platform: compose files, storage, database, registries, network, resource limits, model settings |
 | `marigold.toml` | in each application | what the application is and runs; see [Building](building.md) |
 
 An application config that sets a host section is rejected. Both files
@@ -167,13 +167,76 @@ Open WebUI, when an application adds it.
 | `cpus` | unset | CPU limit, in cores. Unset means no limit. |
 | `pids` | unset | Process and thread limit. Unset means no limit. |
 
+### `[models]`
+
+| Key | Default | Description |
+|---|---|---|
+| `load_in_4bit` | unset | Quantise the weights to 4-bit as they load (bitsandbytes). Needs a GPU. |
+| `use_fast` | unset | Load the fast tokenizer. |
+| `trust_remote_code` | unset | Run Python code from the model's repository during the load. |
+| `low_cpu_mem_usage` | unset | Load the weights without a full copy in host memory. |
+| `types` | `{}` | Settings for every model of one type, as [models.types.<type>]. |
+| `names` | `{}` | Settings for one model, as [models.names."<name>"], the name as models.yaml writes it. |
+
 ### `[environment]`
 
-Compose variables. A service receives one where its compose file names it. An application's [environment] wins per key.
+Variables forwarded to every service. An application's [environment] wins per key.
 
 Default: none.
 
 <!-- host-config:end -->
+
+## Model settings
+
+A model's settings decide how it loads and runs: 4-bit quantisation,
+the tokenizer, remote code, and the values a handler reads, such as
+`num_steps`. A setting's name is its environment variable in lower
+case. An application declares settings per model under `settings:` in
+its models.yaml; every setting each loader and handler reads is listed
+in [Building](building.md#model-settings).
+
+`[models]` sets them on the host. Settings that depend on the hardware,
+such as quantisation, belong here, and the application stays unchanged:
+
+```toml
+[models]
+load_in_4bit = true                 # every model: two 12 GB cards
+
+[models.types.txt2img]
+load_in_4bit = false                # except image generation
+
+[models.names."qwen/qwen3-8b"]
+trust_remote_code = false           # and refused for this model
+```
+
+At each load the worker resolves every setting from five levels, each
+overriding the one before:
+
+1. the loader's default
+2. the application's models.yaml
+3. `[models]`
+4. `[models.types.<type>]`
+5. `[models.names."<name>"]`, the name as models.yaml writes it
+
+The host takes precedence over the application, so a host can refuse
+`trust_remote_code` for every application. The worker logs the result
+as one line per load, each value with its source:
+
+```
+settings for 'qwen/qwen3-8b': load_in_4bit=true (host) low_cpu_mem_usage=true (default) trust_remote_code=false (host name) use_fast=false (default)
+```
+
+A setting applies to the model it resolves for and to no other. On a
+worker with no CUDA device, `load_in_4bit` fails the load with a
+message saying 4-bit needs a GPU, and the model is marked failed.
+
+`marigold cache populate` downloads with the same settings, with
+`load_in_4bit` off: quantisation happens as weights reach a GPU, and
+the download needs none.
+
+The CLI passes `[models]` to the worker and the cache container as
+`MARIGOLD_MODEL_SETTINGS`. A compose run without the CLI carries no
+host settings, and each model loads with its application's settings.
 
 ## Secrets
 

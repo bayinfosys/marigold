@@ -6,8 +6,8 @@ Two files, each with its own validated model:
     marigold.toml       what one application is and runs (cli.application_config)
 
 The host sections are [platform], [storage], [database], [registry],
-[network] and [resources]. An application config that sets one is
-rejected. Both files may set [environment]; the application's values
+[network], [resources] and [models]. An application config that sets
+one is rejected. Both files may set [environment]; the application's values
 win per key.
 
 Every other module reads configuration through these models, or through

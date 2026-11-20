@@ -18,8 +18,8 @@ services:
       LIFECYCLE_TOPIC: lifecycle
       LOG_LEVEL: ${MARIGOLD_LOG_LEVEL:-INFO}
       CACHE_DIR: /models
-      REMOTE_CODE: "0"
-      USE_FAST: "0"
+      # [models] in marigold-host.toml, as JSON; empty without the CLI
+      MARIGOLD_MODEL_SETTINGS: ${MARIGOLD_MODEL_SETTINGS:-}
       MARIGOLD_TMP_OFFLOAD: "/tmp/models"
       MARIGOLD_MODEL_CATALOGUE_TABLE: model_catalogue
       # object store: [storage] in marigold-host.toml
