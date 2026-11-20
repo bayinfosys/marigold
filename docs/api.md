@@ -51,6 +51,47 @@ in [Configuration](configuration.md).
 A model appears in the catalogue once `marigold cache populate` has
 downloaded it.
 
+### One model
+
+`GET /models/{model_type}/{model_name}` returns the catalogue entry,
+with `failed_reason` set while the model is marked failed, and two
+fields that describe what applies to the model and what has happened
+to it:
+
+- `settings` -- every setting a load of the model resolves, each with
+  its value and the level it came from: `default`, `application`,
+  `host`, `host type` or `host name` (see
+  [Configuration](configuration.md#model-settings)). It holds the
+  application's settings resolved against the host's.
+- `events` -- the model's 50 most recent lifecycle events, newest
+  first, each with `timestamp`, `event_type`, `message_id` and
+  `payload`. The events and their payloads are listed in
+  [Architecture](architecture.md#lifecycle-events).
+
+```json
+{
+  "name": "qwen/qwen3-8b",
+  "type": "instruct",
+  "failed_reason": null,
+  "settings": {
+    "load_in_4bit": {"value": true, "source": "host"},
+    "low_cpu_mem_usage": {"value": true, "source": "default"},
+    "trust_remote_code": {"value": false, "source": "default"},
+    "use_fast": {"value": false, "source": "default"}
+  },
+  "events": [
+    {
+      "timestamp": "2026-11-19T21:04:11.524000+00:00",
+      "event_type": "MODEL_LOADED",
+      "message_id": null,
+      "payload": {"footprint_bytes": 5926000000, "dtype": "torch.bfloat16", "placement": {"cuda:0": 3100000000, "cuda:1": 2826000000}}
+    }
+  ]
+}
+```
+
+The example shows a subset of the entry's fields.
+
 ## OpenAI-compatible endpoints
 
 `GET /v1/models`, `POST /v1/chat/completions` and `POST /v1/embeddings`

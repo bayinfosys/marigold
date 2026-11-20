@@ -1,8 +1,8 @@
-"""API catalogue routes: OpenAPI spec and model list.
+"""API catalogue routes: the model list and one model's detail.
 
-Locally the OpenAPI spec is served by FastAPI's built-in /openapi.json
-endpoint, so this route is a no-op stub. models.json is served from
-the local filesystem if MODELS_JSON_PATH is set.
+The detail adds to the catalogue entry what applies to the model and
+what has happened to it: its resolved settings, from the application
+and the host's [models], and its recent lifecycle events.
 """
 
 
@@ -10,11 +10,16 @@ from fastapi import Request, Security, APIRouter
 from fastapi.responses import JSONResponse
 from api.auth import apikey_auth
 
+from shared.db_models import WorkerEvent
 from shared.enums import ModelType
+from shared.model_settings import resolve_settings
 from models.catalogue import get_all_models, get_model
 
 
 router = APIRouter()
+
+# Events returned with a model's detail, newest first.
+RECENT_EVENTS = 50
 
 
 @router.get("/models")
@@ -41,4 +46,21 @@ async def model_detail(
             content={"status": "error", "message": f"no such model: {model_type}/{model_name}"},
         )
 
-    return JSONResponse(status_code=200, content=item.model_dump(mode="json"))
+    events = request.app.state.table_backend.query(
+        request.app.state.events_table,
+        WorkerEvent,
+        model_hash=item.hash,
+        limit=RECENT_EVENTS,
+        reverse=True,
+    )
+
+    content = item.model_dump(mode="json")
+    content["settings"] = resolve_settings(
+        item.type, item.name, item.settings, request.app.state.host_settings
+    )
+    content["events"] = [
+        event.model_dump(mode="json", include={"timestamp", "event_type", "message_id", "payload"})
+        for event in events
+    ]
+
+    return JSONResponse(status_code=200, content=content)

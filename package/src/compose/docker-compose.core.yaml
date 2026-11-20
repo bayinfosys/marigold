@@ -80,6 +80,8 @@ services:
       LIFECYCLE_TOPIC: lifecycle
       MARIGOLD_RESULTS_TABLE: results
       MARIGOLD_MODEL_CATALOGUE_TABLE: model_catalogue
+      # [models] in marigold-host.toml, as JSON; empty without the CLI
+      MARIGOLD_MODEL_SETTINGS: ${MARIGOLD_MODEL_SETTINGS:-}
       # object store: read-only for the API; it serves what the worker wrote
       MARIGOLD_STORAGE: ${MARIGOLD_STORAGE:-fs}
       MARIGOLD_STORAGE_ROOT: /data

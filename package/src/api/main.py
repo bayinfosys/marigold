@@ -13,6 +13,7 @@ Environment variables
     MARIGOLD_MODEL_CATALOGUE_TABLE  catalogue table name
     MARIGOLD_USAGE_TABLE            usage table name (default: usage)
     MARIGOLD_EVENTS_TABLE           lifecycle events table (default: events)
+    MARIGOLD_MODEL_SETTINGS         the host's [models] as JSON (default: empty)
     LIFECYCLE_TOPIC                 notification topic name (default: lifecycle)
 """
 
@@ -50,6 +51,7 @@ def _build_backends(app: FastAPI) -> None:
     from dynawrap.backends.postgres import PostgresBackend
     from backend.messaging.postgres import PostgresQueueBackend
     from backend.messaging.local import LocalNotificationBackend
+    from shared.model_settings import load_host_settings
     from shared.results_cache import ResultsCache
 
     results_table = os.environ["MARIGOLD_RESULTS_TABLE"]
@@ -67,6 +69,7 @@ def _build_backends(app: FastAPI) -> None:
     app.state.queue_backend = PostgresQueueBackend(conn)
     app.state.notification_backend = LocalNotificationBackend(table_backend, events_table)
     app.state.events_table = events_table
+    app.state.host_settings = load_host_settings()
     app.state.results_cache = ResultsCache(table_backend, results_table)
     app.state.table_backend = table_backend
     app.state.topic = os.getenv("LIFECYCLE_TOPIC", "lifecycle")
