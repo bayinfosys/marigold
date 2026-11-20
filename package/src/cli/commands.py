@@ -5,12 +5,15 @@ for the user and pick the exit code.
 """
 
 import contextlib
+import json
 import os
 import subprocess
 import sys
 import tempfile
 
 from pathlib import Path
+
+import httpx
 
 from shared import model_cache
 
@@ -667,6 +670,108 @@ def cmd_cache_inspect(args):
 def cmd_cache_stub(args):
     print(f"marigold cache {args.cache_command}: not yet implemented")
     sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# models
+# ---------------------------------------------------------------------------
+
+def _api_get(base: str, path: str):
+    response = httpx.get(f"{base}{path}", timeout=10)
+    response.raise_for_status()
+    return response.json()
+
+
+def _model_applications(source_file: str) -> str:
+    """The installed applications whose models.yaml declared a model.
+
+    source_file is the models.yaml path as the cache container read it,
+    under the application's extracted tree, which is named by its digest
+    on the host as in the container. An application installed
+    elsewhere, as on a remote platform, shows as that directory.
+    """
+    directory = Path(source_file).parent
+
+    names = sorted(
+        name for name, record in applications.load_installed().items()
+        if Path(record["root"]).name == directory.name
+    )
+
+    return ", ".join(names) or str(directory)
+
+
+def _gb(value: int) -> str:
+    return f"{value / 1e9:.2f} GB"
+
+
+def _print_model(model: dict) -> None:
+    """One model: status, settings with sources, last load, recent events."""
+    print(f"{model['name']} ({model['type']})")
+    print(f"  application : {_model_applications(model['source_file'])}")
+    print(f"  status      : {'failed' if model['failed_reason'] else 'ok'}")
+    if model["failed_reason"]:
+        print(f"  reason      : {model['failed_reason']}")
+
+    print("\nsettings")
+    for name, setting in sorted(model["settings"].items()):
+        print(f"  {name:<28} {json.dumps(setting['value']):<12} [{setting['source']}]")
+
+    events = model["events"]
+    loads = [e for e in events if e["event_type"] in ("MODEL_LOADED", "MODEL_LOAD_FAILED")]
+
+    print("\nlast load")
+    if loads:
+        load = loads[0]
+        payload = load["payload"]
+        print(f"  {load['timestamp']}  {load['event_type']}  on {payload.get('worker_id', '-')}")
+        if "footprint_bytes" in payload:
+            print(f"  footprint : {_gb(payload['footprint_bytes'])}  dtype: {payload.get('dtype') or '-'}")
+        if "placement" in payload:
+            print("  placement : " + ", ".join(f"{d} {_gb(n)}" for d, n in sorted(payload["placement"].items())))
+        if "error" in payload:
+            print(f"  error     : {payload['error']}")
+    else:
+        print(f"  none in the {len(events)} most recent events")
+
+    print("\nrecent events")
+    for event in reversed(events):
+        detail = event["message_id"] or ""
+        if "error" in event["payload"]:
+            detail = f"{detail} {event['payload']['error']}".strip()
+        print(f"  {event['timestamp']}  {event['event_type']:<20} {detail}")
+    if not events:
+        print("  (none)")
+
+
+def cmd_models_inspect(args):
+    """The catalogue, or one model, from the API at the configured address.
+
+    With no name, each model's name, type, application and status. With
+    a name, its settings and their sources, its status and failure
+    reason, its last load and its recent events.
+    """
+    base = load_host_config().api_url()
+    catalogue = _api_get(base, "/models")
+
+    if args.name is None:
+        print(f"  {'model':<50} {'type':<16} {'status':<8} application")
+        for model in sorted(catalogue, key=lambda m: (m["name"], m["type"])):
+            status = "failed" if model["failed_reason"] else "ok"
+            print(f"  {model['name']:<50} {model['type']:<16} {status:<8} {_model_applications(model['source_file'])}")
+        print(f"\n{len(catalogue)} model(s) at {base}")
+        sys.exit(0)
+
+    matches = [m for m in catalogue if m["name"] == args.name]
+
+    if not matches:
+        raise LookupError(f"no model named '{args.name}' in the catalogue at {base}")
+
+    for position, match in enumerate(matches):
+        if position:
+            print()
+        _print_model(_api_get(base, f"/models/{match['type']}/{match['name']}"))
+
+    sys.exit(0)
 
 
 # ---------------------------------------------------------------------------

@@ -63,6 +63,16 @@ runs the application: Open WebUI at `http://localhost:3000`, backed by
 a local instruct model. The walkthrough is in
 [Getting started](docs/getting-started.md).
 
+## Operating
+
+```sh
+marigold models inspect                  # every model: type, status, application
+marigold models inspect qwen/qwen3-8b    # settings and sources, failure, last load, events
+```
+
+`models inspect` is the first command to run when a model fails; see
+[When a model fails](docs/getting-started.md#when-a-model-fails).
+
 ## Documentation
 
 | | |

@@ -203,6 +203,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     show_p.set_defaults(func=commands.cmd_config_show)
 
+    # models
+    models = sub.add_parser("models", help="the models the platform serves, from the API")
+    models_sub = models.add_subparsers(dest="models_command", required=True)
+
+    models_inspect_p = models_sub.add_parser(
+        "inspect", help="list the catalogue, or one model's settings, status and events",
+    )
+    models_inspect_p.add_argument("name", nargs="?", help="one model, such as qwen/qwen3-8b")
+    models_inspect_p.set_defaults(func=commands.cmd_models_inspect)
+
     # cache
     cache = sub.add_parser("cache", help="manage the shared model cache")
     cache_sub = cache.add_subparsers(dest="cache_command", required=True)

@@ -137,6 +137,36 @@ print(reply.choices[0].message.content)
 No API key is checked. The native API and the full list of endpoints
 are in [API](api.md).
 
+## When a model fails
+
+```sh
+marigold models inspect
+marigold models inspect qwen/qwen3-8b
+```
+
+With no name, `models inspect` lists the catalogue: each model's name,
+type, status and the application that declared it. With a name, it
+prints the model's settings and where each came from, its status and
+failure reason, its last load -- the worker, footprint, dtype and the
+bytes on each device -- and its recent events. Everything comes from
+the API at the address in `[network]`, so it reads any platform that
+address reaches. `marigold cache inspect <name>` gives the same model's
+files on disk.
+
+A model that fails to load is marked failed, and the API answers its
+requests with 409 and the reason. The reason names the cause: a model
+too large for the GPUs, for example, shows the tensors left off the GPU
+and the free memory of each device. Settings such as 4-bit quantisation
+can be changed on the host without touching the application; see
+[Model settings](configuration.md#model-settings). Then:
+
+```sh
+marigold cache populate <application>
+```
+
+rewrites the application's catalogue rows, which clears the failure,
+and the next request loads the model again.
+
 ## Stopping
 
 ```sh

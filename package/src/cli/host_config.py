@@ -289,6 +289,19 @@ class HostConfig(_Section):
         """Registry addresses in search order."""
         return [entry.url for entry in self.registry]
 
+    def api_url(self) -> str:
+        """The API's address from this host, from [network].
+
+        A bind on every interface is reached on the loopback address.
+        """
+        address = ipaddress.ip_address(self.network.bind)
+
+        if address.is_unspecified:
+            address = ipaddress.ip_address("::1" if address.version == 6 else "127.0.0.1")
+
+        host = f"[{address}]" if address.version == 6 else str(address)
+        return f"http://{host}:{self.network.api_port}"
+
     def compose_env(self, tag: str) -> dict[str, str]:
         """The variables the platform compose files read.
 
