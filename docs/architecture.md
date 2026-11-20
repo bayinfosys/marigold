@@ -228,6 +228,30 @@ fails exits in its own container; the platform and other applications
 are unaffected. An application whose platform stops keeps running and
 fails its API calls, visibly, in its own logs.
 
+### Model load failure
+
+The worker applies the model's settings, loads it and checks that its
+weights fit in VRAM. Failure at any of these steps:
+
+- publishes `MODEL_LOAD_FAILED` with the error message;
+- writes an error result, code `model_load_failed`, for every message
+  queued for the model, and deletes the messages;
+- records the error as `failed_reason` on the model's catalogue row.
+
+The message gives the reason: an exception from the loader, or for a
+model that does not fit, the tensors left off the GPU and the free and
+total memory of each device.
+
+While `failed_reason` is set, the API answers a submission for the
+model with 409 and the reason as `message`, writing no result and
+queueing nothing; `POST /v1/chat/completions` returns the same 409.
+The worker drains anything that reaches the model's queue by another route.
+
+`marigold cache populate <application>` writes each model's row afresh
+from models.yaml, which clears `failed_reason`, and the next request
+loads the model again. A request that ended in an error is not served
+from the results cache: repeating it submits it again.
+
 ---
 
 ## Scaling

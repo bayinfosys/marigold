@@ -36,6 +36,10 @@ def handle_submission(
     operator intervenes. No results record is written for a rejected
     submission, so a later status poll on that message_id returns 404.
 
+    A stored result is returned in place of a new job, except an error:
+    a request repeated after a failure is submitted again, so a model
+    fixed since then receives it.
+
     TODO: define a pydantic object for response
     """
     model_name = body.get("model")
@@ -47,7 +51,7 @@ def handle_submission(
     message_id = "API#" + body_hash
 
     existing = results_cache.get_status(user_id, message_id)
-    if existing:
+    if existing and existing != "error":
         logger.info("[%s/%s] cache hit status=%s", user_id, message_id, existing)
         return 200, {"message_id": body_hash, "status": existing}
 

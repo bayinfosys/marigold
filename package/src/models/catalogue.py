@@ -88,7 +88,7 @@ def get_models_by_type(backend: DBBackend, table: str, model_type: ModelType) ->
     """Fetch every catalogue entry of a given type."""
     items = list(backend.query(table, ModelCatalogueItem, type=str(model_type)))
 
-    logger.info("found %i items for %s", len(items), str(model_type))
+    logger.debug("found %i items for %s", len(items), str(model_type))
 
     return items
 
@@ -121,18 +121,13 @@ def register_model(
     """Make one cached model available to the API and the worker.
 
     The queue is created before the row, so any row the API can read
-    already has a queue to send to. failed_reason on an existing row is
-    carried over: re-populating the cache says nothing about whether
-    the model loads.
+    already has a queue to send to. The row is written afresh from
+    models.yaml, which clears a failure the worker recorded on it:
+    populating is how an operator retries a failed model.
     """
     queue_backend.create_queue(item.queue_name)
 
     update = {"updated_at": datetime.now(timezone.utc).isoformat()}
-
-    existing = get_model(backend, table, item.type, item.name)
-
-    if existing is not None and existing.failed_reason:
-        update["failed_reason"] = existing.failed_reason
 
     backend.save(table, item.model_copy(update=update))
     logger.info("registered %s/%s", item.type.value, item.name)
