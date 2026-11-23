@@ -10,7 +10,9 @@ how several developers share the work.
     tasks/
       scripts/
         task.sh
-      <date>/
+        route.py
+        hooks/
+      <id>/
         WORKPLAN.md
         OUTCOME.md
         SQUASH_COMMIT_MSG
@@ -23,8 +25,9 @@ how several developers share the work.
         0001/
           ...
 
-`<date>` is the day the workplan was agreed. Tasks are numbered in the
-order they are applied.
+`<id>` is the workplan's id: a name, such as `refactoring`, or, when it
+has none, the day the workplan was agreed. Tasks are numbered in the
+order they are applied, and a task's id is `<id>/<nnnn>`.
 
 ## Files
 
@@ -81,7 +84,7 @@ for a later workplan.
    `tasks/scripts/task.sh accept <nnnn>`; push.
 4. Run the integration cycle, then write OUTCOME.md and commit it.
 5. Review the workplan as a whole, and write SQUASH_COMMIT_MSG.
-6. Squash-merge to master with `tasks/scripts/task.sh merge <date>`.
+6. Squash-merge to master with `tasks/scripts/task.sh merge <id>`.
 
 The maintainer authors every commit.
 
@@ -99,7 +102,8 @@ engineering loop:
 4. When the diff is right, `task.sh accept <nnnn>` commits it with
    COMMIT_MSG.
 
-task.sh takes `<date>/<nnnn>`, or `<nnnn>` in the newest workplan.
+task.sh takes `<id>/<nnnn>`, or `<nnnn>` in the workplan of the
+current branch, or else in the newest dated workplan.
 
 A change the patch would need outside its task, such as an
 architectural change, a refactoring or an unrelated fix, is raised for
@@ -110,15 +114,23 @@ a later workplan, not put into the patch.
 | Branch | Holds | Created from | Merged into |
 |---|---|---|---|
 | `master` | integrated, tested code; one commit per workplan | -- | -- |
-| `<date>-workplan` | one workplan: its files and one commit per task | master | master, squashed |
-| `<date>-<nnnn>` | one task, worked apart from its workplan branch | `<date>-workplan` | `<date>-workplan` |
+| `workplan/<id>/root` | one workplan: its files and one commit per task | master | master, squashed |
+| `workplan/<id>/task/<nnnn>` | one task, worked apart from its workplan branch | `workplan/<id>/root` | `workplan/<id>/root` |
+
+Git stores a branch name as a path, so no branch name can be the leading
+path of another: `workplan/<id>` cannot exist beside
+`workplan/<id>/task/0001`, which is why the workplan branch ends in
+`root`. The names make the tree queryable:
+
+    git branch -r --list 'origin/workplan/*/root'      # open workplans
+    git branch -r --list 'origin/workplan/<id>/*'      # one workplan and its tasks
 
 Task branches are needed only when several people work on one workplan
 at once; a single developer commits tasks directly to the workplan
 branch.
 
-A branch whose name matches no directory in tasks/ has no recorded
-intent. Merged branches are deleted, locally and on origin.
+A workplan branch whose `<id>` matches no directory in tasks/ has no
+recorded intent. Merged branches are deleted, locally and on origin.
 
 ## Merging
 
@@ -142,14 +154,40 @@ and a trailer naming the workplan:
 
 The task lines come from the branch:
 
-    git log --reverse --format=%s master..<date>-workplan | grep '^<date>/'
+    git log --reverse --format=%s master..workplan/<id>/root | grep '^<id>/'
 
-`task.sh merge <date>` squashes `<date>-workplan` into master with
+`task.sh merge <id>` squashes `workplan/<id>/root` into master with
 SQUASH_COMMIT_MSG; TASK_MAIN_BRANCH names another main branch.
 
-The tasks/<date>/ directory stays in master as the record of the work.
+The tasks/<id>/ directory stays in master as the record of the work.
 `git log --format='%h %s %(trailers:key=Workplan,valueonly)'` lists the
 workplan behind each commit on master.
+
+## Hooks
+
+`task.sh install` points this clone's hooks at tasks/scripts/hooks.
+After each commit, the post-commit hook runs `task.sh route` in the
+background and records the next step in .git/tasks/route.log, one line
+per commit:
+
+| Action | When | Targets |
+|---|---|---|
+| `complete` | a commit on master with a `Workplan:` trailer | the workplan |
+| `plan-tasks` | WORKPLAN.md changed | the workplan |
+| `make-patch` | TASK.md or BREAKDOWN.md changed | each task |
+| `review` | code changed in a commit whose subject is a task id | the task |
+| `none` | anything else, such as a change to this process | -- |
+
+The targets always come from the commit. Which action applies is
+decided by the rules, in the order of the table, or, with
+`TASK_CLASSIFIER=marigold`, by a model served by marigold
+(TASK_CLASSIFIER_MODEL, MARIGOLD_API_BASE), falling back to the rules
+when its answer is not an action with targets. `task.sh route [rev]`
+prints the decision for any commit.
+
+TASK_DISPATCH names a command the hook runs with the action and its
+targets. Whatever it runs writes files for the maintainer to review and
+commits nothing, so the hook never routes its own output.
 
 ## Working together
 
