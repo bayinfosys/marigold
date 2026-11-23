@@ -1,7 +1,9 @@
 # Tasks
 
 Work on this repository is planned and recorded here. A workplan
-breaks one goal into tasks, and each task is one patch.
+breaks one goal into tasks, and each task is one commit. This file is
+the whole process: the files, the steps, the branches, the merge and
+how several developers share the work.
 
 ## Layout
 
@@ -12,7 +14,9 @@ breaks one goal into tasks, and each task is one patch.
         0000/
           TASK.md
           BREAKDOWN.md
+          NOTES.md
           output.patch
+          COMMIT_MSG
         0001/
           ...
 
@@ -33,8 +37,21 @@ repository only and needs no further decisions before work starts.
 that changes what an operator or a client sees ends with a step that
 updates the documents affected.
 
-`output.patch` is the change, as `git format-patch` output, applied
-with `git am`.
+`NOTES.md` holds the review questions about a task and their answers,
+beside the task they shaped.
+
+`output.patch` is the change, as plain `git diff` output, built against
+the pushed head of the workplan branch and applied with `git apply`. A
+patch that fails `git apply --check` is regenerated against the current
+head, not merged by hand. New documents, such as task files, are
+delivered as files, not patches.
+
+`COMMIT_MSG` is the task's commit message: one line, the task id and
+then what the change does.
+
+    2026-11-23/0004 Include the loader's exception in ModelNotFoundError's message
+
+A change that needs a second line to describe is two tasks.
 
 `OUTCOME.md` is written once every task has been applied and run. It
 records each finding and what now addresses it, how the work was
@@ -43,14 +60,82 @@ for a later workplan.
 
 ## Steps
 
-1. Agree the workplan and its tasks, and commit them.
-2. For each task in order: confirm the tasks it depends on have landed
-   and the code is in the state the task expects; write output.patch;
-   review and apply it; run it; commit.
-3. Write OUTCOME.md and commit it.
-4. Review the workplan as a whole.
-5. Squash-merge to master, with the workplan goal and the outcome as
-   the message.
+1. Agree the workplan, and commit it on a new workplan branch.
+2. Write the task files. Commit each task when it is agreed, and refine
+   the others, in discussion or in their NOTES.md, until they are.
+3. For each task in order: confirm the tasks it depends on have landed
+   and the code is in the state the task expects; run the patch loop
+   below until the diff is right; run it; commit with
+   `git commit -F tasks/<date>/<nnnn>/COMMIT_MSG`; push.
+4. Run the integration cycle, then write OUTCOME.md and commit it.
+5. Review the workplan as a whole.
+6. Squash-merge to master, as Merging describes.
+
+The maintainer authors every commit.
+
+## The patch loop
+
+Once a task and its breakdown are agreed, generating its patch is the
+engineering loop:
+
+1. Generate output.patch and COMMIT_MSG from TASK.md and BREAKDOWN.md,
+   against the pushed head.
+2. Apply it with `git apply tasks/<date>/<nnnn>/output.patch` and read
+   the diff with `git diff`.
+3. If the diff is wrong, revert it with `git apply -R` on the same
+   patch, adjust TASK.md or BREAKDOWN.md, and generate again.
+4. When the diff is right, it is committed as applied, with COMMIT_MSG.
+
+A change the patch would need outside its task, such as an
+architectural change, a refactoring or an unrelated fix, goes into the
+backlog in TODO.md, not into the patch.
+
+## Branches
+
+| Branch | Holds | Created from | Merged into |
+|---|---|---|---|
+| `master` | integrated, tested code; one commit per workplan | -- | -- |
+| `<date>-workplan` | one workplan: its files and one commit per task | master | master, squashed |
+| `<date>-<nnnn>` | one task, worked apart from its workplan branch | `<date>-workplan` | `<date>-workplan` |
+
+Task branches are needed only when several people work on one workplan
+at once; a single developer commits tasks directly to the workplan
+branch.
+
+A branch whose name matches no directory in tasks/ has no recorded
+intent. Merged branches are deleted, locally and on origin.
+
+## Merging
+
+A workplan is squash-merged into master once its tasks and OUTCOME.md
+are committed and the integration cycle has passed on its branch. The
+message is the workplan's goal in one line, the task commit subjects in
+order, and a trailer naming the workplan:
+
+    2026-11-23 Findings, layers and settings
+
+    2026-11-23/0000 Describe the whole process in tasks/README.md
+    2026-11-23/0001 Add TODO.md
+    ...
+
+    Workplan: tasks/2026-11-23/WORKPLAN.md
+
+The tasks/<date>/ directory stays in master as the record of the work.
+`git log --format='%h %s %(trailers:key=Workplan,valueonly)'` lists the
+workplan behind each commit on master.
+
+## Working together
+
+- Fetch before starting work: `git fetch --prune`.
+- Each workplan has one owner. When master moves while a workplan is
+  open, the owner rebases its branch onto `origin/master` and pushes;
+  task branches rebase onto the workplan branch the same way.
+- Tasks whose files do not overlap can run in parallel on task
+  branches; tasks that share files run in order.
+- Pushing a task branch claims the task. When two people claim the
+  same task, the first push stands.
+- Suggested settings: `git config pull.rebase true`,
+  `git config rebase.autoStash true`, `git config fetch.prune true`.
 
 ## Review
 

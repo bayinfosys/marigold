@@ -25,7 +25,8 @@ Sections, one per layer:
     [network]    the ports and address the platform publishes
     [resources]  memory, CPU and process limits per service
     [models]     model loader settings: global, by type and by name
-    [environment] variables forwarded to every service
+    [environment] compose variables, received by a service whose
+                 compose file names them
 
 Secrets stay in the shell environment and never go in this file:
 HF_TOKEN, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION,
@@ -271,7 +272,7 @@ class HostConfig(_Section):
     models: HostModelSettings = Field(default_factory=HostModelSettings)
     environment: dict[str, str | int | float | bool] = Field(
         default={},
-        description="Variables forwarded to every service. An application's [environment] wins per key.",
+        description="Compose variables. A service receives one where its compose file names it. An application's [environment] wins per key. Neither file may set a variable the platform sets from another section.",
     )
 
     @field_validator("registry")
@@ -368,6 +369,29 @@ def host_config_path() -> Path | None:
     return None
 
 
+def reserved_variables() -> frozenset[str]:
+    """The variables compose_env() sets from sections other than [environment].
+
+    [environment] may not set them. An application's [environment] wins
+    over the host's, so a reserved name would let an application replace
+    a platform setting such as MARIGOLD_MODEL_SETTINGS. AWS_DEFAULT_REGION
+    is reserved although compose_env() sets it only when [storage] region
+    is set.
+    """
+    return frozenset(HostConfig().compose_env("")) | {"AWS_DEFAULT_REGION"}
+
+
+def check_environment(environment: dict, source) -> None:
+    """Reject [environment] keys the platform sets. source names the file."""
+    reserved = sorted(set(environment) & reserved_variables())
+
+    if reserved:
+        raise ValueError(
+            f"{source}: [environment] cannot set {', '.join(reserved)}: "
+            "the platform sets them from marigold-host.toml"
+        )
+
+
 def parse_host_config(text: str, source) -> HostConfig:
     """Parse and validate host config content. source names it in errors."""
     try:
@@ -376,13 +400,16 @@ def parse_host_config(text: str, source) -> HostConfig:
         raise ValueError(f"cannot parse {source}: {e}") from e
 
     try:
-        return HostConfig.model_validate(data)
+        host = HostConfig.model_validate(data)
     except ValidationError as e:
         lines = [
             f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
             for error in e.errors()
         ]
         raise ValueError(f"{source}:\n  " + "\n  ".join(lines)) from None
+
+    check_environment(host.environment, source)
+    return host
 
 
 def load_host_config(path: Path | None = None) -> HostConfig:

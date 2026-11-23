@@ -61,6 +61,7 @@ from tools.power_sampler import PowerSampler, check_model_vram, get_vram_state
 logger = logging.getLogger(__name__)
 
 _HEARTBEAT_BUFFER = 5  # seconds before timeout to extend visibility
+_POLL_INTERVAL = 1.0  # seconds between polls of an empty queue
 
 IDLE_TIMEOUT = int(os.getenv("IDLE_TIMEOUT", "180"))
 
@@ -470,6 +471,10 @@ class QueueRunner:
 
         WORKER_IDLE is published once when the queue empties, not on
         every empty poll: each event is a stored row.
+
+        An empty poll that does not end the run is followed by a sleep of
+        _POLL_INTERVAL, since the queue's receive returns at once when
+        the queue is empty.
         """
         self.publisher.publish(EventType.WORKER_STARTED)
         last_message_at = time.monotonic()
@@ -492,6 +497,7 @@ class QueueRunner:
                     self.publisher.publish(EventType.WORKER_IDLE)
                     idle = True
 
+                time.sleep(_POLL_INTERVAL)
                 continue
 
             idle = False

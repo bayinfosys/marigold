@@ -86,12 +86,25 @@ def _params_from_diffusion_pipeline(model) -> list:
     return params
 
 
+def _params_from_transformers_pipeline(model) -> list:
+    """Extract parameters from a transformers Pipeline, through its model.
+
+    Covers the automatic-speech-recognition pipeline the asr handler
+    loads. The pipeline's tokenizer and feature extractor hold no
+    parameters.
+    """
+    return list(model.model.model.named_parameters())
+
+
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 
 def _extract_named_parameters(model_name: str, model) -> list:
     """Dispatch to the appropriate parameter extractor for model.model.
+
+    A handler whose model is None, such as the http handler, has no
+    weights and no parameters to place.
 
     Raises NotImplementedError for unrecognised backing types so that new
     model types are caught explicitly rather than silently producing an
@@ -101,9 +114,16 @@ def _extract_named_parameters(model_name: str, model) -> list:
     function above and add an isinstance branch here.
     """
     from diffusers import DiffusionPipeline
+    from transformers import Pipeline
+
+    if model.model is None:
+        return []
 
     if isinstance(model.model, DiffusionPipeline):
         return _params_from_diffusion_pipeline(model)
+
+    if isinstance(model.model, Pipeline):
+        return _params_from_transformers_pipeline(model)
 
     if isinstance(model.model, torch.nn.Module):
         return _params_from_transformer(model)

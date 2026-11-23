@@ -258,10 +258,10 @@ def standard_loader(
         )
     except OSError as e:
         logger.error("'%s' not in local cache [%s]", modelname, str(e))
-        raise ModelNotFoundError(modelname) from e
+        raise ModelNotFoundError("'%s': %s: %s" % (modelname, type(e).__name__, e)) from e
     except Exception as e:
         logger.exception("'%s' tokenizer load failed [%s]", modelname, str(e))
-        raise ModelNotFoundError(modelname) from e
+        raise ModelNotFoundError("'%s': %s: %s" % (modelname, type(e).__name__, e)) from e
 
     logger.info("loaded '%s' tokenizer in %0.2fs", modelname, clock() - T0)
     T0 = clock()
@@ -283,10 +283,10 @@ def standard_loader(
         )
     except OSError as e:
         logger.error("'%s' not in local cache [%s]", modelname, str(e))
-        raise ModelNotFoundError(modelname) from e
+        raise ModelNotFoundError("'%s': %s: %s" % (modelname, type(e).__name__, e)) from e
     except Exception as e:
         logger.exception("'%s' model load failed [%s]", modelname, str(e))
-        raise ModelNotFoundError(modelname) from e
+        raise ModelNotFoundError("'%s': %s: %s" % (modelname, type(e).__name__, e)) from e
 
     try:
         model.eval()

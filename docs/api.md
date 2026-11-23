@@ -131,6 +131,9 @@ wrap the submit and poll path for unmodified OpenAI SDK clients
 - `chat_template_kwargs` passes through to the model's chat template,
   for example `{"enable_thinking": false}` for Qwen3.
 - `X-Marigold-Application-Id` attributes a request to an application.
+- A request for a model not in the catalogue fails with 400. A request
+  for a model the worker failed to load fails with 409, and the error's
+  `message` is the failure reason.
 
 `tool-call-conformance` in the examples registry checks all of this
 against the instruct models in a catalogue.

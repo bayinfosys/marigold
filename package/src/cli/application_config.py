@@ -5,7 +5,8 @@ An application config has three sections:
     [application]  identity and contents: name, description,
                    models_yaml, compose_files, requires
     [execution]    the application's containers: name, image, command
-    [environment]  variables forwarded to every service
+    [environment]  compose variables, received by a service whose
+                   compose file names them
 
 Unknown sections and unknown keys are errors, so a misspelt key fails
 when the config is read. Host sections and earlier section names are
@@ -22,6 +23,8 @@ import re
 
 from packaging.requirements import InvalidRequirement, Requirement
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+
+from .host_config import check_environment
 
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 _SEPARATORS = re.compile(r"[-_.]+")
@@ -135,10 +138,13 @@ class ApplicationConfig(_Section):
 def validate_application_config(data: dict, source) -> ApplicationConfig:
     """Validate a parsed marigold.toml; errors name the file and the key."""
     try:
-        return ApplicationConfig.model_validate(data)
+        config = ApplicationConfig.model_validate(data)
     except ValidationError as e:
         lines = [
             f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
             for error in e.errors()
         ]
         raise ValueError(f"{source}:\n  " + "\n  ".join(lines)) from None
+
+    check_environment(config.environment, source)
+    return config

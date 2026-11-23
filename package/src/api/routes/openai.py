@@ -516,7 +516,7 @@ async def create_embeddings(body: EmbeddingRequest, request: Request) -> Embeddi
         )
 
         if code != 200 or "message_id" not in resp:
-            raise HTTPException(status_code=400, detail={"error": resp})
+            raise HTTPException(status_code=code, detail={"error": resp})
 
         status_code, poll = await _poll(user_id, resp["message_id"], results_cache)
         result = _result_or_raise(status_code, poll)
