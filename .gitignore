@@ -11,3 +11,8 @@ html/dist/
 html/_data/
 
 *.env
+
+
+tasks/*/*/output.patch
+tasks/*/*/COMMIT_MSG
+tasks/*/SQUASH_COMMIT_MSG

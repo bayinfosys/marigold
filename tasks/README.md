@@ -8,9 +8,12 @@ how several developers share the work.
 ## Layout
 
     tasks/
+      scripts/
+        task.sh
       <date>/
         WORKPLAN.md
         OUTCOME.md
+        SQUASH_COMMIT_MSG
         0000/
           TASK.md
           BREAKDOWN.md
@@ -30,8 +33,11 @@ the findings that explain why the work is needed, and the tasks in
 order with their dependencies. It is the current accepted plan and is
 edited as the plan changes.
 
-`TASK.md` states one change and its effects. A task touches this
-repository only and needs no further decisions before work starts.
+`TASK.md` states one change and its effects. A task changes marigold:
+its code, its documentation or its build. It touches this repository
+only and needs no further decisions before work starts. Changes to this
+process, this file and tasks/scripts/, are committed directly, outside
+any workplan.
 
 `BREAKDOWN.md` lists the steps that make the change, in order. A task
 that changes what an operator or a client sees ends with a step that
@@ -46,12 +52,18 @@ patch that fails `git apply --check` is regenerated against the current
 head, not merged by hand. New documents, such as task files, are
 delivered as files, not patches.
 
+output.patch, COMMIT_MSG and SQUASH_COMMIT_MSG are working files.
+.gitignore ignores them, and git history records what they held.
+
 `COMMIT_MSG` is the task's commit message: one line, the task id and
 then what the change does.
 
     2026-11-23/0004 Include the loader's exception in ModelNotFoundError's message
 
 A change that needs a second line to describe is two tasks.
+
+`SQUASH_COMMIT_MSG` is the workplan's squash-merge message, written
+after OUTCOME.md, as Merging describes.
 
 `OUTCOME.md` is written once every task has been applied and run. It
 records each finding and what now addresses it, how the work was
@@ -65,12 +77,11 @@ for a later workplan.
    the others, in discussion or in their NOTES.md, until they are.
 3. For each task in order: confirm the tasks it depends on have landed
    and the code is in the state the task expects; run the patch loop
-   below until the diff is right; run it, and run
-   `python scripts/layer_check.py`, which reports nothing; commit with
-   `git commit -F tasks/<date>/<nnnn>/COMMIT_MSG`; push.
+   below until the diff is right; run it; accept it with
+   `tasks/scripts/task.sh accept <nnnn>`; push.
 4. Run the integration cycle, then write OUTCOME.md and commit it.
-5. Review the workplan as a whole.
-6. Squash-merge to master, as Merging describes.
+5. Review the workplan as a whole, and write SQUASH_COMMIT_MSG.
+6. Squash-merge to master with `tasks/scripts/task.sh merge <date>`.
 
 The maintainer authors every commit.
 
@@ -81,15 +92,18 @@ engineering loop:
 
 1. Generate output.patch and COMMIT_MSG from TASK.md and BREAKDOWN.md,
    against the pushed head.
-2. Apply it with `git apply tasks/<date>/<nnnn>/output.patch` and read
-   the diff with `git diff`.
-3. If the diff is wrong, revert it with `git apply -R` on the same
-   patch, adjust TASK.md or BREAKDOWN.md, and generate again.
-4. When the diff is right, it is committed as applied, with COMMIT_MSG.
+2. `task.sh apply <nnnn>` stages the patch, and `task.sh diff <nnnn>`
+   shows it; `task.sh view <nnnn>` prints COMMIT_MSG.
+3. If the diff is wrong, `task.sh reject <nnnn>` takes it out of the
+   tree; adjust TASK.md or BREAKDOWN.md, and generate again.
+4. When the diff is right, `task.sh accept <nnnn>` commits it with
+   COMMIT_MSG.
+
+task.sh takes `<date>/<nnnn>`, or `<nnnn>` in the newest workplan.
 
 A change the patch would need outside its task, such as an
-architectural change, a refactoring or an unrelated fix, goes into the
-backlog in TODO.md, not into the patch.
+architectural change, a refactoring or an unrelated fix, is raised for
+a later workplan, not put into the patch.
 
 ## Branches
 
@@ -109,17 +123,29 @@ intent. Merged branches are deleted, locally and on origin.
 ## Merging
 
 A workplan is squash-merged into master once its tasks and OUTCOME.md
-are committed and the integration cycle has passed on its branch. The
-message is the workplan's goal in one line, the task commit subjects in
-order, and a trailer naming the workplan:
+are committed and the integration cycle has passed on its branch.
+SQUASH_COMMIT_MSG holds the message: the workplan's goal in one line, a
+paragraph summarising what changed, the task commit subjects in order,
+and a trailer naming the workplan:
 
-    2026-11-23 Findings, layers and settings
+    2026-11-23 Settings as arguments, declared code layers
 
-    2026-11-23/0000 Describe the whole process in tasks/README.md
-    2026-11-23/0001 Add TODO.md
+    Model settings reach each loader and handler as a ModelSettings
+    argument, and no setting passes through the process environment.
+    ...
+
+    2026-11-23/0002 Describe [environment] as compose variables
+    2026-11-23/0003 Reject [environment] keys the platform sets
     ...
 
     Workplan: tasks/2026-11-23/WORKPLAN.md
+
+The task lines come from the branch:
+
+    git log --reverse --format=%s master..<date>-workplan | grep '^<date>/'
+
+`task.sh merge <date>` squashes `<date>-workplan` into master with
+SQUASH_COMMIT_MSG; TASK_MAIN_BRANCH names another main branch.
 
 The tasks/<date>/ directory stays in master as the record of the work.
 `git log --format='%h %s %(trailers:key=Workplan,valueonly)'` lists the

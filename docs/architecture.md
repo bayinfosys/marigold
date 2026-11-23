@@ -106,13 +106,6 @@ one layer import none of each other.
 - **entry points**: the CLI, and cache-init, which loads handlers to
   download their models.
 
-This table is the declaration the code is checked against:
-
-    python scripts/layer_check.py
-
-It reports each import against the layers and each cycle between
-components, and exits 1 when it finds any.
-
 ---
 
 ## Two gateways
