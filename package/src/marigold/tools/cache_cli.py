@@ -1,0 +1,407 @@
+"""
+cache_cli.py -- the cache container's entrypoint.
+
+Runs inside the cache image, on the core network, with the model cache
+mounted read-write and the cache's applications directory mounted
+read-only. It is the only component that writes the model catalogue,
+and the only one that creates the platform's tables.
+
+Commands:
+    populate        Create the platform tables; cache and register an
+                    application's models.
+    inspect-cache   Report cache state against an application's models.yaml.
+    validate        Validate an application's models.yaml against the schema.
+
+Applications, not paths:
+    Every command takes --application, a directory holding marigold.toml
+    and the models.yaml files it names. The marigold CLI installs
+    applications into the cache and passes the path of one; nothing here
+    globs a catalogue out of the environment, and nothing here reads the
+    host's configuration.
+
+Environment (set by docker-compose.core.yaml):
+    CACHE_DIR                       model cache root (default: /models)
+    MARIGOLD_DATABASE_URL           platform database DSN (populate)
+    MARIGOLD_MODEL_CATALOGUE_TABLE  catalogue table name
+    HF_TOKEN                        HuggingFace token for gated models
+    LOG_LEVEL                       logging verbosity (default: INFO)
+
+Examples:
+    python3 -m tools.cache_cli populate
+    python3 -m tools.cache_cli populate --application /applications/_src/abc123
+    python3 -m tools.cache_cli inspect-cache --application /applications/_src/abc123 --json
+"""
+
+import argparse
+import json
+import logging
+import os
+import shutil
+import sys
+import tomllib
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+from pydantic import ValidationError
+
+from marigold.shared.catalogue import load_catalogue_from_yaml
+from marigold.shared.db_models import ModelCatalogueItem
+from marigold.shared.model_cache import GB, cached_models, model_bytes
+
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(message)s",
+    stream=sys.stderr,
+)
+log = logging.getLogger("cache-cli")
+
+# suppress noisy HTTP request logging from huggingface_hub and its dependencies
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub.utils").setLevel(logging.WARNING)
+
+
+# ---------------------------------------------------------------------------
+# Error handling
+# ---------------------------------------------------------------------------
+
+
+class CliError(Exception):
+    """Raised at the point of failure inside any command function.
+
+    Caught once in main(), which logs the message and exits non-zero.
+    """
+
+    pass
+
+
+CommandResult = tuple[dict, bool]
+
+
+# ---------------------------------------------------------------------------
+# Platform tables
+# ---------------------------------------------------------------------------
+
+# Created here and nowhere else: this container runs before anything is
+# served, on every platform start, so it is the one place table
+# creation can live without a startup race between the API and the
+# worker.
+PLATFORM_TABLES = {
+    "MARIGOLD_MODEL_CATALOGUE_TABLE": "model_catalogue",
+    "MARIGOLD_RESULTS_TABLE": "results",
+    "MARIGOLD_USAGE_TABLE": "usage",
+    "MARIGOLD_WORKERS_TABLE": "workers",
+    "MARIGOLD_EVENTS_TABLE": "events",
+}
+
+
+def _table_name(env_var: str) -> str:
+    return os.getenv(env_var, PLATFORM_TABLES[env_var])
+
+
+# ---------------------------------------------------------------------------
+# Applications
+# ---------------------------------------------------------------------------
+
+# Earlier section names in an application config, and what to do instead.
+RENAMED_SECTIONS = {
+    "package": "rename [package] to [application]",
+    "deployment": "[deployment] is no longer read; use [application]",
+}
+
+
+def _application_models(application_path: Path) -> list[ModelCatalogueItem]:
+    """The catalogue an application declares, read from the application itself.
+
+    The application is mounted read-only from the cache, so this
+    container reads marigold.toml and the models.yaml files it names
+    under [application].
+    """
+    config_path = application_path / "marigold.toml"
+
+    if not config_path.exists():
+        raise CliError("no marigold.toml in %s" % application_path)
+
+    with open(config_path, "rb") as f:
+        try:
+            config = tomllib.load(f)
+        except tomllib.TOMLDecodeError as e:
+            raise CliError("cannot parse %s: %s" % (config_path, e)) from e
+
+    for section, message in RENAMED_SECTIONS.items():
+        if section in config:
+            raise CliError("%s: %s" % (config_path, message))
+
+    names = config.get("application", {}).get("models_yaml") or ["models.yaml"]
+
+    paths = [application_path / name for name in names]
+    missing = [p for p in paths if not p.exists()]
+
+    if missing:
+        raise CliError(
+            "declared models.yaml not found: " + ", ".join(str(p) for p in missing)
+        )
+
+    return load_catalogue_from_yaml([str(p) for p in paths])
+
+
+@dataclass
+class ModelCatalogueContext:
+    """The models an application declares, and where the cache is.
+
+    Without an application the catalogue is empty, which is a valid
+    state: populate still creates the platform tables, and inspect-cache
+    still reports what is on disk.
+    """
+
+    models: list[ModelCatalogueItem]
+    cache_path: Path
+
+    @classmethod
+    def load(cls, application: Optional[str] = None) -> "ModelCatalogueContext":
+        cache_path = Path(os.getenv("CACHE_DIR", "/models"))
+
+        if application is None:
+            return cls(models=[], cache_path=cache_path)
+
+        return cls(models=_application_models(Path(application)), cache_path=cache_path)
+
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+
+def validate_models(application: Optional[str] = None) -> CommandResult:
+    """Validate an application's models.yaml against the live catalogue
+    schema (ModelCatalogueItem) and check for duplicate (name, type)
+    pairs. Cheap and side-effect-free -- unlike populate, this never
+    touches HuggingFace or the database.
+    """
+    try:
+        ctx = ModelCatalogueContext.load(application)
+    except ValidationError as e:
+        raise CliError("schema validation failed:\n%s" % e)
+
+    seen: dict[tuple[str, str], str] = {}
+    duplicates = []
+
+    for m in ctx.models:
+        key = (m.name, m.type.value)
+        if key in seen:
+            duplicates.append({"name": m.name, "type": m.type.value})
+        seen[key] = m.source_file
+
+    result = {
+        "model_count": len(ctx.models),
+        "duplicates": duplicates,
+    }
+    return result, not duplicates
+
+
+def download_model(item: ModelCatalogueItem, cache_path: Path, hf_token: str) -> bool:
+    """Put one model's weights in the cache. True when they are there.
+
+    A model already complete in the cache is left alone. Provider
+    failures are logged and reported as False: one model failing is
+    survivable, so the caller decides what that means.
+    """
+    from marigold.tools.model_cache_shared import get_provider
+
+    provider_key, provider = get_provider(item)
+
+    if provider is None:
+        log.error("skip %s: unknown provider '%s'", item.name, provider_key)
+        return False
+
+    return provider.build(item, cache_path, hf_token)
+
+
+def _prune_undeclared(items: list[ModelCatalogueItem], cache_path: Path) -> list[str]:
+    """Remove cached models this application does not declare.
+
+    Refuses on an empty declared set: pruning against nothing would
+    empty a cache whose purpose is outliving any one application.
+    """
+    if not items:
+        raise CliError("refusing to prune with no models declared")
+
+    declared = {item.name for item in items}
+    pruned = []
+
+    for name, path in cached_models(cache_path).items():
+        if name in declared:
+            continue
+
+        log.info("pruning %s", name)
+        shutil.rmtree(path, ignore_errors=True)
+        pruned.append(name)
+
+    return pruned
+
+
+def populate(application: Optional[str] = None, prune: bool = False) -> CommandResult:
+    """Create the platform tables, then cache and register an application's models.
+
+    Each model is registered as its weights are confirmed present, so
+    the catalogue fills during a long download and holds only models
+    that are in the cache. A model that fails to download gets no row
+    and is listed under errors; that is survivable, so this succeeds.
+
+    Without an application this only creates the tables, which is what
+    the copy started by `docker compose up` does.
+    """
+    from dynawrap.backends.postgres import PostgresBackend
+    from marigold.backend.messaging.postgres import PostgresQueueBackend
+    from marigold.models import load_all
+    from marigold.shared.catalogue import register_model
+    from marigold.shared.database import DatabaseUnavailable, get_database_connection
+
+    ctx = ModelCatalogueContext.load(application)
+    ctx.cache_path.mkdir(parents=True, exist_ok=True)
+
+    hf_token = os.environ.get("HF_TOKEN", "")
+
+    # Providers dispatch on the registered model types.
+    load_all()
+
+    try:
+        conn = get_database_connection()
+    except DatabaseUnavailable as e:
+        raise CliError("catalogue database: %s" % e) from e
+
+    cached, errors = [], []
+
+    try:
+        for env_var in PLATFORM_TABLES:
+            PostgresBackend.create_table(conn, _table_name(env_var))
+
+        backend = PostgresBackend(conn)
+        queues = PostgresQueueBackend(conn)
+        table = _table_name("MARIGOLD_MODEL_CATALOGUE_TABLE")
+
+        for item in ctx.models:
+            if download_model(item, ctx.cache_path, hf_token):
+                register_model(backend, table, queues, item)
+                cached.append(item.name)
+            else:
+                errors.append(item.name)
+
+        pruned = _prune_undeclared(ctx.models, ctx.cache_path) if prune else []
+    finally:
+        conn.close()
+
+    seen: set = set()
+    cached_bytes = sum(model_bytes(name, ctx.cache_path, seen) for name in cached)
+
+    result = {
+        "declared": len(ctx.models),
+        "cached": cached,
+        "registered": len(cached),
+        "pruned": pruned,
+        "errors": errors,
+        "total_gb": round(cached_bytes / GB, 3),
+    }
+    return result, True
+
+
+def inspect_cache(as_json: bool, application: Optional[str] = None) -> CommandResult:
+    """Report cache state against the models an application declares.
+
+    Without an application everything on disk is UNDECLARED, which
+    makes this a plain listing of the cache rather than a comparison.
+    """
+    from marigold.tools.model_cache_shared import inspect_to_dict, run_inspect
+
+    ctx = ModelCatalogueContext.load(application)
+    state = inspect_to_dict(ctx.models, ctx.cache_path)
+
+    if not as_json:
+        run_inspect(state)
+
+    return state, not state["anomalies"]
+
+
+# ---------------------------------------------------------------------------
+# Argument parser
+# ---------------------------------------------------------------------------
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="cache_cli",
+        description="Marigold cache container: tables, weights, catalogue",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="as_json",
+        help="emit structured JSON to stdout",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    pop = sub.add_parser(
+        "populate", help="create platform tables, cache and register an application's models"
+    )
+    pop.add_argument(
+        "--application",
+        default=None,
+        metavar="DIR",
+        help="application directory, as this container sees it",
+    )
+    pop.add_argument(
+        "--prune",
+        action="store_true",
+        help="remove cached models this application does not declare",
+    )
+
+    ic = sub.add_parser("inspect-cache", help="report cache state against an application")
+    ic.add_argument("--application", default=None, metavar="DIR", help="application directory")
+
+    val = sub.add_parser("validate", help="validate an application's models.yaml")
+    val.add_argument("--application", default=None, metavar="DIR", help="application directory")
+
+    return parser
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+
+def main():
+    args = build_parser().parse_args()
+
+    try:
+        if args.command == "populate":
+            result, success = populate(args.application, prune=args.prune)
+
+        elif args.command == "inspect-cache":
+            result, success = inspect_cache(as_json=args.as_json, application=args.application)
+
+        elif args.command == "validate":
+            result, success = validate_models(args.application)
+
+        else:
+            result, success = {}, False
+
+    except CliError as e:
+        log.error("%s", e)
+        sys.exit(1)
+
+    # inspect-cache in human mode already printed its table
+    if args.command == "inspect-cache" and not args.as_json:
+        sys.exit(0 if success else 1)
+
+    if result:
+        print(json.dumps(result, indent=2))
+
+    sys.exit(0 if success else 1)
+
+
+if __name__ == "__main__":
+    main()

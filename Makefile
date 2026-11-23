@@ -27,8 +27,8 @@ CACHE_IMAGE    ?= $(GHCR_NAMESPACE)/marigold-cache
 WORKER_IMAGE   ?= $(GHCR_NAMESPACE)/marigold-worker
 EXECUTOR_IMAGE ?= $(GHCR_NAMESPACE)/marigold-executor
 PYTHON_EXECUTOR_IMAGE ?= $(EXECUTOR_IMAGE)-python
-DOCKERFILE     := package/src/compose/Dockerfile
-PYTHON_EXECUTOR_DOCKERFILE     := package/src/compose/Dockerfile.executor
+DOCKERFILE     := package/src/marigold/compose/Dockerfile
+PYTHON_EXECUTOR_DOCKERFILE     := package/src/marigold/compose/Dockerfile.executor
 
 .PHONY: build/api
 build/api:

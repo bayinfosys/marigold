@@ -64,15 +64,18 @@ Issues = "https://github.com/bayinfosys/marigold/issues"
 "Bay Information Systems" = "https://www.bayis.co.uk/"
 
 [project.scripts]
-marigold = "cli.main:main"
+marigold = "marigold.cli.main:main"
 
 [tool.setuptools_scm]
 local_scheme = "no-local-version"
 
 [tool.setuptools]
 package-dir = {"" = "package/src"}
-packages = ["api", "backend", "models", "shared", "tools", "cli", "compose"]
+
+[tool.setuptools.packages.find]
+where = ["package/src"]
+include = ["marigold*"]
 
 [tool.setuptools.package-data]
-compose = ["*.yaml", "Dockerfile", "environment/*.txt"]
-cli = ["site/*", "site/_layouts/*", "site/_includes/*", "site/_includes/icons/*", "site/assets/*"]
+"marigold.compose" = ["*.yaml", "Dockerfile", "environment/*.txt"]
+"marigold.cli" = ["site/*", "site/_layouts/*", "site/_includes/*", "site/_includes/icons/*", "site/assets/*"]

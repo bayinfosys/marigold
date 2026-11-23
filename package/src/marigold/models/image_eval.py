@@ -1,0 +1,103 @@
+"""Image evaluation models.
+
+Scores a single image against model-specific metrics. Labels and their
+meanings depend on the checkpoint -- an NSFW detector returns
+safe/unsafe probabilities, an aesthetic predictor returns quality scores.
+Labels are taken from the model's own config.id2label mapping.
+
+Compatible models:
+    Falconsai/nsfw_image_detection
+    cafeai/cafe_aesthetic
+"""
+
+import logging
+import os
+from time import perf_counter as clock
+
+import torch
+from marigold.shared.model_settings import ModelSettings
+from marigold.shared.schemas import EvalImageRequest, EvalResponse, EvalScore
+from marigold.models.standard_loader import ModelLoaderResult, standard_loader
+from marigold.shared.enums import ModelMode, ModelType
+from marigold.shared.outputs import decode_image
+from marigold.shared.registry import BaseModelHandler, model_spec
+from marigold.shared.usage import build_usage
+
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
+
+
+def load_image_eval(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
+    """Image classification models for image scoring."""
+    from transformers import AutoImageProcessor as T
+    from transformers import AutoModelForImageClassification as M
+    return standard_loader(T, M, modelname, cache_dir=cache_dir, **kwargs)
+
+
+@model_spec(
+    model_type=ModelType.IMAGE_EVAL,
+    mode=ModelMode.EVAL,
+    output_fields=[],
+    loader=load_image_eval,
+    request_model=EvalImageRequest,
+    response_model=EvalResponse,
+    route="/eval/image",
+)
+class ImageEvalModel(BaseModelHandler):
+
+    def __init__(self, modelname: str, settings: ModelSettings):
+        super().__init__(modelname, settings)
+
+    def _run(
+        self, user_id: str, message_id: str, request: EvalImageRequest
+    ) -> EvalResponse:
+        T = clock()
+
+        try:
+            image = decode_image(request.input)
+        except Exception as e:
+            logger.error(
+                "[%s/%s] failed to decode image [%s]", user_id, message_id, str(e)
+            )
+            raise ValueError("invalid image input") from e
+
+        logger.info(
+            "[%s/%s] evaluating image %s",
+            user_id, message_id, str(image.size),
+        )
+
+        inputs = self.processor(images=image, return_tensors="pt")
+
+        T1 = clock()
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+        iduration = clock() - T1
+
+        probs = torch.softmax(outputs.logits, dim=-1)[0]
+        scores = [
+            EvalScore(
+                label=self.model.config.id2label[i],
+                score=round(probs[i].item(), 4),
+            )
+            for i in range(len(probs))
+        ]
+
+        duration = clock() - T
+
+        logger.info(
+            "[%s/%s] '%s' scores=%s in %.2fs (inference %.2fs)",
+            user_id, message_id, self.modelname,
+            str(scores), duration, iduration,
+        )
+
+        usage = build_usage(
+            user_id=user_id,
+            model_type=ModelType.IMAGE_EVAL,
+            modelname=self.modelname,
+            duration=duration,
+            inference=iduration,
+            load_time_ms=self.load_time_ms,
+            model_size_bytes=self.model_size_bytes,
+        )
+
+        return EvalResponse(model=self.modelname, scores=scores, usage=usage)
