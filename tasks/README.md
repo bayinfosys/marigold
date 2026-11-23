@@ -180,8 +180,8 @@ stops unless every task the workplan lists is committed and OUTCOME.md
 is committed on the branch, and unless SQUASH_COMMIT_MSG holds only the
 goal line and the summary. It adds the task subjects, from
 `git log master..workplan/<id>/root`, and the trailer, so every task id
-reaches master's history, where `status` finds it. TASK_MAIN_BRANCH
-names another main branch.
+reaches master's history, where `status` finds it. TASK_MASTER_BRANCH
+gives master's name in a repository that calls it something else.
 
 The tasks/<id>/ directory stays in master as the record of the work.
 `git log --format='%h %s %(trailers:key=Workplan,valueonly)'` lists the

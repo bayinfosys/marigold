@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """tasks/scripts/task.py -- the commands of the task process.
 
     task.py status [ID | ID/NNNN | NNNN]   where a workplan or a task stands
@@ -6,7 +7,7 @@
     task.py accept [ID/]NNNN   apply if needed, then commit with COMMIT_MSG
     task.py reject [ID/]NNNN   take an applied, uncommitted patch back out
     task.py view   [ID/]NNNN   print COMMIT_MSG
-    task.py merge  [ID]        squash workplan/ID/root into the main branch
+    task.py merge  [ID]        squash workplan/ID/root into master
     task.py route  [REV]       the next step after a commit (default HEAD)
     task.py install            run tasks/scripts/hooks in this clone
 
@@ -19,7 +20,8 @@ else the newest dated directory under tasks/.
 
 Environment:
 
-    TASK_MAIN_BRANCH          the main branch (default master)
+    TASK_MASTER_BRANCH        master's name, in a repository that calls it
+                              something else (default master)
     TASK_CLASSIFIER           rules (default) or marigold, for route
     TASK_CLASSIFIER_MODEL     the model route asks, with marigold
     TASK_CLASSIFIER_TIMEOUT   seconds (default 120)
@@ -38,7 +40,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-MAIN = os.environ.get("TASK_MAIN_BRANCH", "master")
+MASTER = os.environ.get("TASK_MASTER_BRANCH", "master")
 TASKS = Path("tasks")
 
 DATED = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -79,12 +81,12 @@ def succeeds(*args: str) -> bool:
     return subprocess.run(["git", *args], capture_output=True).returncode == 0
 
 
-def main_ref() -> str:
-    """The main branch, locally if it exists there, else on origin."""
-    for ref in (MAIN, f"origin/{MAIN}"):
+def master_ref() -> str:
+    """Master, locally if it exists there, else on origin."""
+    for ref in (MASTER, f"origin/{MASTER}"):
         if succeeds("rev-parse", "--verify", "-q", ref):
             return ref
-    raise Fail(f"no branch {MAIN}, locally or on origin")
+    raise Fail(f"no branch {MASTER}, locally or on origin")
 
 
 def clean() -> bool:
@@ -163,7 +165,7 @@ def patch_applied(patch: Path) -> bool:
 def state(tid: str, seen: frozenset = frozenset()) -> tuple[str, str]:
     """A task's state and its detail: the commit, or the tasks waited on.
 
-    merged       a commit on the main branch lists the task
+    merged       a commit on master lists the task
     complete     a commit on the current branch is the task's
     testing      output.patch is in the index or the tree, uncommitted
     development  output.patch exists and would apply
@@ -175,7 +177,7 @@ def state(tid: str, seen: frozenset = frozenset()) -> tuple[str, str]:
     unspecified  WORKPLAN.md lists the task, with no directory
     unknown      neither the workplan nor tasks/ knows the task
     """
-    for ref, name in ((main_ref(), "merged"), ("HEAD", "complete")):
+    for ref, name in ((master_ref(), "merged"), ("HEAD", "complete")):
         if commit := commit_for(tid, ref):
             return name, commit
 
@@ -280,7 +282,7 @@ def cmd_view(arg: str) -> None:
 
 
 def cmd_merge(arg: str | None) -> None:
-    """Squash workplan/<id>/root into the main branch.
+    """Squash workplan/<id>/root into master.
 
     Every task must be committed and OUTCOME.md committed on the branch.
     SQUASH_COMMIT_MSG holds the goal line and the summary; the task
@@ -288,7 +290,7 @@ def cmd_merge(arg: str | None) -> None:
     """
     wid = workplan_id(arg)
     branch = f"workplan/{wid}/root"
-    main = main_ref()
+    master = master_ref()
 
     if not succeeds("rev-parse", "--verify", "-q", f"refs/heads/{branch}"):
         raise Fail(f"branch {branch} does not exist")
@@ -297,7 +299,7 @@ def cmd_merge(arg: str | None) -> None:
 
     open_tasks = [
         tid for tid in workplan_tasks(wid)
-        if not (commit_for(tid, branch) or commit_for(tid, main))
+        if not (commit_for(tid, branch) or commit_for(tid, master))
     ]
     if open_tasks:
         raise Fail("not committed on " + branch + ": " + ", ".join(open_tasks))
@@ -311,16 +313,16 @@ def cmd_merge(arg: str | None) -> None:
                    "merge adds the task subjects and the Workplan trailer")
 
     subjects = [
-        s for s in git("log", "--reverse", "--format=%s", f"{main}..{branch}").splitlines()
+        s for s in git("log", "--reverse", "--format=%s", f"{master}..{branch}").splitlines()
         if re.match(rf"{re.escape(wid)}/\d{{4}} ", s)
     ]
     if not subjects:
-        raise Fail(f"no task commits on {branch} beyond {main}")
+        raise Fail(f"no task commits on {branch} beyond {master}")
 
     message = f"{head}\n\n" + "\n".join(subjects) + f"\n\nWorkplan: tasks/{wid}/WORKPLAN.md\n"
     print(message)
 
-    git("switch", MAIN, show=True)
+    git("switch", MASTER, show=True)
     git("merge", "--squash", branch, show=True)
     git("commit", "-F", "-", input=message)
     print(git("log", "-1", "--format=%h %s"))
@@ -339,6 +341,32 @@ def cmd_install() -> None:
 # ---------------------------------------------------------------------------
 
 ACTIONS = ("complete", "plan-tasks", "make-patch", "review", "none")
+
+# The classifier's question. route fills in the commit's facts; the
+# answer must be one of ACTIONS.
+ROUTE_PROMPT = """\
+A commit was made in a repository that plans work in tasks/.
+tasks/<id>/WORKPLAN.md is a workplan; tasks/<id>/<nnnn>/TASK.md and
+BREAKDOWN.md define a task; a commit whose subject starts <id>/<nnnn>
+is that task's change to the code; a commit on master with a Workplan
+trailer completes a workplan.
+
+Actions:
+complete: a workplan reached master
+plan-tasks: the workplan changed, so its tasks need refreshing
+make-patch: a task definition changed, so its patch needs generating
+review: code changed under a task, so it needs checking against the task
+none: nothing to do
+
+Branch: {branch}
+Parents: {parents}
+Subject: {subject}
+Workplan trailer: {workplan}
+Changed paths:
+{paths}
+
+Answer with the action's name only.
+"""
 
 PLAN_PATH = re.compile(r"^tasks/([^/]+)/WORKPLAN\.md$")
 TASK_PATH = re.compile(r"^tasks/([^/]+)/(\d{4})/(?:TASK|BREAKDOWN)\.md$")
@@ -366,7 +394,7 @@ def candidates(f: dict) -> dict[str, list[str]]:
     """Each action the commit could lead to, with its targets."""
     found: dict[str, list[str]] = {}
 
-    if f["branch"] == MAIN:
+    if f["branch"] == MASTER:
         if m := PLAN_PATH.match(f["workplan"]) or BRANCH.search(f["subject"]):
             found["complete"] = [m[1]]
 
@@ -394,24 +422,12 @@ def classify(f: dict) -> str | None:
     timeout = float(os.environ.get("TASK_CLASSIFIER_TIMEOUT", "120"))
     paths = "\n".join(f["paths"][:50])
 
-    prompt = (
-        "A commit was made in a repository that plans work in tasks/.\n"
-        "tasks/<id>/WORKPLAN.md is a workplan; tasks/<id>/<nnnn>/TASK.md and\n"
-        "BREAKDOWN.md define a task; a commit whose subject starts <id>/<nnnn>\n"
-        "is that task's change to the code; a commit on the main branch with a\n"
-        "Workplan trailer completes a workplan.\n\n"
-        "Actions:\n"
-        "complete: a workplan reached the main branch\n"
-        "plan-tasks: the workplan changed, so its tasks need refreshing\n"
-        "make-patch: a task definition changed, so its patch needs generating\n"
-        "review: code changed under a task, so it needs checking against the task\n"
-        "none: nothing to do\n\n"
-        f"Branch: {f['branch']}\n"
-        f"Parents: {f['parents']}\n"
-        f"Subject: {f['subject']}\n"
-        f"Workplan trailer: {f['workplan'] or '(none)'}\n"
-        f"Changed paths:\n{paths}\n\n"
-        "Answer with the action's name only."
+    prompt = ROUTE_PROMPT.format(
+        branch=f["branch"],
+        parents=f["parents"],
+        subject=f["subject"],
+        workplan=f["workplan"] or "(none)",
+        paths=paths,
     )
 
     request = urllib.request.Request(
@@ -479,7 +495,7 @@ def main() -> int:
         ("view", "print COMMIT_MSG"),
     ):
         sub.add_parser(name, help=text).add_argument("task", metavar="[ID/]NNNN")
-    sub.add_parser("merge", help="squash workplan/ID/root into the main branch").add_argument("id", nargs="?")
+    sub.add_parser("merge", help="squash workplan/ID/root into master").add_argument("id", nargs="?")
     sub.add_parser("route", help="the next step after a commit").add_argument("rev", nargs="?")
     sub.add_parser("install", help="run tasks/scripts/hooks in this clone")
 
