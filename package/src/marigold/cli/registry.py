@@ -24,7 +24,7 @@ page's front matter. Commands shown to readers are part of that data.
 Every <root>/<name>/marigold.toml is published (discover), all under
 one version: the registry's tag, passed to the build. The
 registry's identity comes from marigold-registry.toml at the root
-(cli.registry_config). Everything else is derived from the archives:
+(marigold.cli.registry_config). Everything else is derived from the archives:
 the build writes each archive, extracts it to a temporary directory,
 and takes the index entry, the README and the declared models from
 there. Nothing is maintained by hand, and nothing depends on a previous
@@ -355,7 +355,7 @@ def _entry(archive: Path, *, out: Path, config: ApplicationConfig, digest: str) 
     """The index entry for one archive.
 
     sha256 is of the archive's bytes, checked before unpacking. digest
-    is of the application's manifest (cli.manifest), checked after: it
+    is of the application's manifest (marigold.cli.manifest), checked after: it
     identifies the files, whatever the packaging.
     """
     return {

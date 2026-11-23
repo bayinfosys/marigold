@@ -1,11 +1,11 @@
 """Model handler registry population.
 
-MODEL_TYPE values map to handlers through shared.registry._SPECS, which
+MODEL_TYPE values map to handlers through marigold.shared.registry._SPECS, which
 is populated by calling load_all(). Call sites that need the full
 registry -- the worker, the cache container -- call load_all()
 explicitly; importing this module alone does not import any handler.
 
-The worker's entry point is models.entrypoint_handlers.local_handler.
+The worker's entry point is marigold.models.entrypoint_handlers.local_handler.
 """
 
 import logging
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 def load_all():
-    """Import all handler modules to populate shared.registry._SPECS.
+    """Import all handler modules to populate marigold.shared.registry._SPECS.
 
     Must be called before any code that looks up _SPECS by model type.
     Importing this module alone does not trigger these imports.

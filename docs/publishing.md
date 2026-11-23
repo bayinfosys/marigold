@@ -191,4 +191,4 @@ A `site` directory is laid over the default catalogue: a file there
 replaces the default at the same path. Layouts, the stylesheet, the
 front page, `llms.txt` and `sitemap.xml` can all be replaced. The
 default templates, and the data they read, are in
-[package/src/cli/site](https://github.com/bayinfosys/marigold/tree/master/package/src/cli/site).
+[package/src/marigold/cli/site](https://github.com/bayinfosys/marigold/tree/master/package/src/marigold/cli/site).

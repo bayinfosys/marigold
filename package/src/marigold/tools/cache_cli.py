@@ -27,9 +27,9 @@ Environment (set by docker-compose.core.yaml):
     LOG_LEVEL                       logging verbosity (default: INFO)
 
 Examples:
-    python3 -m tools.cache_cli populate
-    python3 -m tools.cache_cli populate --application /applications/_src/abc123
-    python3 -m tools.cache_cli inspect-cache --application /applications/_src/abc123 --json
+    python3 -m marigold.tools.cache_cli populate
+    python3 -m marigold.tools.cache_cli populate --application /applications/_src/abc123
+    python3 -m marigold.tools.cache_cli inspect-cache --application /applications/_src/abc123 --json
 """
 
 import argparse

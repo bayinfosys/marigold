@@ -26,7 +26,7 @@ def _get_backend():
 
     Deliberately not connected at import time: usage.py is imported by
     every handler module, which means it is also imported during
-    cache-init's models.load_all() call -- before Postgres exists in
+    cache-init's marigold.models.load_all() call -- before Postgres exists in
     the compose startup order. write_usage() is never actually called
     from that path, so the connection only needs to succeed once a
     real inference request needs to record usage.

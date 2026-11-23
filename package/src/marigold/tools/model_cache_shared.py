@@ -12,7 +12,7 @@ get_provider(item)
     (provider_key, provider) for one catalogue item. provider is None
     when the key is not registered.
 
-shared.model_cache owns the cache's layout: directory names, the
+marigold.shared.model_cache owns the cache's layout: directory names, the
 models on disk, and their sizes.
 
 is_model_complete(cache_path, model_name)

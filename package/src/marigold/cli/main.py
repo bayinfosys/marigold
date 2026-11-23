@@ -38,7 +38,7 @@ subdirectories as it needs them. Layout beyond marigold.toml is private
 to the application -- see APPLICATIONS.md.
 
 This CLI never runs a model or touches torch. cache validate imports
-shared.catalogue for schema validation only -- that module's import
+marigold.shared.catalogue for schema validation only -- that module's import
 chain was checked directly to confirm it has no eager side effects (no
 DB connection, no network call) at import time.
 """
@@ -252,7 +252,7 @@ def main():
     args = build_parser().parse_args()
 
     # One route for the host config: the option sets the variable, and
-    # cli.host_config reads only the variable and the default paths.
+    # marigold.cli.host_config reads only the variable and the default paths.
     if args.host_config:
         os.environ[HOST_CONFIG_ENV] = args.host_config
 

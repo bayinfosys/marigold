@@ -11,7 +11,7 @@ and by model name. resolve_settings decides each setting's value at a
 load; the worker passes the result to the handler, which passes it to
 the loader, and the cache container passes it to the loader.
 
-This module imports only pydantic and shared.enums, so the CLI can
+This module imports only pydantic and marigold.shared.enums, so the CLI can
 import it.
 """
 

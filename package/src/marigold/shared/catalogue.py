@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 #
 # INSTRUCT's "chat"/"chat" matches the existing convention in
 # examples/benchmark-llm/models.yaml. TEXT_EMBEDDING/IMAGE_EMBEDDING
-# follow shared.enums.ModelModalities' vocabulary (text/image/embedding).
+# follow marigold.shared.enums.ModelModalities' vocabulary (text/image/embedding).
 # TTS, TXT2AUDIO, DEPTH, IMG2TXT, TXT2IMG below are reasonable guesses,
 # not drawn from an existing yaml entry -- worth confirming against
 # actual usage before relying on them.

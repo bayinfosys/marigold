@@ -33,16 +33,16 @@ are stored as objects and returned as references; see [API](api.md).
 OpenAI-compatible endpoints.
 
 The source of this list is `ModelType` in
-[package/src/shared/enums.py](https://github.com/bayinfosys/marigold/blob/master/package/src/shared/enums.py),
+[package/src/marigold/shared/enums.py](https://github.com/bayinfosys/marigold/blob/master/package/src/marigold/shared/enums.py),
 and the handlers in
-[package/src/models](https://github.com/bayinfosys/marigold/tree/master/package/src/models).
+[package/src/marigold/models](https://github.com/bayinfosys/marigold/tree/master/package/src/marigold/models).
 
 ## Adding a model type
 
-1. Add a handler in `package/src/models/`, following the existing
+1. Add a handler in `package/src/marigold/models/`, following the existing
    pattern, and register its import in `models/load_all()`.
 2. Every handler is registered at import time with the `@model_spec`
-   decorator from `shared.registry`. A `ModelSpec` couples the model
+   decorator from `marigold.shared.registry`. A `ModelSpec` couples the model
    type, the mode (embed, eval, gen), the loader, the handler class
    implementing `_run()`, the request and response models, the binary
    output fields and the route.

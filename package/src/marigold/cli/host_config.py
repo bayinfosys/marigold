@@ -33,7 +33,7 @@ HF_TOKEN, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION,
 AZURE_STORAGE_ACCOUNT, AZURE_STORAGE_CONNECTION_STRING.
 
 This module imports nothing from the rest of the CLI, so every other
-module can import it. [models] is shared.model_settings.HostModelSettings,
+module can import it. [models] is marigold.shared.model_settings.HostModelSettings,
 the type the worker reads back from MARIGOLD_MODEL_SETTINGS.
 """
 

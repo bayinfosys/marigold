@@ -137,7 +137,7 @@ def application_models(application_dir: Path, config: dict) -> list:
     """The catalogue items an application declares.
 
     Parsed in-process, which is what `cache validate` is: no torch, no
-    network, no database at import time in shared.catalogue, checked
+    network, no database at import time in marigold.shared.catalogue, checked
     directly before this was written.
     """
     from marigold.shared.catalogue import load_catalogue_from_yaml

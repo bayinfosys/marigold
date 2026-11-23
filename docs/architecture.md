@@ -87,9 +87,10 @@ stopped instance leaves that instance unable to start.
 
 ## Code layers
 
-The Python packages under `package/src` sit in four layers. A
-component imports only from layers below its own, and components in
-one layer import none of each other.
+The subpackages of `marigold`, under `package/src/marigold`, sit in
+four layers. A component imports only from layers below its own, and
+components in one layer import none of each other. Each component is
+the subpackage of that name: cli is `marigold.cli`.
 
 | Layer | Components |
 |---|---|

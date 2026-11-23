@@ -92,7 +92,7 @@ def _decode_audio(input_str: str, target_sr: int) -> dict:
 
     decode_binary_input handles the base64 decoding. The pydub
     conversion step (format detection, channel collapse, resampling) is
-    specific to audio and lives here rather than in shared.outputs.
+    specific to audio and lives here rather than in marigold.shared.outputs.
     """
     raw = decode_binary_input(input_str)
 

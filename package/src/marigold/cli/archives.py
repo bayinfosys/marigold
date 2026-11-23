@@ -3,12 +3,12 @@
 An archive is a .tar.gz of an application directory. This module turns
 a directory into an archive and an archive into an extracted tree in
 the cache. It knows nothing about application names or the installed
-index; cli.applications decides what those trees are.
+index; marigold.cli.applications decides what those trees are.
 
 Archives are copied into the cache and extracted there, because
 containers mount the result and outlive the command that started them.
 
-Which files an archive holds is cli.manifest's decision: an archive
+Which files an archive holds is marigold.cli.manifest's decision: an archive
 holds exactly the files its application's manifest lists, and
 write_archive checks that before returning.
 """
@@ -115,7 +115,7 @@ def archive_manifest(archive: Path) -> str:
     """The manifest of the application inside an archive, read in place.
 
     Computed from the members without extracting them, by the same
-    rules as cli.manifest.manifest_text for a directory. An archive
+    rules as marigold.cli.manifest.manifest_text for a directory. An archive
     holding one top-level directory is read from inside it.
     """
     with tarfile.open(archive) as tar:

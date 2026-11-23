@@ -105,7 +105,7 @@ marigold application verify              # every installed application against i
 ## Repository structure
 
 ```
-package/src/
+package/src/marigold/
   api/                  FastAPI application; routes/ is a package
   models/               model handlers, one file per model type
   shared/               enums, registry, database, outputs, usage

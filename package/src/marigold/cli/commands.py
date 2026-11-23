@@ -568,7 +568,7 @@ def cmd_cache_init(args):
 def cmd_cache_validate(args):
     """Check an application's models.yaml files load cleanly.
 
-    In-process, no container: shared.catalogue has no eager side
+    In-process, no container: marigold.shared.catalogue has no eager side
     effects at import time, verified directly.
     """
     application_dir = applications.resolve_target(args.target)

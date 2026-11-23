@@ -1,6 +1,6 @@
 """Output persistence and binary I/O utilities.
 
-Writes binary inference outputs to the object store (shared.storage), and
+Writes binary inference outputs to the object store (marigold.shared.storage), and
 provides shared utilities for:
     - image decoding and encoding
     - binary input handling (base64)

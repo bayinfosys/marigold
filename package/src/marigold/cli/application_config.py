@@ -10,7 +10,7 @@ An application config has three sections:
 
 Unknown sections and unknown keys are errors, so a misspelt key fails
 when the config is read. Host sections and earlier section names are
-rejected before validation by cli.config, with messages naming the
+rejected before validation by marigold.cli.config, with messages naming the
 change.
 
 Names are in PEP 503 normal form: lowercase letters and digits with

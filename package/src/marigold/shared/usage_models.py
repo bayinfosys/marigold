@@ -2,7 +2,7 @@
 
 UsageItem is one row in the usage table: a billable or measurable event,
 written once and never updated. ModelUsageStats, the inference-level
-facts, is defined in shared.schemas and carried here as model_stats.
+facts, is defined in marigold.shared.schemas and carried here as model_stats.
 """
 
 from datetime import datetime, timezone

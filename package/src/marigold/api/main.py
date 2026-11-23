@@ -4,7 +4,7 @@ The lifespan hook constructs Postgres backends from MARIGOLD_DATABASE_URL
 and wires them into app.state. Route handlers call receiver_logic
 functions via app.state for the submission and polling paths.
 
-    uvicorn api.main:app --port 8000
+    uvicorn marigold.api.main:app --port 8000
 
 Environment variables
 ---------------------

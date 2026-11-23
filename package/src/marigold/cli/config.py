@@ -2,8 +2,8 @@
 
 Two files, each with its own validated model:
 
-    marigold-host.toml  how this machine runs the platform (cli.host_config)
-    marigold.toml       what one application is and runs (cli.application_config)
+    marigold-host.toml  how this machine runs the platform (marigold.cli.host_config)
+    marigold.toml       what one application is and runs (marigold.cli.application_config)
 
 The host sections are [platform], [storage], [database], [registry],
 [network], [resources] and [models]. An application config that sets
