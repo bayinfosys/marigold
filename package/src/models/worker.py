@@ -45,6 +45,12 @@ from pydantic import ValidationError
 from models.catalogue import get_all_models
 from shared.db_models import ModelCatalogueItem, set_model_config_env
 from shared.enums import StatusCode
+from shared.model_settings import (
+    HostModelSettings,
+    describe_settings,
+    resolve_settings,
+    resolved_values,
+)
 from shared.registry import _SPECS
 from shared.results_cache import ResultsCache
 from shared.schedule_models import EventType, LifecycleEvent, MarigoldMessage
@@ -127,15 +133,31 @@ class LifecyclePublisher:
 
 @contextmanager
 def resident_model(
-    entry: ModelCatalogueItem, publisher: LifecyclePublisher
+    entry: ModelCatalogueItem,
+    publisher: LifecyclePublisher,
+    host_settings: HostModelSettings,
 ) -> Iterator[Any]:
     """Make entry's model resident for the duration of the block.
 
-    Raises ModelLoadError if the model cannot be loaded or does not fit,
-    having already released whatever was allocated. The VRAM check
-    failing is an ordinary exit from this scope: the weights that landed
-    before it ran are unloaded on the way out, which is what stops one
-    oversized model from crowding out every model after it.
+    The load is three steps: resolve the model's settings from the
+    loader defaults, the entry and host_settings, apply them to the
+    environment and log them with their sources; construct the handler;
+    check the weights fit in VRAM.
+
+    The load ends in one event. MODEL_LOADED carries the settings with
+    their sources, the footprint, the dtype, the bytes on each device
+    and the bytes off the GPU; on a worker with no CUDA device the
+    placement is the footprint on "cpu". MODEL_LOAD_FAILED carries what
+    the load reached and the error.
+
+    Yields the model and the MODEL_LOADED payload.
+
+    Raises ModelLoadError if any step fails, having already released
+    whatever was allocated, so a setting that cannot be applied fails
+    this model and no other. The VRAM check failing is an ordinary exit
+    from this scope: the weights that landed before it ran are unloaded
+    on the way out, which is what stops one oversized model from
+    crowding out every model after it.
     """
     publisher.publish(EventType.MODEL_LOADING)
 
@@ -155,19 +177,34 @@ def resident_model(
     )
 
     model = None
+    load: dict = {}
 
     try:
         try:
+            settings = resolve_settings(entry.type, entry.name, entry.settings, host_settings)
+            load["settings"] = settings
+            logger.info("settings for '%s': %s", entry.name, describe_settings(settings))
+            set_model_config_env(resolved_values(settings))
+
             model = spec.handler_class(entry.name)
-            publisher.publish(EventType.MODEL_LOADED, payload=get_vram_state())
+            load["footprint_bytes"] = model.model_size_bytes
+            load["dtype"] = str(getattr(model.model, "dtype", ""))
 
             if torch.cuda.is_available():
-                check_model_vram(entry.name, model)
+                load["placement"] = check_model_vram(entry.name, model)
+            else:
+                load["placement"] = {"cpu": model.model_size_bytes}
+
+            load["cpu_offload_bytes"] = sum(
+                n for device, n in load["placement"].items() if not device.startswith("cuda")
+            )
+
+            publisher.publish(EventType.MODEL_LOADED, payload={**load, **get_vram_state()})
         except Exception as e:
-            publisher.publish(EventType.MODEL_LOAD_FAILED, payload={"error": str(e)})
+            publisher.publish(EventType.MODEL_LOAD_FAILED, payload={**load, "error": str(e)})
             raise ModelLoadError(str(e)) from e
 
-        yield model
+        yield model, load
 
     finally:
         if model is not None:
@@ -224,6 +261,8 @@ class QueueRunner:
         hostname:             Host this process runs on.
         idle_timeout:         Seconds to keep polling after the queue
                               empties. -1 means poll indefinitely.
+        cpu_offload_bytes:    Model bytes off the GPU at load, recorded
+                              with each request's usage.
     """
 
     def __init__(
@@ -238,8 +277,10 @@ class QueueRunner:
         worker_id: str,
         hostname: str,
         idle_timeout: int = None,
+        cpu_offload_bytes: int = 0,
     ):
         self.model = model
+        self.cpu_offload_bytes = cpu_offload_bytes
         self.queue = entry.queue_name
         self.model_name = entry.name
         self.model_type = entry.type
@@ -376,8 +417,7 @@ class QueueRunner:
                 result = self.model.process(msg.user_id, msg.message_id, request)
 
             usage_update = sampler.as_usage_fields()
-            # FIXME: we need to capture this in power sampler
-            # usage_update["cpu_offload_bytes"] = self._cpu_offload_bytes
+            usage_update["cpu_offload_bytes"] = self.cpu_offload_bytes
             usage_update["worker_id"] = self.worker_id
             usage_update["hostname"] = self.hostname
             usage_update["application_id"] = msg.model_inputs.get("application_id") or ""
@@ -426,9 +466,14 @@ class QueueRunner:
     # -----------------------------------------------------------------------
 
     def run(self) -> None:
-        """Poll the queue and process messages until idle_timeout elapses."""
+        """Poll the queue and process messages until idle_timeout elapses.
+
+        WORKER_IDLE is published once when the queue empties, not on
+        every empty poll: each event is a stored row.
+        """
         self.publisher.publish(EventType.WORKER_STARTED)
         last_message_at = time.monotonic()
+        idle = False
 
         while True:
             msg, receipt_handle = self._get_message()
@@ -443,8 +488,13 @@ class QueueRunner:
                     self.publisher.publish(EventType.WORKER_EXITING)
                     break
 
-                self.publisher.publish(EventType.WORKER_IDLE)
+                if not idle:
+                    self.publisher.publish(EventType.WORKER_IDLE)
+                    idle = True
+
                 continue
+
+            idle = False
 
             try:
                 with self._heartbeat_context(receipt_handle):
@@ -487,6 +537,8 @@ class ModelScheduler:
                               next model can be loaded promptly.
         sweep_interval:       Seconds to sleep when every queue is empty.
         worker_id:            Overrides MARIGOLD_WORKER_ID and hostname.
+        host_settings:        The host's [models], resolved against each
+                              entry at its load.
     """
 
     def __init__(
@@ -501,6 +553,7 @@ class ModelScheduler:
         idle_timeout: int = 0,
         sweep_interval: int = 10,
         worker_id: str = None,
+        host_settings: HostModelSettings = None,
     ):
         self.catalogue_backend = catalogue_backend
         self.catalogue_table = catalogue_table
@@ -511,6 +564,7 @@ class ModelScheduler:
         self.results_cache = results_cache
         self.idle_timeout = idle_timeout
         self.sweep_interval = sweep_interval
+        self.host_settings = host_settings or HostModelSettings()
 
         self.hostname = socket.gethostname()
         self.worker_id = (
@@ -675,11 +729,10 @@ class ModelScheduler:
                     entry.name, entry.type, entry.queue_name,
                 )
 
-                set_model_config_env(entry)
                 publisher = self._publisher_for(entry)
 
                 try:
-                    with resident_model(entry, publisher) as model:
+                    with resident_model(entry, publisher, self.host_settings) as (model, load):
                         QueueRunner(
                             model=model,
                             entry=entry,
@@ -691,6 +744,7 @@ class ModelScheduler:
                             worker_id=self.worker_id,
                             hostname=self.hostname,
                             idle_timeout=self.idle_timeout,
+                            cpu_offload_bytes=load["cpu_offload_bytes"],
                         ).run()
 
                 except ModelLoadError as e:

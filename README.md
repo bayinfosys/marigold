@@ -63,6 +63,31 @@ runs the application: Open WebUI at `http://localhost:3000`, backed by
 a local instruct model. The walkthrough is in
 [Getting started](docs/getting-started.md).
 
+## Operating
+
+```sh
+marigold models inspect                  # every model: type, status, application
+marigold models inspect qwen/qwen3-8b    # settings and sources, failure, last load, usage, events
+marigold application verify              # every installed application against its digest
+```
+
+- `models inspect` is the first command to run when a model fails; see
+  [When a model fails](docs/getting-started.md#when-a-model-fails).
+- `application verify` with no name checks every installed application
+  and exits 1 when any has changed, for cron or CI.
+- Model settings such as 4-bit quantisation are set on the host, for
+  every model, by type or by name, without changing the application;
+  see [Model settings](docs/configuration.md#model-settings):
+
+  ```toml
+  # marigold-host.toml
+  [models]
+  load_in_4bit = true
+  ```
+- Each data directory, and resetting the database without downloading
+  models again, is described in
+  [Data directories](docs/architecture.md#data-directories).
+
 ## Documentation
 
 | | |

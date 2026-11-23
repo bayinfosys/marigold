@@ -20,6 +20,11 @@ services:
       - SCARF_NO_ANALYTICS=True
       - RAG_EMBEDDING_MODEL_AUTO_UPDATE=false
       - RAG_RERANKING_MODEL_AUTO_UPDATE=false
+      - ENABLE_TITLE_GENERATION=${ENABLE_TITLE_GENERATION:-false}
+      - ENABLE_TAGS_GENERATION=${ENABLE_TAGS_GENERATION:-false}
+      - ENABLE_FOLLOW_UP_GENERATION=${ENABLE_FOLLOW_UP_GENERATION:-false}
+      - ENABLE_AUTOCOMPLETE_GENERATION=${ENABLE_AUTOCOMPLETE_GENERATION:-false}
+      - ENABLE_OLLAMA_API=${ENABLE_OLLAMA_API:-false}
     volumes:
       - type: bind
         source: ${MARIGOLD_CACHE_DIR:-~/.marigold/cache}/data/webui
@@ -37,7 +42,8 @@ services:
     networks:
       - applications
 
+# Open WebUI joins the platform project, which creates this network from
+# docker-compose.core.yaml; declared the same way here.
 networks:
   applications:
     name: marigold-applications
-    external: true

@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 _MUSICGEN_TOKENS_PER_SECOND = 50
 
 # AudioLDM2 default inference steps. High quality but slow on CPU.
-# Override per-model via extra_env: NUM_INFERENCE_STEPS in models.yaml.
+# Override per-model with num_inference_steps in the model's settings.
 _AUDIOLDM2_DEFAULT_STEPS = 200
 
 

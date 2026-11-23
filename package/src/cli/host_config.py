@@ -24,6 +24,7 @@ Sections, one per layer:
     [[registry]] registries searched for applications, in file order
     [network]    the ports and address the platform publishes
     [resources]  memory, CPU and process limits per service
+    [models]     model loader settings: global, by type and by name
     [environment] variables forwarded to every service
 
 Secrets stay in the shell environment and never go in this file:
@@ -31,7 +32,8 @@ HF_TOKEN, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION,
 AZURE_STORAGE_ACCOUNT, AZURE_STORAGE_CONNECTION_STRING.
 
 This module imports nothing from the rest of the CLI, so every other
-module can import it.
+module can import it. [models] is shared.model_settings.HostModelSettings,
+the type the worker reads back from MARIGOLD_MODEL_SETTINGS.
 """
 
 import ipaddress
@@ -43,6 +45,8 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+
+from shared.model_settings import HostModelSettings
 
 HOST_CONFIG_NAME = "marigold-host.toml"
 HOST_CONFIG_ENV = "MARIGOLD_HOST_CONFIG"
@@ -91,6 +95,17 @@ class PlatformSection(_Section):
         ge=0,
         description="Seconds the worker keeps a model loaded with an empty queue. 0 never unloads.",
     )
+
+    @field_validator("compose_files")
+    @classmethod
+    def _gpu_overlay(cls, value):
+        """gpu is an overlay on cpu, and compose applies files in order."""
+        if "gpu" in value and ("cpu" not in value or value.index("cpu") > value.index("gpu")):
+            raise ValueError(
+                f'{value}: "gpu" is an overlay on "cpu" and needs "cpu" before it: '
+                '["core", "cpu", "gpu"]'
+            )
+        return value
 
 
 class StorageSection(_Section):
@@ -253,6 +268,7 @@ class HostConfig(_Section):
     )
     network: NetworkSection = Field(default_factory=NetworkSection)
     resources: ResourcesSection = Field(default_factory=ResourcesSection)
+    models: HostModelSettings = Field(default_factory=HostModelSettings)
     environment: dict[str, str | int | float | bool] = Field(
         default={},
         description="Variables forwarded to every service. An application's [environment] wins per key.",
@@ -272,6 +288,19 @@ class HostConfig(_Section):
     def registry_urls(self) -> list[str]:
         """Registry addresses in search order."""
         return [entry.url for entry in self.registry]
+
+    def api_url(self) -> str:
+        """The API's address from this host, from [network].
+
+        A bind on every interface is reached on the loopback address.
+        """
+        address = ipaddress.ip_address(self.network.bind)
+
+        if address.is_unspecified:
+            address = ipaddress.ip_address("::1" if address.version == 6 else "127.0.0.1")
+
+        host = f"[{address}]" if address.version == 6 else str(address)
+        return f"http://{host}:{self.network.api_port}"
 
     def compose_env(self, tag: str) -> dict[str, str]:
         """The variables the platform compose files read.
@@ -298,6 +327,7 @@ class HostConfig(_Section):
             "MARIGOLD_API_PORT": str(self.network.api_port),
             "MARIGOLD_WEBUI_PORT": str(self.network.webui_port),
             "MARIGOLD_WORKER_SHM": self.resources.worker.shm,
+            "MARIGOLD_MODEL_SETTINGS": self.models.model_dump_json(exclude_defaults=True),
         }
 
         if self.storage.region:

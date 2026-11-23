@@ -48,7 +48,7 @@ from pydantic import ValidationError
 
 from models.catalogue import load_catalogue_from_yaml
 from shared.db_models import ModelCatalogueItem
-from shared.model_cache import model_cache_bytes
+from shared.model_cache import GB, cached_models, model_bytes
 
 
 logging.basicConfig(
@@ -95,6 +95,7 @@ PLATFORM_TABLES = {
     "MARIGOLD_RESULTS_TABLE": "results",
     "MARIGOLD_USAGE_TABLE": "usage",
     "MARIGOLD_WORKERS_TABLE": "workers",
+    "MARIGOLD_EVENTS_TABLE": "events",
 }
 
 
@@ -226,15 +227,13 @@ def _prune_undeclared(items: list[ModelCatalogueItem], cache_path: Path) -> list
     Refuses on an empty declared set: pruning against nothing would
     empty a cache whose purpose is outliving any one application.
     """
-    from tools.model_cache_shared import cached_model_names
-
     if not items:
         raise CliError("refusing to prune with no models declared")
 
     declared = {item.name for item in items}
     pruned = []
 
-    for name, path in cached_model_names(cache_path).items():
+    for name, path in cached_models(cache_path).items():
         if name in declared:
             continue
 
@@ -296,15 +295,16 @@ def populate(application: Optional[str] = None, prune: bool = False) -> CommandR
     finally:
         conn.close()
 
+    seen: set = set()
+    cached_bytes = sum(model_bytes(name, ctx.cache_path, seen) for name in cached)
+
     result = {
         "declared": len(ctx.models),
         "cached": cached,
         "registered": len(cached),
         "pruned": pruned,
         "errors": errors,
-        "total_gb": round(
-            sum(model_cache_bytes(n, ctx.cache_path) for n in cached) / (1024 ** 3), 3
-        ),
+        "total_gb": round(cached_bytes / GB, 3),
     }
     return result, True
 

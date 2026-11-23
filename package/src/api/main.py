@@ -12,6 +12,8 @@ Environment variables
     MARIGOLD_RESULTS_TABLE          results table name
     MARIGOLD_MODEL_CATALOGUE_TABLE  catalogue table name
     MARIGOLD_USAGE_TABLE            usage table name (default: usage)
+    MARIGOLD_EVENTS_TABLE           lifecycle events table (default: events)
+    MARIGOLD_MODEL_SETTINGS         the host's [models] as JSON (default: empty)
     LIFECYCLE_TOPIC                 notification topic name (default: lifecycle)
 """
 
@@ -49,20 +51,28 @@ def _build_backends(app: FastAPI) -> None:
     from dynawrap.backends.postgres import PostgresBackend
     from backend.messaging.postgres import PostgresQueueBackend
     from backend.messaging.local import LocalNotificationBackend
+    from shared.model_settings import load_host_settings
     from shared.results_cache import ResultsCache
 
     results_table = os.environ["MARIGOLD_RESULTS_TABLE"]
     model_catalogue_table = os.environ["MARIGOLD_MODEL_CATALOGUE_TABLE"]
+    events_table = os.getenv("MARIGOLD_EVENTS_TABLE", "events")
 
     conn = get_database_connection()
 
     table_backend = PostgresBackend(conn)
     PostgresBackend.create_table(conn, results_table)
     PostgresBackend.create_table(conn, model_catalogue_table)
-    PostgresBackend.create_table(conn, os.getenv("MARIGOLD_USAGE_TABLE", "usage"))
+    usage_table = os.getenv("MARIGOLD_USAGE_TABLE", "usage")
+    PostgresBackend.create_table(conn, usage_table)
+    PostgresBackend.create_table(conn, events_table)
 
     app.state.queue_backend = PostgresQueueBackend(conn)
-    app.state.notification_backend = LocalNotificationBackend()
+    app.state.notification_backend = LocalNotificationBackend(table_backend, events_table)
+    app.state.events_table = events_table
+    app.state.host_settings = load_host_settings()
+    app.state.connection = conn
+    app.state.usage_table = usage_table
     app.state.results_cache = ResultsCache(table_backend, results_table)
     app.state.table_backend = table_backend
     app.state.topic = os.getenv("LIFECYCLE_TOPIC", "lifecycle")

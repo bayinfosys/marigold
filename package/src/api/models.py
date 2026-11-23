@@ -302,8 +302,8 @@ class Txt2ImgRequest(ModelRequest):
     num_inference_steps: Optional[int] = Field(
         None,
         description=(
-            "diffusion steps. Defaults to the NUM_STEPS env var on the worker "
-            "(set per-model in models.yaml extra_env). Falls back to 10 if unset."
+            "diffusion steps. Defaults to num_steps in the model's settings "
+            "in models.yaml. Falls back to 10 if unset."
         ),
     )
     guidance_scale: float = Field(7.5, description="classifier-free guidance scale")
@@ -412,14 +412,6 @@ class EvalScore(BaseModel):
 class EvalResponse(ModelResponse):
     created: str = Field(default_factory=lambda: str(int(datetime.now().timestamp())))
     scores:  List[EvalScore]
-
-
-# ---------------------------------------------------------------------------
-# Usage
-# ---------------------------------------------------------------------------
-
-
-UsageResponse = List[ModelUsageStats]
 
 
 # ---------------------------------------------------------------------------

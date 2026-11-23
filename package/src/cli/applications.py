@@ -210,12 +210,14 @@ def install(
     archive: Path,
     version: str = LOCAL_VERSION,
     expected_manifest: str | None = None,
+    registry: str | None = None,
 ) -> tuple[str, Path, dict, dict | None]:
     """Install an application archive.
 
     version is the registry tag it was published under, or
     LOCAL_VERSION. expected_manifest, when given, is the digest the
     registry's index records; the installed files must match it.
+    registry is the registry it came from, recorded for list.
 
     Returns (name, root, record, previous record or None).
     """
@@ -236,6 +238,7 @@ def install(
 
     index[name] = {
         "version": version,
+        "registry": registry,
         "manifest": manifest_digest,
         "digest": digest,
         "root": str(root),

@@ -15,8 +15,8 @@ instance     an application's running containers, in compose project
              without touching the platform or any other application.
 
 'marigold app ...' is an alias for 'marigold application ...'. Stopping
-an application stops its containers alone: bringing the platform down
-is 'marigold platform stop'.
+an application stops its containers alone; 'marigold platform stop'
+stops every application, then the platform.
 
 Layout
 ------
@@ -48,10 +48,16 @@ import logging
 import os
 import sys
 
+import httpx
+
 from cli import commands
 from cli.config import marigold_version
 from cli.host_config import HOST_CONFIG_ENV, HOST_CONFIG_NAME
 from cli.paths import CacheNotWritable
+
+
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 
 TARGET_HELP = "installed application name, directory, or archive"
 
@@ -79,11 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plat_start_p.set_defaults(func=commands.cmd_platform_start)
 
-    plat_stop_p = plat_sub.add_parser("stop", help="stop the platform")
-    plat_stop_p.add_argument(
-        "--applications", action="store_true",
-        help="stop applications first",
-    )
+    plat_stop_p = plat_sub.add_parser("stop", help="stop every application, then the platform")
     plat_stop_p.set_defaults(func=commands.cmd_platform_stop)
 
     plat_status_p = plat_sub.add_parser("status", help="show platform and application container status")
@@ -123,13 +125,13 @@ def build_parser() -> argparse.ArgumentParser:
     create_p.add_argument("--version", default="local", help="version in the archive's filename, such as a registry tag (default: local)")
     create_p.set_defaults(func=commands.cmd_application_create)
 
-    install_p = app_sub.add_parser("install", help="install an application archive")
-    install_p.add_argument("archive", help="application archive to install")
+    install_p = app_sub.add_parser("install", help="install an application from a registry, or an archive file")
+    install_p.add_argument("target", help="a name or name@version from a registry, or an archive file")
     install_p.add_argument("--version", default="local", help="version to record, such as the registry tag it came from (default: local)")
     install_p.set_defaults(func=commands.cmd_application_install)
 
-    verify_p = app_sub.add_parser("verify", help="check an installed application's files against its digest")
-    verify_p.add_argument("name", help="installed application name")
+    verify_p = app_sub.add_parser("verify", help="check installed applications' files against their digests")
+    verify_p.add_argument("name", nargs="?", default=None, help="installed application name; default: every installed application")
     verify_p.set_defaults(func=commands.cmd_application_verify)
 
     diff_p = app_sub.add_parser("diff", help="compare two applications file by file")
@@ -146,8 +148,19 @@ def build_parser() -> argparse.ArgumentParser:
     uninstall_p.set_defaults(func=commands.cmd_application_uninstall)
 
     # registry
-    reg = sub.add_parser("registry", help="build application registries")
+    reg = sub.add_parser("registry", help="the registries this host installs from, and building one")
     reg_sub = reg.add_subparsers(dest="registry_command", required=True)
+
+    reg_add_p = reg_sub.add_parser("add", help="add a registry, searched after those already listed")
+    reg_add_p.add_argument("args", nargs="+", metavar="[NAME] URL", help="an optional local name, then the registry's address")
+    reg_add_p.set_defaults(func=commands.cmd_registry_add)
+
+    reg_list_p = reg_sub.add_parser("list", help="the registries, in search order")
+    reg_list_p.set_defaults(func=commands.cmd_registry_list)
+
+    reg_remove_p = reg_sub.add_parser("remove", help="remove a registry")
+    reg_remove_p.add_argument("key", help="the registry's name or address")
+    reg_remove_p.set_defaults(func=commands.cmd_registry_remove)
 
     reg_build_p = reg_sub.add_parser(
         "build",
@@ -190,6 +203,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     show_p.set_defaults(func=commands.cmd_config_show)
 
+    # models
+    models = sub.add_parser("models", help="the models the platform serves, from the API")
+    models_sub = models.add_subparsers(dest="models_command", required=True)
+
+    models_inspect_p = models_sub.add_parser(
+        "inspect", help="list the catalogue, or one model's settings, status, usage and events",
+    )
+    models_inspect_p.add_argument("name", nargs="?", help="one model, such as qwen/qwen3-8b")
+    models_inspect_p.set_defaults(func=commands.cmd_models_inspect)
+
     # cache
     cache = sub.add_parser("cache", help="manage the shared model cache")
     cache_sub = cache.add_subparsers(dest="cache_command", required=True)
@@ -206,7 +229,11 @@ def build_parser() -> argparse.ArgumentParser:
     populate_p.add_argument("--prune", action="store_true", help="remove cached models this application does not declare")
     populate_p.set_defaults(func=commands.cmd_cache_populate)
 
-    inspect_p = cache_sub.add_parser("inspect", help="list cached models, disk usage, and cache location")
+    list_p = cache_sub.add_parser("list", help="cached model names, one per line")
+    list_p.set_defaults(func=commands.cmd_cache_list)
+
+    inspect_p = cache_sub.add_parser("inspect", help="size, revision and file count per cached model")
+    inspect_p.add_argument("name", nargs="?", help="one model, such as qwen/qwen3-8b")
     inspect_p.set_defaults(func=commands.cmd_cache_inspect)
 
     seed_p = cache_sub.add_parser("seed", help="share cached models with the network via torrent (not yet implemented)")
@@ -240,6 +267,8 @@ def main():
         PermissionError,
         ValueError,
         CacheNotWritable,
+        LookupError,
+        httpx.HTTPError,
     ) as e:
         print(f"marigold: {e}", file=sys.stderr)
         sys.exit(1)

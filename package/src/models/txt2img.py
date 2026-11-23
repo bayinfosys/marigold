@@ -6,7 +6,7 @@ Uses diffusers DiffusionPipeline. Compatible with any diffusers-compatible
 checkpoint. The pipeline is stored as both self.model (base class contract)
 and self.pipe (local alias used in _run).
 
-NUM_STEPS defaults to 10; override per-model via extra_env in models.yaml.
+num_steps defaults to 10; set it in the model's settings in models.yaml.
 """
 
 import logging
@@ -17,7 +17,7 @@ import numpy as np
 import torch
 from api.models import Txt2ImgRequest, Txt2ImgResponse
 from diffusers.quantizers import PipelineQuantizationConfig
-from models.standard_loader import ModelLoaderResult, load_diffusion_pipeline, env_flag
+from models.standard_loader import ModelLoaderResult, check_4bit, load_diffusion_pipeline, env_flag
 from PIL import Image
 from shared.enums import ModelMode, ModelType, OutputMimeType
 from shared.outputs import image_to_png_bytes
@@ -32,8 +32,8 @@ def _make_quant_config(modelname: str) -> PipelineQuantizationConfig | None:
     """Return a PipelineQuantizationConfig for 4-bit NF4 quantisation.
 
     Components are resolved in order:
-      1. DIFFUSERS_QUANT_COMPONENTS env var -- comma-separated list,
-         set per-model via extra_env in models.yaml
+      1. diffusers_quant_components in the model's settings -- a
+         comma-separated list, read as DIFFUSERS_QUANT_COMPONENTS
       2. Known model prefix table
       3. Default: ["transformer"]
 
@@ -91,15 +91,12 @@ def _make_quant_config(modelname: str) -> PipelineQuantizationConfig | None:
 def load_txt2img(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
     """Text-to-image via diffusers DiffusionPipeline.
 
-    Applies 4-bit NF4 quantisation when LOAD_IN_4BIT is set and a GPU is
-    present. Components are selected by _make_quant_config.
+    Applies 4-bit NF4 quantisation when LOAD_IN_4BIT is set, which needs
+    a GPU. Components are selected by _make_quant_config.
     """
     load_in_4bit = env_flag("LOAD_IN_4BIT", kwargs.get("load_in_4bit", False))
-    quant_config = (
-        _make_quant_config(modelname)
-        if (load_in_4bit and torch.cuda.is_available())
-        else None
-    )
+    check_4bit(modelname, load_in_4bit)
+    quant_config = _make_quant_config(modelname) if load_in_4bit else None
 
     return load_diffusion_pipeline(modelname, cache_dir, quant_config=quant_config)
 

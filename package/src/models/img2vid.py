@@ -16,20 +16,20 @@ Keyframe handling by model capability:
     All keyframes are passed to the pipeline. Timestamps are converted
     to frame indices using the requested fps.
 
-The appropriate path is selected at runtime via the KEYFRAME_MODE env var
-set per-model in models.yaml extra_env:
+The appropriate path is selected at runtime by keyframe_mode in the
+model's settings in models.yaml:
 
-    KEYFRAME_MODE=single        (default)
-    KEYFRAME_MODE=start_end
-    KEYFRAME_MODE=multi
+    keyframe_mode: single       (default)
+    keyframe_mode: start_end
+    keyframe_mode: multi
 
 Compatible models (non-exhaustive):
-    stabilityai/stable-video-diffusion-img2vid-xt   KEYFRAME_MODE=single
-    THUDM/CogVideoX-5b-I2V                          KEYFRAME_MODE=single
-    Wan-AI/Wan2.1-I2V-14B                           KEYFRAME_MODE=single
-    alibaba-pai/CogVideoX-Fun-V1.1-5b-InP           KEYFRAME_MODE=start_end
-    Wan-AI/Wan2.1-Fun-14B-InP                       KEYFRAME_MODE=start_end
-    Doubiiu/DynamiCrafter                           KEYFRAME_MODE=multi
+    stabilityai/stable-video-diffusion-img2vid-xt   keyframe_mode: single
+    THUDM/CogVideoX-5b-I2V                          keyframe_mode: single
+    Wan-AI/Wan2.1-I2V-14B                           keyframe_mode: single
+    alibaba-pai/CogVideoX-Fun-V1.1-5b-InP           keyframe_mode: start_end
+    Wan-AI/Wan2.1-Fun-14B-InP                       keyframe_mode: start_end
+    Doubiiu/DynamiCrafter                           keyframe_mode: multi
 """
 
 import logging

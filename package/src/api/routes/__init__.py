@@ -11,7 +11,6 @@ from .eval import router as eval_router
 from .gen import router as gen_router
 from .openai import router as openai_router
 from .output import router as output_router
-from .usage import router as usage_router
 from .users import router as users_router
 
 router = APIRouter()
@@ -21,6 +20,5 @@ router.include_router(eval_router, tags=["eval"])
 router.include_router(gen_router, tags=["gen"])
 router.include_router(output_router, tags=["polling"])
 router.include_router(users_router, tags=["users"])
-router.include_router(usage_router, tags=["usage"])
 router.include_router(catalogue_router, tags=["api"])
 router.include_router(openai_router, tags=["openai"])

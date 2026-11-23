@@ -5,6 +5,7 @@ for the user and pick the exit code.
 """
 
 import contextlib
+import json
 import os
 import subprocess
 import sys
@@ -12,9 +13,11 @@ import tempfile
 
 from pathlib import Path
 
-from shared.model_cache import cache_dir_bytes
+import httpx
 
-from cli import applications, archives, manifest, registry
+from shared import model_cache
+
+from cli import applications, archives, manifest, registries, registry
 from cli.registry_config import REGISTRY_CONFIG_NAME, load_registry_config
 from cli.compose import (
     DEFAULT_EXECUTION_IMAGE,
@@ -267,19 +270,18 @@ def cmd_platform_start(args):
 
 
 def cmd_platform_stop(args):
-    """Stop the platform.
+    """Stop every application, then the platform.
 
-    Applications are left running unless --applications is given: they
-    are separate projects, and several may share one platform. An
-    application whose platform has gone keeps running and fails its API
-    calls, which is visible in its logs.
+    Each application's containers join the applications network, which
+    the platform's compose project creates and removes. Bringing the
+    applications down first means the network is never removed beneath
+    a stopped container, which would then fail to start.
     """
     returncode = 0
 
-    if args.applications:
-        for project in application_projects():
-            print(f"marigold: stopping {project}", file=sys.stderr)
-            returncode |= run_project_compose(project, ["down"])
+    for project in application_projects():
+        print(f"marigold: stopping {project}", file=sys.stderr)
+        returncode |= run_project_compose(project, ["down"])
 
     sys.exit(returncode | run_project_compose(PLATFORM_PROJECT, ["down"]))
 
@@ -402,19 +404,31 @@ def cmd_application_create(args):
 
 
 def cmd_application_install(args):
-    """Install an application archive so it can be started by name."""
-    archive = Path(args.archive).resolve()
+    """Install an application: an archive file, or a name from a registry.
 
-    if not archive.is_file():
-        raise FileNotFoundError(f"archive not found: {args.archive}")
+    A target that is a file is installed as an archive. Anything else is
+    a name, or name@version, looked up in the [[registry]] entries of
+    marigold-host.toml, in order.
+    """
+    path = Path(args.target)
 
-    if not archives.is_archive(args.archive):
-        raise ValueError(
-            f"'{args.archive}' is not an application archive "
-            f"({', '.join(archives.ARCHIVE_SUFFIXES)})"
-        )
+    if path.is_file():
+        if not archives.is_archive(args.target):
+            raise ValueError(
+                f"'{args.target}' is not an application archive "
+                f"({', '.join(archives.ARCHIVE_SUFFIXES)})"
+            )
+        name, root, record, previous = applications.install(path.resolve(), args.version)
+    else:
+        with registries.temporary_directory() as tmp:
+            archive, url, version, entry = registries.fetch(
+                args.target, load_host_config().registry, Path(tmp)
+            )
+            print(f"marigold: {Path(entry['archive']).name} from {url}", file=sys.stderr)
+            name, root, record, previous = applications.install(
+                archive, version, expected_manifest=entry["digest"], registry=url
+            )
 
-    name, root, record, previous = applications.install(archive, args.version)
 
     if previous and previous.get("manifest") != record["manifest"]:
         print(
@@ -424,6 +438,8 @@ def cmd_application_install(args):
         )
 
     print(f"installed {name} {record['version']}")
+    if record.get("registry"):
+        print(f"  from   : {record['registry']}")
     print(f"  digest : {manifest.short(record['manifest'])}")
     print(f"  root   : {root}")
     print(f"  run    : marigold application start {name}")
@@ -442,25 +458,37 @@ def cmd_application_list(args):
         record = index[name]
         root = Path(record["root"])
         state = "ok" if (root / APPLICATION_CONFIG_NAME).exists() else "MISSING"
-        print(f"  {name:<30} {record['version']:<12} {manifest.short(record.get('manifest', '-')):<12}  {state}")
+        source = record.get("registry") or "local"
+        print(f"  {name:<30} {record['version']:<12} {manifest.short(record.get('manifest', '-')):<12}  {state:<8} {source}")
 
     print(f"\n{len(index)} application(s), index at {applications.installed_index_path()}")
     sys.exit(0)
 
 
 def cmd_application_verify(args):
-    """Check an installed application's files against its recorded digest."""
-    record, digest = applications.verify(args.name)
+    """Check installed applications' files against their recorded digests.
 
-    if digest == record["manifest"]:
-        print(f"{args.name} {record['version']}: ok ({manifest.short(digest)})")
-        sys.exit(0)
+    One line per application: the named one, or with no name every
+    installed application. Exits 1 when any has changed, for use from
+    cron or CI.
+    """
+    names = [args.name] if args.name else sorted(applications.load_installed())
+    changed = 0
 
-    print(
-        f"{args.name} {record['version']}: files changed since install "
-        f"(recorded {manifest.short(record['manifest'])}, now {manifest.short(digest)})"
-    )
-    sys.exit(1)
+    for name in names:
+        record, digest = applications.verify(name)
+
+        if digest == record["manifest"]:
+            print(f"{name} {record['version']}: ok ({manifest.short(digest)})")
+            continue
+
+        changed += 1
+        print(
+            f"{name} {record['version']}: files changed since install "
+            f"(recorded {manifest.short(record['manifest'])}, now {manifest.short(digest)})"
+        )
+
+    sys.exit(1 if changed else 0)
 
 
 def _diff_side(target: str, stack: contextlib.ExitStack) -> tuple[str, Path]:
@@ -589,40 +617,52 @@ def cmd_cache_populate(args):
     ))
 
 
-def _hf_cache_dirname_to_model_name(dirname: str) -> str:
-    """'models--org--name' -> 'org/name', HuggingFace's own cache
-    directory convention."""
-    if dirname.startswith("models--"):
-        parts = dirname[len("models--"):].split("--", 1)
-        if len(parts) == 2:
-            return f"{parts[0]}/{parts[1]}"
-    return dirname
+def _models_dir() -> Path:
+    """The model cache directory, which must exist."""
+    models_dir = cache_paths(cache_dir_from_system_config())["models"]
+
+    if not models_dir.is_dir():
+        raise FileNotFoundError(f"no model cache at {models_dir}; run marigold cache init")
+
+    return models_dir
+
+
+def cmd_cache_list(args):
+    """Cached model names, one per line."""
+    for name in model_cache.cached_models(_models_dir()):
+        print(name)
+
+    sys.exit(0)
 
 
 def cmd_cache_inspect(args):
-    """List what is on disk, with sizes. Pure filesystem scan."""
-    cache_dir = cache_dir_from_system_config()
-    models_dir = cache_paths(cache_dir)["models"]
+    """Size, revision and file count per cached model, and the total.
 
-    if not models_dir.exists():
-        print(f"cache dir  : {cache_dir}", file=sys.stderr)
-        print(f"models dir does not exist: {models_dir}", file=sys.stderr)
-        sys.exit(1)
+    Sizes follow links into the shared blob store, so each model shows
+    its full size; the total counts every file under the cache once.
+    """
+    models_dir = _models_dir()
+    models = model_cache.cached_models(models_dir)
 
-    entries = []
-    total_bytes = 0
-
-    for child in sorted(models_dir.iterdir()):
-        if not child.is_dir():
-            continue
-        size = cache_dir_bytes(child)
-        total_bytes += size
-        entries.append((_hf_cache_dirname_to_model_name(child.name), size))
+    if args.name is not None:
+        if args.name not in models:
+            raise FileNotFoundError(f"'{args.name}' is not in the cache at {models_dir}")
+        models = {args.name: models[args.name]}
 
     print(f"cache location: {models_dir}\n")
-    for name, size in entries:
-        print(f"  {name:<55} {size / 1e9:>8.2f} GB")
-    print(f"\n{len(entries)} model(s), {total_bytes / 1e9:.2f} GB total")
+    print(f"  {'model':<55} {'GB':>8}  {'revision':<12}  files")
+
+    for name, path in models.items():
+        size = model_cache.model_bytes(name, models_dir) / model_cache.GB
+        revision = (model_cache.model_revision(name, models_dir) or "-")[:12]
+        files = model_cache.model_files(name, models_dir)
+        print(f"  {name:<55} {size:>8.2f}  {revision:<12}  {files}")
+        if args.name is not None:
+            print(f"\n  {path}")
+
+    if args.name is None:
+        total = model_cache.files_bytes(models_dir) / model_cache.GB
+        print(f"\n{len(models)} model(s), {total:.2f} GB on disk")
 
     sys.exit(0)
 
@@ -633,8 +673,160 @@ def cmd_cache_stub(args):
 
 
 # ---------------------------------------------------------------------------
+# models
+# ---------------------------------------------------------------------------
+
+def _api_get(base: str, path: str):
+    response = httpx.get(f"{base}{path}", timeout=10)
+    response.raise_for_status()
+    return response.json()
+
+
+def _model_applications(source_file: str) -> str:
+    """The installed applications whose models.yaml declared a model.
+
+    source_file is the models.yaml path as the cache container read it,
+    under the application's extracted tree, which is named by its digest
+    on the host as in the container. An application installed
+    elsewhere, as on a remote platform, shows as that directory.
+    """
+    directory = Path(source_file).parent
+
+    names = sorted(
+        name for name, record in applications.load_installed().items()
+        if Path(record["root"]).name == directory.name
+    )
+
+    return ", ".join(names) or str(directory)
+
+
+def _gb(value: int) -> str:
+    return f"{value / 1e9:.2f} GB"
+
+
+def _print_model(model: dict) -> None:
+    """One model: status, settings with sources, last load, usage, recent events."""
+    print(f"{model['name']} ({model['type']})")
+    print(f"  application : {_model_applications(model['source_file'])}")
+    print(f"  status      : {'failed' if model['failed_reason'] else 'ok'}")
+    if model["failed_reason"]:
+        print(f"  reason      : {model['failed_reason']}")
+
+    print("\nsettings")
+    for name, setting in sorted(model["settings"].items()):
+        print(f"  {name:<28} {json.dumps(setting['value']):<12} [{setting['source']}]")
+
+    events = model["events"]
+    loads = [e for e in events if e["event_type"] in ("MODEL_LOADED", "MODEL_LOAD_FAILED")]
+
+    print("\nlast load")
+    if loads:
+        load = loads[0]
+        payload = load["payload"]
+        print(f"  {load['timestamp']}  {load['event_type']}  on {payload.get('worker_id', '-')}")
+        if "footprint_bytes" in payload:
+            print(f"  footprint : {_gb(payload['footprint_bytes'])}  dtype: {payload.get('dtype') or '-'}")
+        if "placement" in payload:
+            print("  placement : " + ", ".join(f"{d} {_gb(n)}" for d, n in sorted(payload["placement"].items())))
+        if "error" in payload:
+            print(f"  error     : {payload['error']}")
+    else:
+        print(f"  none in the {len(events)} most recent events")
+
+    usage = model["usage"]
+
+    print("\nusage")
+    if usage["requests"]:
+        duration = usage["duration_ms"]
+        print(f"  requests  : {usage['requests']}")
+        print(f"  tokens    : {usage['input_tokens']} in, {usage['output_tokens']} out")
+        print(f"  duration  : p50 {duration['p50'] / 1000:.2f}s  p90 {duration['p90'] / 1000:.2f}s  p99 {duration['p99'] / 1000:.2f}s")
+        print(f"  load time : {usage['load_time_ms_mean'] / 1000:.1f}s mean")
+        print(f"  peak VRAM : {_gb(usage['vram_bytes_peak'])}")
+        print(f"  power     : {usage['power_watts_mean']:.0f} W mean, {usage['power_watts_peak']:.0f} W peak")
+    else:
+        print("  none recorded")
+
+    print("\nrecent events")
+    for event in reversed(events):
+        detail = event["message_id"] or ""
+        if "error" in event["payload"]:
+            detail = f"{detail} {event['payload']['error']}".strip()
+        print(f"  {event['timestamp']}  {event['event_type']:<20} {detail}")
+    if not events:
+        print("  (none)")
+
+
+def cmd_models_inspect(args):
+    """The catalogue, or one model, from the API at the configured address.
+
+    With no name, each model's name, type, application and status. With
+    a name, its settings and their sources, its status and failure
+    reason, its last load, a summary of its usage and its recent events.
+    """
+    base = load_host_config().api_url()
+    catalogue = _api_get(base, "/models")
+
+    if args.name is None:
+        print(f"  {'model':<50} {'type':<16} {'status':<8} application")
+        for model in sorted(catalogue, key=lambda m: (m["name"], m["type"])):
+            status = "failed" if model["failed_reason"] else "ok"
+            print(f"  {model['name']:<50} {model['type']:<16} {status:<8} {_model_applications(model['source_file'])}")
+        print(f"\n{len(catalogue)} model(s) at {base}")
+        sys.exit(0)
+
+    matches = [m for m in catalogue if m["name"] == args.name]
+
+    if not matches:
+        raise LookupError(f"no model named '{args.name}' in the catalogue at {base}")
+
+    for position, match in enumerate(matches):
+        if position:
+            print()
+        _print_model(_api_get(base, f"/models/{match['type']}/{match['name']}"))
+
+    sys.exit(0)
+
+
+# ---------------------------------------------------------------------------
 # registry
 # ---------------------------------------------------------------------------
+
+def cmd_registry_add(args):
+    """Append a registry to marigold-host.toml: registry add [NAME] URL."""
+    if len(args.args) == 1:
+        name, url = None, args.args[0]
+    elif len(args.args) == 2:
+        name, url = args.args
+    else:
+        raise ValueError("usage: marigold registry add [NAME] URL")
+
+    path, entry = registries.add(url, name)
+    label = f" ({entry.name})" if entry.name else ""
+    print(f"added {entry.url}{label} to {path}")
+    sys.exit(0)
+
+
+def cmd_registry_list(args):
+    """The registries, in the order they are searched."""
+    entries = load_host_config().registry
+
+    if not entries:
+        print("no registries; marigold registry add [NAME] URL", file=sys.stderr)
+
+    for position, entry in enumerate(entries, start=1):
+        label = f"  ({entry.name})" if entry.name else ""
+        print(f"{position}. {entry.url}{label}")
+
+    sys.exit(0)
+
+
+def cmd_registry_remove(args):
+    """Remove a registry by name or url."""
+    path, removed = registries.remove(args.key)
+    print(f"removed {removed['url']} from {path}")
+    sys.exit(0)
+
 
 def cmd_registry_build(args):
     """Build a static registry from every application under a root.

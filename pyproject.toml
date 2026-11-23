@@ -24,6 +24,7 @@ dependencies = [
   "pydantic>=2",
   "PyYAML",
   "httpx",
+  "tomlkit",
   "dynawrap",
 ]
 

@@ -8,16 +8,16 @@ For OpenVLA-family models the raw output is a sequence of action tokens.
 The client decodes these using the per-dataset
 normalisation statistics that ship alongside the model weights.
 
-Prompt configuration (models.yaml extra_env):
+Prompt configuration (the model's settings in models.yaml):
 
-    PROMPT_TEMPLATE     format string with {instruction} placeholder.
+    prompt_template     format string with {instruction} placeholder.
                         Default matches the OpenVLA training prompt.
 
 Proprioceptive state:
-    When request.state is provided and PROPRIOCEPTION_MODE=text (default),
-    the state vector is appended to the instruction as a text string before
-    substitution into the prompt template. Set PROPRIOCEPTION_MODE=none to
-    discard state.
+    When request.state is provided and proprioception_mode is text
+    (default), the state vector is appended to the instruction as a text
+    string before substitution into the prompt template. Set
+    proprioception_mode to none to discard state.
 
 Compatible models (non-exhaustive):
     openvla/openvla-7b

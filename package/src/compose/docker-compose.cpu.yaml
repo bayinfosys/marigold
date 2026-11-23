@@ -6,7 +6,11 @@ services:
 
   worker:
     image: ${WORKER_IMAGE:-ghcr.io/bayinfosys/marigold-worker}:${TAG:-latest}
+    # Runs as the host user, so the outputs it writes belong to whoever
+    # runs marigold. Blank runs as the image's own user.
+    user: ${MARIGOLD_USER:-}
     environment:
+      HOME: /tmp
       MARIGOLD_VERSION: ${TAG:-latest}
       MARIGOLD_DATABASE_URL: ${MARIGOLD_DATABASE_URL:-postgresql://marigold:marigold@postgres:5432/marigold}
       MARIGOLD_VISIBILITY_TIMEOUT: "300"
@@ -14,8 +18,8 @@ services:
       LIFECYCLE_TOPIC: lifecycle
       LOG_LEVEL: ${MARIGOLD_LOG_LEVEL:-INFO}
       CACHE_DIR: /models
-      REMOTE_CODE: "0"
-      USE_FAST: "0"
+      # [models] in marigold-host.toml, as JSON; empty without the CLI
+      MARIGOLD_MODEL_SETTINGS: ${MARIGOLD_MODEL_SETTINGS:-}
       MARIGOLD_TMP_OFFLOAD: "/tmp/models"
       MARIGOLD_MODEL_CATALOGUE_TABLE: model_catalogue
       # object store: [storage] in marigold-host.toml

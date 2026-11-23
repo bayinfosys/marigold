@@ -276,6 +276,7 @@ async def _poll(user_id: str, message_id: str, results_cache) -> tuple[int, dict
         if code == 404:
             return 404, {}
 
+    logger.warning("[%s] no result after %ss, returning 504", message_id, _MAX_WAIT)
     return 504, {}
 
 
@@ -422,9 +423,9 @@ async def chat_completions(
         catalogue_backend=table_backend,
         catalogue_table=table,
         queue_backend=queue_backend,
-        notification_backend=None,
+        notification_backend=request.app.state.notification_backend,
         results_cache=results_cache,
-        topic=None,
+        topic=request.app.state.topic,
     )
 
     if code != 200 or "message_id" not in resp:
@@ -509,9 +510,9 @@ async def create_embeddings(body: EmbeddingRequest, request: Request) -> Embeddi
             catalogue_backend=table_backend,
             catalogue_table=table,
             queue_backend=queue_backend,
-            notification_backend=None,
+            notification_backend=request.app.state.notification_backend,
             results_cache=results_cache,
-            topic=None,
+            topic=request.app.state.topic,
         )
 
         if code != 200 or "message_id" not in resp:

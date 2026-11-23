@@ -61,7 +61,7 @@ reports with no application in hand:
     marigold platform start
     marigold platform status
     marigold platform logs [service]
-    marigold platform stop [--applications]
+    marigold platform stop
 
 **Application.** A directory or archive holding `marigold.toml`, one or
 more `models.yaml` files, and the code that uses them. Installed into
@@ -78,7 +78,10 @@ without touching the platform or any other application.
 
 `application start` brings the platform up first when it is not already
 running. Several applications share one platform; stopping one leaves
-the others and the platform running.
+the others and the platform running. `platform stop` stops every
+application first, then the platform: the platform's compose project
+owns the `marigold-applications` network, and removing it beneath a
+stopped instance leaves that instance unable to start.
 
 ---
 
@@ -147,6 +150,40 @@ as the database's: the worker writes, the API reads.
 
 ---
 
+## Data directories
+
+Every piece of state lives under the cache root's `data/`. Delete a
+directory only with the platform stopped (`marigold platform stop`).
+
+| Directory | Holds | Deleting it |
+|---|---|---|
+| `data/postgres` | the platform database: the catalogue and failure marks, queues, results, usage, worker environments, lifecycle events | loses queued requests, results, usage and event history. The next start creates empty tables, and `cache populate` re-registers each application's models without downloading them |
+| `data/models` | downloaded weights, shared by every application | removes every model. Catalogue rows remain and their loads fail; `cache populate` downloads each application's models again |
+| `data/applications` | the installed index (`installed.json`), archives (`_archives/`), extracted trees (`_src/`) and each application's `outputs/` | uninstalls every application and removes its outputs. Cached models and catalogue rows remain; reinstall each application |
+| `data/webui` | Open WebUI's own database: chats, users, settings | resets Open WebUI to a first start |
+| `data/outputs` | binary inference outputs | breaks `GET /output/.../{field}` for every completed job that wrote one |
+| `data/tmp` | worker offload space | nothing a stopped worker needs |
+
+`data/postgres` and `data/webui` belong to the users those containers
+run as, so deleting them takes `sudo`.
+
+### Resetting the database
+
+Clearing the database keeps every downloaded weight:
+
+```sh
+marigold platform stop
+sudo rm -rf <cache root>/data/postgres
+marigold platform start
+marigold cache populate <application>     # for each installed application
+```
+
+`platform start` creates a fresh database and its tables. `cache
+populate` finds each model already in the cache, downloads nothing,
+and writes its catalogue row and queue.
+
+---
+
 ## Access model
 
 Each component owns what it writes. The table is the design; roles and
@@ -159,10 +196,11 @@ connects as the same Postgres user.
 | queue tables | create | read, update, delete | insert, read |
 | results, usage | create | write | read |
 | workers | create | write | -- |
+| events | create | write | write, read |
 
 Table creation belongs to the cache container, which runs before
 anything is served on every platform start. The worker still creates
-three tables of its own at startup; that is the one remaining
+four tables of its own at startup; that is the one remaining
 exception, recorded in TODO.md.
 
 Model failure state (`failed_reason`) is written by the worker onto the
@@ -193,6 +231,43 @@ sequenceDiagram
 
 Text and vector outputs are stored in Postgres. Binary outputs are
 written under the cache's `data/outputs`.
+
+---
+
+## Lifecycle events
+
+The API and the worker publish an event at each change of state, and
+each is stored as a row in the `events` table, keyed by model
+(`WORKER#<model hash>`) and sorted by timestamp, then event type
+(`EVENT#<timestamp>#<event type>`). A model's history survives
+restarts and log rotation. Rows have no TTL and accumulate.
+
+| Event | Published by | When |
+|---|---|---|
+| `REQUEST_QUEUED` | api | a submission is queued |
+| `MODEL_LOADING` | worker | a load starts |
+| `MODEL_LOADED` | worker | the model is resident and fits |
+| `MODEL_LOAD_FAILED` | worker | the load failed |
+| `WORKER_STARTED` | worker | the model's queue starts draining |
+| `REQUEST_DEQUEUED`, `REQUEST_PROCESSING` | worker | a message is claimed, then run |
+| `REQUEST_COMPLETE`, `REQUEST_ERROR` | worker | a request ends |
+| `WORKER_IDLE` | worker | the queue empties, once per idle period |
+| `WORKER_EXITING` | worker | the model is released |
+
+Every worker event carries `model_name`, `model_type`, `model_hash`,
+`worker_id` and `hostname`; request events carry the `message_id` and
+`user_id`, and `REQUEST_ERROR` the error. The load events carry what a
+load decided:
+
+| Field | `MODEL_LOADED` | `MODEL_LOAD_FAILED` |
+|---|---|---|
+| `settings` | each resolved setting, `{"value", "source"}` | as far as the load reached |
+| `footprint_bytes` | the weights' memory footprint | as far as the load reached |
+| `dtype` | the model's dtype | as far as the load reached |
+| `placement` | bytes on each device, such as `{"cuda:0": ..., "cuda:1": ...}`; `{"cpu": footprint}` on a worker with no CUDA device | -- |
+| `cpu_offload_bytes` | bytes off the GPU, also recorded with each request's usage | -- |
+| `free_vram_b`, `total_vram_b`, `usable_vram_b` | VRAM across devices after the load | -- |
+| `error` | -- | the message recorded as `failed_reason` |
 
 ---
 
@@ -227,6 +302,30 @@ submissions rejected with 409; the worker moves on. An application that
 fails exits in its own container; the platform and other applications
 are unaffected. An application whose platform stops keeps running and
 fails its API calls, visibly, in its own logs.
+
+### Model load failure
+
+The worker applies the model's settings, loads it and checks that its
+weights fit in VRAM. Failure at any of these steps:
+
+- publishes `MODEL_LOAD_FAILED` with the error message;
+- writes an error result, code `model_load_failed`, for every message
+  queued for the model, and deletes the messages;
+- records the error as `failed_reason` on the model's catalogue row.
+
+The message gives the reason: an exception from the loader, or for a
+model that does not fit, the tensors left off the GPU and the free and
+total memory of each device.
+
+While `failed_reason` is set, the API answers a submission for the
+model with 409 and the reason as `message`, writing no result and
+queueing nothing; `POST /v1/chat/completions` returns the same 409.
+The worker drains anything that reaches the model's queue by another route.
+
+`marigold cache populate <application>` writes each model's row afresh
+from models.yaml, which clears `failed_reason`, and the next request
+loads the model again. A request that ended in an error is not served
+from the results cache: repeating it submits it again.
 
 ---
 

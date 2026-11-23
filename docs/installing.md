@@ -8,25 +8,30 @@ nav_order: 6
 
 ```sh
 marigold registry add https://examples.marigold.run/
-marigold application install platform-model-test
-marigold cache populate platform-model-test
-marigold application start platform-model-test
+marigold application install chat
+marigold cache populate chat
+marigold application start chat
 ```
 
 `registry add` records a registry in `marigold-host.toml`. `install`
 finds the application in your registries, downloads its archive,
-checks it against the registry's index and installs it. `cache
-populate` downloads the models it declares. `start` runs it.
+checks it against the sha256 in the registry's index, unpacks it,
+checks its files against the index's [digest](manifests.md) and
+installs it. `cache populate` downloads the models it declares.
+`start` runs it.
+
+`install` also takes an archive file, such as one built with
+`application create`.
 
 ## Choosing a version
 
 ```sh
-marigold application install platform-model-test==0.3.0
-marigold application install "platform-model-test>=0.3"
+marigold application install chat@v0.0.2
 ```
 
-With no version, the highest release is installed. Installing another
-version replaces the installed one.
+A version is the tag of the registry that published it. With no
+version, the highest is installed. Installing another version replaces
+the installed one.
 
 ## Dependencies
 
@@ -38,14 +43,8 @@ An application can use other applications, declared in its
 requires = ["texture-forge>=0.2", "npc-voice>=0.1"]
 ```
 
-`install` resolves each requirement through your registries and
-installs it too. An installed version that satisfies the requirement
-is kept. A requirement can name its registry, in which case that
-registry must be in your list:
-
-```toml
-requires = ["https://demos.marigold.run/npc-voice>=0.1"]
-```
+Requirements are recorded but not yet resolved: install each one
+before the application that needs it.
 
 ## Several registries
 
@@ -93,7 +92,8 @@ declares it. Uninstalling an application leaves the cache unchanged;
 does not declare.
 
 ```sh
-marigold cache inspect            # what is cached, sizes, location
+marigold cache list               # cached model names
+marigold cache inspect [name]     # sizes, revisions, location
 marigold cache validate <name>    # check its models.yaml, no download
 ```
 
@@ -104,10 +104,21 @@ marigold application list                  # name, version, registry
 marigold application status <name>
 marigold application logs <name>
 marigold application stop <name>
+marigold application verify [name]         # files against the installed digest
 marigold application uninstall <name>
 ```
 
 `marigold app` is an alias for `marigold application`.
+
+`verify` recomputes an application's [digest](manifests.md) from its
+installed files and prints one line: `ok`, or `files changed since
+install` with both digests. With no name it checks every installed
+application, one line each, and exits 1 when any has changed, so it
+runs unattended from cron or CI:
+
+```sh
+marigold application verify || echo "an installed application has changed"
+```
 
 ## What to check first
 

@@ -17,24 +17,39 @@ from pydantic import BaseModel, Field, computed_field
 
 from .schedule_models import LifecycleEvent
 from .enums import ModelType, ModelProvider, StatusCode
+from .model_settings import ModelSettings
 
 
 _DEFAULT_TTL_OFFSET = 86400 * 30  # 30 days
 
 
-_ENV_KEYS = ("LOAD_IN_4BIT", "USE_FAST", "TRUST_REMOTE_CODE", "LOW_CPU_MEM_USAGE")
+# The loader settings, as environment variables.
+_ENV_KEYS = tuple(name.upper() for name in ModelSettings.model_fields)
+
+# The keys the last call to set_model_config_env set. The next call
+# clears them, so a handler setting such as NUM_STEPS applies to the
+# model that declares it and to no other.
+_applied_keys: set[str] = set()
 
 
-def set_model_config_env(config_entry: "ModelCatalogueItem") -> None:
-    """Apply a catalogue entry's extra_env to the process environment,
-    clearing any previous entry's values first. Shared between worker.py
-    (serve time) and model_cache_shared.py (cache-init time) so both load
-    a model under the same settings.
+def set_model_config_env(settings: ModelSettings) -> None:
+    """Apply model settings to the process environment.
+
+    Each set setting becomes its name upper-cased, booleans as "true" or
+    "false" and other values as strings. Clears the loader keys and
+    every key the previous call set first. Shared between worker.py
+    (serve time) and model_cache_shared.py (cache-init time) so both
+    load a model under the same settings.
     """
-    for key in _ENV_KEYS:
+    for key in (*_ENV_KEYS, *_applied_keys):
         os.environ.pop(key, None)
-    for key, value in config_entry.extra_env.items():
-        os.environ[key] = value
+
+    _applied_keys.clear()
+
+    for name, value in settings.model_dump(exclude_none=True).items():
+        key = name.upper()
+        os.environ[key] = str(value).lower() if isinstance(value, bool) else str(value)
+        _applied_keys.add(key)
 
 
 class ResultsItem(DBItem, BaseModel):
@@ -104,29 +119,38 @@ class WorkerEnvironment(DBItem, BaseModel):
 
 
 class WorkerEvent(DBItem, BaseModel):
-    """model worker events show when models start, stop, error etc"""
+    """One lifecycle event for one model: a request, a load, the worker.
+
+    Keyed by model, sorted by timestamp then event type, so a query on
+    one model returns its history in time order, and reversed, newest
+    first. timestamp is ISO-8601 UTC for the same reason as
+    WorkerEnvironment.started_at.
+
+    No TTL: rows accumulate, so a model's history survives restarts and
+    log rotation.
+    """
 
     pk_pattern: ClassVar[str] = "WORKER#{model_hash}"
-    sk_pattern: ClassVar[str] = "EVENT#{event_type}#{timestamp}"
+    sk_pattern: ClassVar[str] = "EVENT#{timestamp}#{event_type}"
 
     model_hash: str
     model_name: str
     model_type: str
     event_type: str
     timestamp: str
+    message_id: Optional[str] = None
     payload: dict = {}
-    ttl: Optional[int] = None
 
     @classmethod
     def from_lifecycle_event(cls, evt: LifecycleEvent) -> "WorkerEvent":
         return cls(
             model_hash=evt.model_hash,
             model_name=evt.model_name,
-            model_type=evt.payload.get("model_type", ""),
+            model_type=str(evt.payload.get("model_type", "")),
             event_type=evt.event_type,
             timestamp=evt.timestamp,
+            message_id=evt.message_id,
             payload=evt.payload,
-            ttl=ResultsItem.make_ttl(),
         )
 
 
@@ -175,7 +199,7 @@ class ModelCatalogueItem(DBItem, BaseModel):
     output: str
     timeout: int = 180
     memory_size: int = 2048
-    extra_env: dict = {}
+    settings: ModelSettings = Field(default_factory=ModelSettings)
     description: str = ""
     source_file: str = ""
     failed_reason: Optional[str] = None
