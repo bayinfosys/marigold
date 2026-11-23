@@ -41,14 +41,14 @@ issue first to discuss the change before writing code.
 
 - Docker and Docker Compose
 - NVIDIA Container Toolkit, for a GPU worker
-- Python 3.12, for the `marigold` command
+- Python 3.12 and pipx or uv, for the `marigold` command
 - A Hugging Face token, for gated models
 
 ## Quickstart
 
 <!-- The marigold.run home page renders this block. Keep it to commands. -->
 ```sh
-pip install bayis-marigold
+pipx install bayis-marigold
 marigold cache init
 marigold registry add https://examples.marigold.run/
 marigold application install chat

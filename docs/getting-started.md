@@ -14,16 +14,37 @@ with Docker Compose, and an application installed from a registry.
 
 - Docker and Docker Compose
 - NVIDIA Container Toolkit, for a GPU worker
-- Python 3.12, for the `marigold` command
+- Python 3.12 and pipx or uv, for the `marigold` command
 - A Hugging Face token, for gated models such as anything under
   `meta-llama`. This guide needs none.
 
 ## Install the CLI
 
+The CLI goes into an environment of its own, apart from your projects
+and their packages. With pipx:
+
 ```sh
-pip install bayis-marigold
+pipx install bayis-marigold
 marigold --version
 ```
+
+or with uv:
+
+```sh
+uv tool install bayis-marigold
+marigold --version
+```
+
+When the default Python is older than 3.12, add `--python python3.12`
+to `pipx install`, or `--python 3.12` to `uv tool install`.
+
+| | pipx | uv |
+|---|---|---|
+| upgrade | `pipx upgrade bayis-marigold` | `uv tool upgrade bayis-marigold` |
+| remove | `pipx uninstall bayis-marigold` | `uv tool uninstall bayis-marigold` |
+
+To import `marigold` from your own code, install it into a virtual
+environment of your choosing with `pip install bayis-marigold`.
 
 Model code runs in containers, pulled the first time they start.
 
