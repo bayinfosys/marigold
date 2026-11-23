@@ -6,8 +6,8 @@ nav_order: 1
 
 # Getting started
 
-This guide goes from nothing installed to a running application: a
-shared model cache, an API and a worker on your own hardware, started
+This guide goes from nothing installed to a running application: this involves 
+creating a shared model cache, an API and a worker on your own hardware, started
 with Docker Compose, and an application installed from a registry.
 
 ## Prerequisites
@@ -16,12 +16,11 @@ with Docker Compose, and an application installed from a registry.
 - NVIDIA Container Toolkit, for a GPU worker
 - Python 3.12 and pipx or uv, for the `marigold` command
 - A Hugging Face token, for gated models such as anything under
-  `meta-llama`. This guide needs none.
+  `meta-llama`. (not required for this guide)
 
 ## Install the CLI
 
-The CLI goes into an environment of its own, apart from your projects
-and their packages. With pipx:
+Install the library into an environment with pipx:
 
 ```sh
 pipx install bayis-marigold
@@ -43,19 +42,20 @@ to `pipx install`, or `--python 3.12` to `uv tool install`.
 | upgrade | `pipx upgrade bayis-marigold` | `uv tool upgrade bayis-marigold` |
 | remove | `pipx uninstall bayis-marigold` | `uv tool uninstall bayis-marigold` |
 
-To import `marigold` from your own code, install it into a virtual
-environment of your choosing with `pip install bayis-marigold`.
-
 Model code runs in containers, pulled the first time they start.
 
-## One directory holds everything
+## The marigold state directory
 
 Every piece of state Marigold keeps -- model weights, the database,
-installed applications, outputs -- lives under one cache directory. No
-named volumes, no external database, no state held only inside a
-container.
+installed applications, outputs -- lives under one cache directory.
+No named volumes, no external database.
 
-Set its location in `marigold-host.toml`:
+This location defaults to `~/.marigold.cache`.
+
+NB: this directory can become very large with model weights downloads.
+We recommend a separate drive or mount to avoid running out of disk.
+
+It is set in `marigold-host.toml`:
 
 ```toml
 # ~/.marigold/marigold-host.toml
@@ -66,20 +66,23 @@ compose_files = ["core", "cpu"]     # ["core", "cpu", "gpu"] for an NVIDIA worke
 location = "/data/marigold"              # default: ~/.marigold/cache
 ```
 
-The CLI reads `--host-config PATH`, then `$MARIGOLD_HOST_CONFIG`, then
-`marigold-host.toml` in the current directory, then
-`~/.marigold/marigold-host.toml`. Keep one file in your home directory
-and set `MARIGOLD_HOST_CONFIG` in scripts. Every key is in
-[Configuration](configuration.md).
+Host config location is set, in order of priority:
++ `--host-config PATH` parameter to the cli,
++ `$MARIGOLD_HOST_CONFIG` environment variable, then
++ `marigold-host.toml` in the current directory, then
++ `~/.marigold/marigold-host.toml` in your `$HOME` directory.
 
-Create the layout:
+Keep one file in your home directory and set `MARIGOLD_HOST_CONFIG` in scripts.
+
+Host file keys are described in [Configuration](configuration.md).
+
+Create the directory layout on disk with:
 
 ```sh
 marigold cache init
 ```
 
-For a cache under a system path such as `/data`, `cache init` prints
-the two commands that create it with your ownership.
+This will create the following tree structure with your current user as owner:
 
 ```
 /data/marigold/data/
@@ -90,7 +93,12 @@ the two commands that create it with your ownership.
   tmp/             worker offload space
 ```
 
+NB: ensure these directories are created; we force docker to fail if directories do not exist.
+
 ## Install an application
+
+Marigold applications are small packages installed from remote registries.
+You must add the registry initially.
 
 ```sh
 marigold registry add https://examples.marigold.run/
@@ -104,19 +112,20 @@ checks it against the registry's index and installs it under its name.
 [Installing](installing.md) covers versions, dependencies and several
 registries.
 
-## Download its models
+## Download model weights
 
 ```sh
 marigold cache populate platform-model-test
 ```
 
 The cache container reads the application's `models.yaml`, downloads
-each model the cache lacks, and registers each one in the catalogue as
-soon as its weights are present. This is the long, heavy step, and it
-is always run explicitly: nothing else downloads models. A model that
-fails to download is reported and skipped; the others proceed.
+each model to the cache, and registers each one in the catalogue.
+This is a long, heavy step, and it is always run explicitly;
+there is no other way to download model weights.
+A model that fails to download is reported and skipped.
+Models in a `models.yaml` file may be altered so models can be replaced.
 
-## Run it
+## Run the application
 
 ```sh
 marigold application start platform-model-test
@@ -124,7 +133,7 @@ marigold application logs platform-model-test
 ```
 
 `start` brings the platform up if it is not already running -- Postgres,
-the API, the worker and the cache container, as compose project
+the API, the worker and the cache container, as compose project called
 `marigold` -- then runs the application in its own container. The API
 answers at `http://localhost:8000/docs`.
 
