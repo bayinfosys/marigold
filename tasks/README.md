@@ -9,8 +9,7 @@ how several developers share the work.
 
     tasks/
       scripts/
-        task.sh
-        route.py
+        task.py
         hooks/
       <id>/
         WORKPLAN.md
@@ -65,8 +64,9 @@ then what the change does.
 
 A change that needs a second line to describe is two tasks.
 
-`SQUASH_COMMIT_MSG` is the workplan's squash-merge message, written
-after OUTCOME.md, as Merging describes.
+`SQUASH_COMMIT_MSG` holds the workplan's goal in one line and a
+paragraph summarising what changed, written after OUTCOME.md;
+`task.py merge` adds the rest, as Merging describes.
 
 `OUTCOME.md` is written once every task has been applied and run. It
 records each finding and what now addresses it, how the work was
@@ -81,10 +81,10 @@ for a later workplan.
 3. For each task in order: confirm the tasks it depends on have landed
    and the code is in the state the task expects; run the patch loop
    below until the diff is right; run it; accept it with
-   `tasks/scripts/task.sh accept <nnnn>`; push.
+   `tasks/scripts/task.py accept <nnnn>`; push.
 4. Run the integration cycle, then write OUTCOME.md and commit it.
 5. Review the workplan as a whole, and write SQUASH_COMMIT_MSG.
-6. Squash-merge to master with `tasks/scripts/task.sh merge <id>`.
+6. Squash-merge to master with `tasks/scripts/task.py merge <id>`.
 
 The maintainer authors every commit.
 
@@ -95,15 +95,38 @@ engineering loop:
 
 1. Generate output.patch and COMMIT_MSG from TASK.md and BREAKDOWN.md,
    against the pushed head.
-2. `task.sh apply <nnnn>` stages the patch, and `task.sh diff <nnnn>`
-   shows it; `task.sh view <nnnn>` prints COMMIT_MSG.
-3. If the diff is wrong, `task.sh reject <nnnn>` takes it out of the
+2. `task.py apply <nnnn>` stages the patch, and `task.py diff <nnnn>`
+   shows it; `task.py view <nnnn>` prints COMMIT_MSG.
+3. If the diff is wrong, `task.py reject <nnnn>` takes it out of the
    tree; adjust TASK.md or BREAKDOWN.md, and generate again.
-4. When the diff is right, `task.sh accept <nnnn>` commits it with
+4. When the diff is right, `task.py accept <nnnn>` commits it with
    COMMIT_MSG.
 
-task.sh takes `<id>/<nnnn>`, or `<nnnn>` in the workplan of the
-current branch, or else in the newest dated workplan.
+task.py takes `<id>/<nnnn>`, or `<nnnn>` in the workplan of the
+current branch, or else in the newest dated workplan. `accept` checks
+that COMMIT_MSG is one line starting with the task id, since `status`
+finds the task by that line.
+
+## Status
+
+`task.py status <id>` lists a workplan's tasks, and
+`task.py status <id>/<nnnn>` one task. The state comes from git history
+and the files, with no marker files; the first that holds is the state:
+
+| State | Holds when |
+|---|---|
+| `merged` | a commit on master has a line starting with the task id |
+| `complete` | a commit on the current branch has that line |
+| `testing` | output.patch is in the index or the tree, uncommitted |
+| `development` | output.patch exists and would apply |
+| `waiting` | output.patch does not apply, and a task on its `Depends on` line is not committed |
+| `stale` | output.patch does not apply, and every task it depends on is committed: regenerate it against the current head |
+| `refinement` | TASK.md exists, with no patch |
+| `unspecified` | WORKPLAN.md lists the task, with no directory |
+| `unknown` | neither WORKPLAN.md nor tasks/ knows the task |
+
+The patches are working files, so `testing`, `development`, `waiting`
+and `stale` are states of one clone; every clone sees `complete` and `merged`.
 
 A change the patch would need outside its task, such as an
 architectural change, a refactoring or an unrelated fix, is raised for
@@ -136,9 +159,9 @@ recorded intent. Merged branches are deleted, locally and on origin.
 
 A workplan is squash-merged into master once its tasks and OUTCOME.md
 are committed and the integration cycle has passed on its branch.
-SQUASH_COMMIT_MSG holds the message: the workplan's goal in one line, a
-paragraph summarising what changed, the task commit subjects in order,
-and a trailer naming the workplan:
+The message is the workplan's goal in one line, a paragraph summarising
+what changed, the task commit subjects in order, and a trailer naming
+the workplan:
 
     2026-11-23 Settings as arguments, declared code layers
 
@@ -152,12 +175,13 @@ and a trailer naming the workplan:
 
     Workplan: tasks/2026-11-23/WORKPLAN.md
 
-The task lines come from the branch:
-
-    git log --reverse --format=%s master..workplan/<id>/root | grep '^<id>/'
-
-`task.sh merge <id>` squashes `workplan/<id>/root` into master with
-SQUASH_COMMIT_MSG; TASK_MAIN_BRANCH names another main branch.
+`task.py merge <id>` squashes `workplan/<id>/root` into master. It
+stops unless every task the workplan lists is committed and OUTCOME.md
+is committed on the branch, and unless SQUASH_COMMIT_MSG holds only the
+goal line and the summary. It adds the task subjects, from
+`git log master..workplan/<id>/root`, and the trailer, so every task id
+reaches master's history, where `status` finds it. TASK_MAIN_BRANCH
+names another main branch.
 
 The tasks/<id>/ directory stays in master as the record of the work.
 `git log --format='%h %s %(trailers:key=Workplan,valueonly)'` lists the
@@ -165,8 +189,8 @@ workplan behind each commit on master.
 
 ## Hooks
 
-`task.sh install` points this clone's hooks at tasks/scripts/hooks.
-After each commit, the post-commit hook runs `task.sh route` in the
+`task.py install` points this clone's hooks at tasks/scripts/hooks.
+After each commit, the post-commit hook runs `task.py route` in the
 background and records the next step in .git/tasks/route.log, one line
 per commit:
 
@@ -182,7 +206,7 @@ The targets always come from the commit. Which action applies is
 decided by the rules, in the order of the table, or, with
 `TASK_CLASSIFIER=marigold`, by a model served by marigold
 (TASK_CLASSIFIER_MODEL, MARIGOLD_API_BASE), falling back to the rules
-when its answer is not an action with targets. `task.sh route [rev]`
+when its answer is not an action with targets. `task.py route [rev]`
 prints the decision for any commit.
 
 TASK_DISPATCH names a command the hook runs with the action and its
