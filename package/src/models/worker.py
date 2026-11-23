@@ -38,12 +38,12 @@ from contextlib import contextmanager
 from typing import Any, Iterator
 
 import torch
-from backend.messaging.base import NotificationBackend, QueueBackend
+from shared.messaging import NotificationBackend, QueueBackend
 from dynawrap.backends.base import DBBackend
 from pydantic import ValidationError
 
-from models.catalogue import get_all_models
-from shared.db_models import ModelCatalogueItem, set_model_config_env
+from shared.catalogue import get_all_models
+from shared.db_models import ModelCatalogueItem
 from shared.enums import StatusCode
 from shared.model_settings import (
     HostModelSettings,
@@ -56,7 +56,7 @@ from shared.results_cache import ResultsCache
 from shared.schedule_models import EventType, LifecycleEvent, MarigoldMessage
 from shared.usage import write_usage
 from shared.usage_models import UsageItem
-from tools.power_sampler import PowerSampler, check_model_vram, get_vram_state
+from models.power_sampler import PowerSampler, check_model_vram, get_vram_state
 
 logger = logging.getLogger(__name__)
 
@@ -185,9 +185,7 @@ def resident_model(
             settings = resolve_settings(entry.type, entry.name, entry.settings, host_settings)
             load["settings"] = settings
             logger.info("settings for '%s': %s", entry.name, describe_settings(settings))
-            set_model_config_env(resolved_values(settings))
-
-            model = spec.handler_class(entry.name)
+            model = spec.handler_class(entry.name, resolved_values(settings))
             load["footprint_bytes"] = model.model_size_bytes
             load["dtype"] = str(getattr(model.model, "dtype", ""))
 

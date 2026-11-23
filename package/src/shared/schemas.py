@@ -1,9 +1,8 @@
-"""API request and response models.
+"""Request and response schemas for every model type, and the API's
+submission and polling envelopes.
 
-Corresponds to package/src/api/models.py.
-
-ModelUsageStats lives in shared.usage so handler modules and infrastructure
-code can import it without depending on the API layer.
+The handlers, the API routes and the usage code all import them from
+here, in the core layer, so none of them depends on another's package.
 """
 
 from datetime import datetime
@@ -454,7 +453,7 @@ class Txt2VidRequest(ModelRequest):
     num_inference_steps: Optional[int] = Field(
         None,
         description=(
-            "diffusion steps. Defaults to NUM_STEPS env var on the worker. "
+            "diffusion steps. Defaults to the model's num_steps setting. "
             "Falls back to 50 if unset"
         ),
     )
@@ -655,7 +654,7 @@ class Img2VidRequest(ModelRequest):
     negative_prompt: Optional[str] = None
     num_frames: int = Field(25, ge=1, description="number of frames to generate")
     fps: int = Field(8, ge=1, le=60, description="frames per second of the output video")
-    num_inference_steps: Optional[int] = Field(None, description="diffusion steps; defaults to NUM_STEPS env var, falls back to 25")
+    num_inference_steps: Optional[int] = Field(None, description="diffusion steps; defaults to the model's num_steps setting, falls back to 25")
     guidance_scale: float = Field(7.5, description="classifier-free guidance scale")
 
 class Img2VidResponse(GenerativeResponse):
@@ -726,7 +725,7 @@ class Vid2VidRequest(ModelRequest):
     )
     num_inference_steps: Optional[int] = Field(
         None,
-        description="diffusion steps; defaults to NUM_STEPS env var, falls back to 50",
+        description="diffusion steps; defaults to the model's num_steps setting, falls back to 50",
     )
     guidance_scale: float = Field(7.5, description="classifier-free guidance scale")
     fps: int = Field(

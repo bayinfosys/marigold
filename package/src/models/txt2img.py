@@ -10,14 +10,16 @@ num_steps defaults to 10; set it in the model's settings in models.yaml.
 """
 
 import logging
+import json
 import os
 from time import perf_counter as clock
 
 import numpy as np
 import torch
-from api.models import Txt2ImgRequest, Txt2ImgResponse
+from shared.model_settings import ModelSettings
+from shared.schemas import Txt2ImgRequest, Txt2ImgResponse
 from diffusers.quantizers import PipelineQuantizationConfig
-from models.standard_loader import ModelLoaderResult, check_4bit, load_diffusion_pipeline, env_flag
+from models.standard_loader import ModelLoaderResult, check_4bit, load_diffusion_pipeline
 from PIL import Image
 from shared.enums import ModelMode, ModelType, OutputMimeType
 from shared.outputs import image_to_png_bytes
@@ -28,12 +30,12 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
 
-def _make_quant_config(modelname: str) -> PipelineQuantizationConfig | None:
+def _make_quant_config(modelname: str, quant_components: str) -> PipelineQuantizationConfig | None:
     """Return a PipelineQuantizationConfig for 4-bit NF4 quantisation.
 
     Components are resolved in order:
       1. diffusers_quant_components in the model's settings -- a
-         comma-separated list, read as DIFFUSERS_QUANT_COMPONENTS
+         comma-separated list
       2. Known model prefix table
       3. Default: ["transformer"]
 
@@ -54,9 +56,8 @@ def _make_quant_config(modelname: str) -> PipelineQuantizationConfig | None:
         "tongyi-mai/z-image-turbo":        ["unet"],   # unconfirmed; assumed SDXL
     }
 
-    env_val = os.getenv("DIFFUSERS_QUANT_COMPONENTS", "").strip()
-    if env_val:
-        components = [c.strip() for c in env_val.split(",") if c.strip()]
+    if quant_components.strip():
+        components = [c.strip() for c in quant_components.split(",") if c.strip()]
     else:
         components = None
         for prefix, names in _COMPONENT_DEFAULTS.items():
@@ -91,14 +92,23 @@ def _make_quant_config(modelname: str) -> PipelineQuantizationConfig | None:
 def load_txt2img(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoaderResult:
     """Text-to-image via diffusers DiffusionPipeline.
 
-    Applies 4-bit NF4 quantisation when LOAD_IN_4BIT is set, which needs
-    a GPU. Components are selected by _make_quant_config.
+    Applies 4-bit NF4 quantisation when the load_in_4bit setting is on,
+    which needs a GPU. Components are selected by _make_quant_config from
+    the diffusers_quant_components setting, and placed by the
+    diffusers_device_map setting, a JSON object.
     """
-    load_in_4bit = env_flag("LOAD_IN_4BIT", kwargs.get("load_in_4bit", False))
+    settings = kwargs["settings"]
+    load_in_4bit = bool(settings.load_in_4bit)
     check_4bit(modelname, load_in_4bit)
-    quant_config = _make_quant_config(modelname) if load_in_4bit else None
 
-    return load_diffusion_pipeline(modelname, cache_dir, quant_config=quant_config)
+    quant_config = (
+        _make_quant_config(modelname, str(settings.get("diffusers_quant_components", "")))
+        if load_in_4bit
+        else None
+    )
+    device_map = json.loads(settings.get("diffusers_device_map", "{}"))
+
+    return load_diffusion_pipeline(modelname, cache_dir, quant_config=quant_config, device_map=device_map)
 
 
 @model_spec(
@@ -112,10 +122,10 @@ def load_txt2img(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoader
 )
 class Txt2ImgModel(BaseModelHandler):
 
-    def __init__(self, modelname: str):
-        super().__init__(modelname)
+    def __init__(self, modelname: str, settings: ModelSettings):
+        super().__init__(modelname, settings)
         self.pipe = self.model
-        self.num_steps = int(os.getenv("NUM_STEPS", "10"))
+        self.num_steps = int(self.settings.get("num_steps", 10))
 
     def unload(self) -> None:
         del self.pipe

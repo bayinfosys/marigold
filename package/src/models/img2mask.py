@@ -14,7 +14,8 @@ from time import perf_counter as clock
 
 import numpy as np
 import torch
-from api.models import Img2MaskRequest, Img2MaskResponse
+from shared.model_settings import ModelSettings
+from shared.schemas import Img2MaskRequest, Img2MaskResponse
 from models.standard_loader import ModelLoaderResult, standard_loader
 from PIL import Image
 from shared.enums import ModelMode, ModelType, OutputMimeType
@@ -45,8 +46,8 @@ def load_img2mask(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoade
 )
 class Img2MaskModel(BaseModelHandler):
 
-    def __init__(self, modelname: str):
-        super().__init__(modelname)
+    def __init__(self, modelname: str, settings: ModelSettings):
+        super().__init__(modelname, settings)
 
     def _run(
         self, user_id: str, message_id: str, request: Img2MaskRequest

@@ -2,7 +2,7 @@
 
 from fastapi import Request, Security, APIRouter
 
-from api.models import (
+from shared.schemas import (
     DepthRequest,
     Img2MaskRequest,
     Img2TxtRequest,

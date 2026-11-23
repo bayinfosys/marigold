@@ -55,7 +55,7 @@ def local_handler():
     from shared.database import get_database_connection
     from shared.model_settings import load_host_settings
     from shared.results_cache import ResultsCache
-    from tools.environment import collect_environment
+    from models.environment import collect_environment
 
     load_all_model_handlers()
 

@@ -3,8 +3,8 @@
 Language coverage: https://dl.fbaipublicfiles.com/mms/misc/language_coverage_mms.html
 
 Each TTS model is language-specific. The language code is part of the model
-name (e.g. facebook/mms-tts-eng) and is also stored in MODEL_LANGCODE by
-Terraform. The request must include a language_code field; the handler logs a
+name (e.g. facebook/mms-tts-eng) and may also be set as the model_langcode
+setting. The request must include a language_code field; the handler logs a
 warning if it does not match the loaded model's language but does not reject
 the request, since the model itself enforces compatibility.
 
@@ -26,7 +26,8 @@ from time import perf_counter as clock
 
 import numpy as np
 import torch
-from api.models import TTSRequest, TTSResponse
+from shared.model_settings import ModelSettings
+from shared.schemas import TTSRequest, TTSResponse
 from models.standard_loader import ModelLoaderResult, standard_loader
 from pydub import AudioSegment
 from shared.enums import ModelMode, ModelType, OutputMimeType
@@ -94,9 +95,9 @@ def _wave_to_mp3(wav_bytes: bytes) -> bytes:
 )
 class TTSModel(BaseModelHandler):
 
-    def __init__(self, modelname: str):
-        super().__init__(modelname)
-        self.lang_code = os.getenv("MODEL_LANGCODE", "")
+    def __init__(self, modelname: str, settings: ModelSettings):
+        super().__init__(modelname, settings)
+        self.lang_code = str(self.settings.get("model_langcode", ""))
 
     def _run(self, user_id: str, message_id: str, request: TTSRequest) -> TTSResponse:
         if self.lang_code and request.language_code != self.lang_code:

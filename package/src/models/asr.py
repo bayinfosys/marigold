@@ -26,7 +26,8 @@ from time import perf_counter as clock
 
 import numpy as np
 import torch
-from api.models import ASRRequest, ASRResponse, ASRSegment
+from shared.model_settings import ModelSettings
+from shared.schemas import ASRRequest, ASRResponse, ASRSegment
 from models.standard_loader import ModelLoaderResult
 from pydub import AudioSegment
 from shared.enums import ModelMode, ModelType
@@ -121,8 +122,8 @@ def _decode_audio(input_str: str, target_sr: int) -> dict:
 )
 class ASRModel(BaseModelHandler):
 
-    def __init__(self, modelname: str):
-        super().__init__(modelname)
+    def __init__(self, modelname: str, settings: ModelSettings):
+        super().__init__(modelname, settings)
         self.pipe = self.model
         self.target_sr = getattr(
             getattr(self.pipe, "feature_extractor", None),

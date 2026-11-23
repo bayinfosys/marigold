@@ -36,7 +36,8 @@ from time import perf_counter as clock
 
 import torch
 
-from api.models import Vid2TxtRequest, Vid2TxtResponse
+from shared.model_settings import ModelSettings
+from shared.schemas import Vid2TxtRequest, Vid2TxtResponse
 from models.standard_loader import ModelLoaderResult, standard_loader
 from shared.enums import ModelMode, ModelType
 from shared.models import InstructMessage, InstructRole
@@ -57,7 +58,7 @@ def load_vid2txt(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoader
 
     The same model class covers image and video vision-language models in
     transformers. Video-specific behaviour is handled at inference time via
-    the processor's chat template and the INPUT_MODE env var.
+    the processor's chat template and the input_mode setting.
     """
     from transformers import AutoModelForVision2Seq as M
     from transformers import AutoProcessor as T
@@ -127,14 +128,14 @@ def _build_prompt_video(frames: list, prompt_text: str) -> tuple:
 )
 class Vid2TxtModel(BaseModelHandler):
 
-    def __init__(self, modelname: str):
-        super().__init__(modelname)
-        self.max_frames = int(os.getenv("MAX_FRAMES", "8"))
-        self.input_mode = os.getenv("INPUT_MODE", "image_frames")
+    def __init__(self, modelname: str, settings: ModelSettings):
+        super().__init__(modelname, settings)
+        self.max_frames = int(self.settings.get("max_frames", 8))
+        self.input_mode = str(self.settings.get("input_mode", "image_frames"))
 
         if self.input_mode not in _VALID_INPUT_MODES:
             logger.warning(
-                "'%s' unrecognised INPUT_MODE='%s', falling back to 'image_frames'",
+                "'%s' unrecognised input_mode='%s', falling back to 'image_frames'",
                 modelname, self.input_mode,
             )
             self.input_mode = "image_frames"

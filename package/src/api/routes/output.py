@@ -5,7 +5,7 @@ import posixpath
 from fastapi import Request, Security, APIRouter
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from api.models import DeleteCacheResponse, PollResponse
+from shared.schemas import DeleteCacheResponse, PollResponse
 from api.auth import apikey_auth
 from shared.receiver_logic import handle_delete, handle_status
 from shared.storage import ObjectNotFound, StorageError, get_storage

@@ -32,7 +32,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from shared.db_models import ModelCatalogueItem, set_model_config_env
+from shared.db_models import ModelCatalogueItem
 from shared.enums import ModelProvider
 from shared.model_settings import (
     describe_settings,
@@ -122,13 +122,12 @@ class HuggingFaceProvider(Provider):
         settings = resolve_settings(model_type, name, model.settings, load_host_settings())
         settings["load_in_4bit"] = {"value": False, "source": "cache-init"}
         log.info("settings for '%s': %s", name, describe_settings(settings))
-        set_model_config_env(resolved_values(settings))
-
         try:
             _SPECS[model_type].loader(
                 name,
                 cache_dir=str(cache_path),
                 local_files_only=False,
+                settings=resolved_values(settings),
             )
             return True
         except Exception as e:

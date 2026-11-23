@@ -12,7 +12,7 @@ import os
 
 from dynawrap.backends.postgres import PostgresBackend
 
-from api.models import ModelUsageStats
+from shared.schemas import ModelUsageStats
 from shared.usage_models import UsageItem
 from shared.database import get_database_connection
 

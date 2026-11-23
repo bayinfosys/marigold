@@ -190,8 +190,8 @@ Default: none.
 
 A model's settings decide how it loads and runs: 4-bit quantisation,
 the tokenizer, remote code, and the values a handler reads, such as
-`num_steps`. A setting's name is its environment variable in lower
-case. An application declares settings per model under `settings:` in
+`num_steps`. A setting's name is lower-case letters, digits and
+underscores. An application declares settings per model under `settings:` in
 its models.yaml; every setting each loader and handler reads is listed
 in [Building](building.md#model-settings).
 

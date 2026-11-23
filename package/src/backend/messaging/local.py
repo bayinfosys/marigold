@@ -12,7 +12,7 @@ from dynawrap.backends.base import DBBackend
 from shared.db_models import WorkerEvent
 from shared.schedule_models import LifecycleEvent
 
-from .base import NotificationBackend
+from shared.messaging import NotificationBackend
 
 logger = logging.getLogger(__name__)
 

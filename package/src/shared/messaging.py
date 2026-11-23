@@ -1,4 +1,7 @@
-"""Base interfaces for queue and notification backends.
+"""Interfaces for queue and notification backends.
+
+The implementations live in backend/messaging/; the code that sends,
+receives and publishes depends only on these interfaces.
 
 All backends inherit from QueueBackend or NotificationBackend and implement
 every method. The interfaces define the contract; implementations are free to

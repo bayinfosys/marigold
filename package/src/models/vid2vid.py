@@ -11,7 +11,7 @@ class for each model (VideoToVideoSDPipeline, CogVideoXVideoToVideoPipeline,
 etc.).
 
 Frame count: the output frame count is determined by the pipeline from the
-number of conditioning frames passed in. MAX_INPUT_FRAMES (env var, default
+number of conditioning frames passed in. max_input_frames (a setting, default
 24) caps how many source frames are extracted before passing to the pipeline.
 Increase this for models with longer context windows; decrease it to reduce
 VRAM usage.
@@ -29,7 +29,8 @@ from time import perf_counter as clock
 
 import torch
 
-from api.models import Vid2VidRequest, Vid2VidResponse
+from shared.model_settings import ModelSettings
+from shared.schemas import Vid2VidRequest, Vid2VidResponse
 from models.standard_loader import ModelLoaderResult, load_diffusion_pipeline
 from shared.enums import ModelMode, ModelType, OutputMimeType
 from shared.outputs import decode_video_frames, frames_to_mp4_bytes
@@ -59,11 +60,11 @@ def load_vid2vid(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoader
 )
 class Vid2VidModel(BaseModelHandler):
 
-    def __init__(self, modelname: str):
-        super().__init__(modelname)
+    def __init__(self, modelname: str, settings: ModelSettings):
+        super().__init__(modelname, settings)
         self.pipe          = self.model
-        self.num_steps     = int(os.getenv("NUM_STEPS",        str(_DEFAULT_NUM_STEPS)))
-        self.max_in_frames = int(os.getenv("MAX_INPUT_FRAMES", str(_DEFAULT_MAX_IN_FRAMES)))
+        self.num_steps     = int(self.settings.get("num_steps",        _DEFAULT_NUM_STEPS))
+        self.max_in_frames = int(self.settings.get("max_input_frames", _DEFAULT_MAX_IN_FRAMES))
 
         logger.info(
             "'%s' max_input_frames=%i default_steps=%i",

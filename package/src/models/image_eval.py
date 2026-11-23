@@ -15,7 +15,8 @@ import os
 from time import perf_counter as clock
 
 import torch
-from api.models import EvalImageRequest, EvalResponse, EvalScore
+from shared.model_settings import ModelSettings
+from shared.schemas import EvalImageRequest, EvalResponse, EvalScore
 from models.standard_loader import ModelLoaderResult, standard_loader
 from shared.enums import ModelMode, ModelType
 from shared.outputs import decode_image
@@ -44,8 +45,8 @@ def load_image_eval(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoa
 )
 class ImageEvalModel(BaseModelHandler):
 
-    def __init__(self, modelname: str):
-        super().__init__(modelname)
+    def __init__(self, modelname: str, settings: ModelSettings):
+        super().__init__(modelname, settings)
 
     def _run(
         self, user_id: str, message_id: str, request: EvalImageRequest

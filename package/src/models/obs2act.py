@@ -32,7 +32,8 @@ from typing import List, Optional
 
 import torch
 
-from api.models import Obs2ActRequest, Obs2ActResponse
+from shared.model_settings import ModelSettings
+from shared.schemas import Obs2ActRequest, Obs2ActResponse
 from models.standard_loader import ModelLoaderResult, standard_loader
 from shared.enums import ModelMode, ModelType
 from shared.models import InstructMessage, InstructRole
@@ -91,16 +92,16 @@ def _build_prompt(
 )
 class Obs2ActModel(BaseModelHandler):
 
-    def __init__(self, modelname: str):
-        super().__init__(modelname)
+    def __init__(self, modelname: str, settings: ModelSettings):
+        super().__init__(modelname, settings)
 
-        self.action_dim      = int(os.getenv("ACTION_DIM", str(_DEFAULT_ACTION_DIM)))
-        self.prompt_template = os.getenv("PROMPT_TEMPLATE", _DEFAULT_PROMPT_TEMPLATE)
-        self.propr_mode      = os.getenv("PROPRIOCEPTION_MODE", "text")
+        self.action_dim      = int(self.settings.get("action_dim", _DEFAULT_ACTION_DIM))
+        self.prompt_template = str(self.settings.get("prompt_template", _DEFAULT_PROMPT_TEMPLATE))
+        self.propr_mode      = str(self.settings.get("proprioception_mode", "text"))
 
         if self.propr_mode not in _VALID_PROPR_MODES:
             logger.warning(
-                "'%s' unrecognised PROPRIOCEPTION_MODE='%s', falling back to 'text'",
+                "'%s' unrecognised proprioception_mode='%s', falling back to 'text'",
                 modelname, self.propr_mode,
             )
             self.propr_mode = "text"

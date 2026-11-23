@@ -15,7 +15,7 @@ from shared.db_models import WorkerEvent
 from shared.enums import ModelType
 from shared.model_settings import resolve_settings
 from shared.usage import model_usage_summary
-from models.catalogue import get_all_models, get_model
+from shared.catalogue import get_all_models, get_model
 
 
 router = APIRouter()

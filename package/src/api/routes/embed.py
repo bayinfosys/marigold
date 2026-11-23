@@ -2,7 +2,7 @@
 
 from fastapi import Request, Security, APIRouter
 
-from api.models import EmbedImageRequest, EmbedTextRequest, SubmissionResponse
+from shared.schemas import EmbedImageRequest, EmbedTextRequest, SubmissionResponse
 from api.routes._submit import _submit
 from api.auth import apikey_auth
 from shared.enums import ModelType, ModelMode

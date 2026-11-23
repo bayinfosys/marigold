@@ -26,7 +26,8 @@ import os
 from time import perf_counter as clock
 
 import torch
-from api.models import EvalResponse, EvalScore, EvalTextRequest
+from shared.model_settings import ModelSettings
+from shared.schemas import EvalResponse, EvalScore, EvalTextRequest
 from models.standard_loader import ModelLoaderResult, standard_loader
 from shared.enums import ModelMode, ModelType
 from shared.registry import BaseModelHandler, model_spec
@@ -73,8 +74,8 @@ def load_text_eval(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoad
 )
 class TextEvalModel(BaseModelHandler):
 
-    def __init__(self, modelname: str):
-        super().__init__(modelname)
+    def __init__(self, modelname: str, settings: ModelSettings):
+        super().__init__(modelname, settings)
         self._token_classification = _is_token_classification(self.model)
 
     def _run(

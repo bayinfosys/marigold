@@ -38,7 +38,7 @@ subdirectories as it needs them. Layout beyond marigold.toml is private
 to the application -- see APPLICATIONS.md.
 
 This CLI never runs a model or touches torch. cache validate imports
-models.catalogue for schema validation only -- that module's import
+shared.catalogue for schema validation only -- that module's import
 chain was checked directly to confirm it has no eager side effects (no
 DB connection, no network call) at import time.
 """

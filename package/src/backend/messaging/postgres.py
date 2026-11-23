@@ -30,7 +30,7 @@ import psycopg2
 import psycopg2.extensions
 import psycopg2.extras
 
-from .base import QueueBackend
+from shared.messaging import QueueBackend
 
 logger = logging.getLogger(__name__)
 

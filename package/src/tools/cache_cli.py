@@ -46,7 +46,7 @@ from typing import Optional
 
 from pydantic import ValidationError
 
-from models.catalogue import load_catalogue_from_yaml
+from shared.catalogue import load_catalogue_from_yaml
 from shared.db_models import ModelCatalogueItem
 from shared.model_cache import GB, cached_models, model_bytes
 
@@ -258,7 +258,7 @@ def populate(application: Optional[str] = None, prune: bool = False) -> CommandR
     from dynawrap.backends.postgres import PostgresBackend
     from backend.messaging.postgres import PostgresQueueBackend
     from models import load_all
-    from models.catalogue import register_model
+    from shared.catalogue import register_model
     from shared.database import DatabaseUnavailable, get_database_connection
 
     ctx = ModelCatalogueContext.load(application)

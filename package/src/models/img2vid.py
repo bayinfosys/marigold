@@ -39,7 +39,8 @@ from time import perf_counter as clock
 import torch
 from PIL import Image
 
-from api.models import Img2VidRequest, Img2VidResponse, VideoKeyframe
+from shared.model_settings import ModelSettings
+from shared.schemas import Img2VidRequest, Img2VidResponse, VideoKeyframe
 from models.standard_loader import ModelLoaderResult, load_diffusion_pipeline
 from shared.enums import ModelMode, ModelType, OutputMimeType
 from shared.outputs import decode_image, frames_to_mp4_bytes
@@ -101,15 +102,15 @@ def _resolve_timestamps(keyframes: list, num_frames: int, fps: int) -> list:
 )
 class Img2VidModel(BaseModelHandler):
 
-    def __init__(self, modelname: str):
-        super().__init__(modelname)
+    def __init__(self, modelname: str, settings: ModelSettings):
+        super().__init__(modelname, settings)
         self.pipe          = self.model
-        self.num_steps     = int(os.getenv("NUM_STEPS", str(_DEFAULT_NUM_STEPS)))
-        self.keyframe_mode = os.getenv("KEYFRAME_MODE", "single")
+        self.num_steps     = int(self.settings.get("num_steps", _DEFAULT_NUM_STEPS))
+        self.keyframe_mode = str(self.settings.get("keyframe_mode", "single"))
 
         if self.keyframe_mode not in _VALID_KEYFRAME_MODES:
             logger.warning(
-                "'%s' has unrecognised KEYFRAME_MODE='%s', falling back to 'single'",
+                "'%s' has unrecognised keyframe_mode='%s', falling back to 'single'",
                 modelname, self.keyframe_mode,
             )
             self.keyframe_mode = "single"
@@ -159,7 +160,7 @@ class Img2VidModel(BaseModelHandler):
         if self.keyframe_mode == "single":
             if len(request.keyframes) > 1:
                 logger.warning(
-                    "[%s/%s] %i keyframes provided but KEYFRAME_MODE=single; "
+                    "[%s/%s] %i keyframes provided but keyframe_mode=single; "
                     "using keyframes[0] only",
                     user_id, message_id, len(request.keyframes),
                 )
@@ -168,12 +169,12 @@ class Img2VidModel(BaseModelHandler):
         elif self.keyframe_mode == "start_end":
             if len(request.keyframes) < 2:
                 raise ValueError(
-                    "KEYFRAME_MODE=start_end requires at least 2 keyframes; "
+                    "keyframe_mode=start_end requires at least 2 keyframes; "
                     "got %i" % len(request.keyframes)
                 )
             if len(request.keyframes) > 2:
                 logger.warning(
-                    "[%s/%s] %i keyframes provided but KEYFRAME_MODE=start_end "
+                    "[%s/%s] %i keyframes provided but keyframe_mode=start_end "
                     "uses only first and last",
                     user_id, message_id, len(request.keyframes),
                 )

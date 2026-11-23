@@ -36,7 +36,8 @@ from time import perf_counter as clock
 
 import numpy as np
 import torch
-from api.models import Txt2AudioRequest, Txt2AudioResponse
+from shared.model_settings import ModelSettings
+from shared.schemas import Txt2AudioRequest, Txt2AudioResponse
 from models.standard_loader import ModelLoaderResult
 from pydub import AudioSegment
 from shared.enums import ModelMode, ModelType, OutputMimeType
@@ -130,11 +131,11 @@ def load_txt2audio(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoad
 )
 class Txt2AudioModel(BaseModelHandler):
 
-    def __init__(self, modelname: str):
-        super().__init__(modelname)
+    def __init__(self, modelname: str, settings: ModelSettings):
+        super().__init__(modelname, settings)
         self._is_musicgen = modelname.startswith("facebook/musicgen")
         self._default_steps = int(
-            os.getenv("NUM_INFERENCE_STEPS", str(_AUDIOLDM2_DEFAULT_STEPS))
+            self.settings.get("num_inference_steps", _AUDIOLDM2_DEFAULT_STEPS)
         )
 
     def _run(

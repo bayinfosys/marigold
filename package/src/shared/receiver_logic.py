@@ -1,9 +1,9 @@
 import logging
 from hashlib import md5
 
-from backend.messaging.base import NotificationBackend, QueueBackend
+from shared.messaging import NotificationBackend, QueueBackend
 from dynawrap.backends.postgres import PostgresBackend
-from models.catalogue import get_model
+from shared.catalogue import get_model
 from shared.enums import ModelType, StatusCode
 from shared.schedule_models import MarigoldMessage, EventType, LifecycleEvent
 from shared.results_cache import ResultsCache

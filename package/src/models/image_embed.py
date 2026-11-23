@@ -14,7 +14,8 @@ import os
 from time import perf_counter as clock
 
 import torch
-from api.models import EmbeddingResponse, EmbedImageRequest
+from shared.model_settings import ModelSettings
+from shared.schemas import EmbeddingResponse, EmbedImageRequest
 from models.standard_loader import ModelLoaderResult, standard_loader
 from shared.enums import ModelMode, ModelType
 from shared.outputs import decode_image
@@ -64,9 +65,9 @@ def load_image_embedding(modelname: str, cache_dir: str = None, **kwargs) -> Mod
 )
 class ImageEmbeddingModel(BaseModelHandler):
 
-    def __init__(self, modelname: str):
-        super().__init__(modelname)
-        self.precision = int(os.getenv("PRECISION", "3"))
+    def __init__(self, modelname: str, settings: ModelSettings):
+        super().__init__(modelname, settings)
+        self.precision = int(self.settings.get("precision", 3))
 
     def _run(
         self, user_id: str, message_id: str, request: EmbedImageRequest

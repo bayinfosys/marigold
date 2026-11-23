@@ -85,6 +85,36 @@ stopped instance leaves that instance unable to start.
 
 ---
 
+## Code layers
+
+The Python packages under `package/src` sit in four layers. A
+component imports only from layers below its own, and components in
+one layer import none of each other.
+
+| Layer | Components |
+|---|---|
+| 3 entry points | cli, tools |
+| 2 services | api, models |
+| 1 adapters | backend |
+| 0 core | shared |
+
+- **core**: types, schemas, settings, the catalogue, and the queue and
+  notification interfaces. It imports nothing from the other layers.
+- **adapters**: the Postgres implementations of the core interfaces.
+- **services**: the API and the worker with its handlers. They meet
+  only through the queue and the tables, never through an import.
+- **entry points**: the CLI, and cache-init, which loads handlers to
+  download their models.
+
+This table is the declaration the code is checked against:
+
+    python scripts/layer_check.py
+
+It reports each import against the layers and each cycle between
+components, and exits 1 when it finds any.
+
+---
+
 ## Two gateways
 
 Two components face outward. Everything else is internal.

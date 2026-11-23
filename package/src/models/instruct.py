@@ -43,7 +43,8 @@ import re
 from time import perf_counter as clock
 
 import torch
-from api.models import InstructRequest, InstructResponse, ResponseFormat
+from shared.model_settings import ModelSettings
+from shared.schemas import InstructRequest, InstructResponse, ResponseFormat
 from models.standard_loader import ModelLoaderResult, standard_loader
 from shared.enums import ModelMode, ModelType, StatusCode
 from shared.models import InstructMessage, InstructRole, InstructToolCall, gen_tool_call_id
@@ -177,8 +178,8 @@ def _template_message(m: InstructMessage) -> dict:
 )
 class InstructModel(BaseModelHandler):
 
-    def __init__(self, modelname: str):
-        super().__init__(modelname)
+    def __init__(self, modelname: str, settings: ModelSettings):
+        super().__init__(modelname, settings)
 
     def _run(self, user_id: str, message_id: str, request: InstructRequest) -> InstructResponse:
         if not request.messages:

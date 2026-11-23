@@ -11,7 +11,7 @@ from dynawrap.backends.base import DBBackend
 from shared.db_models import ModelCatalogueItem
 from shared.enums import ModelType
 from datetime import datetime, timezone
-from backend.messaging.base import QueueBackend
+from shared.messaging import QueueBackend
 
 
 logger = logging.getLogger(__name__)

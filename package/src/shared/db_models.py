@@ -7,7 +7,6 @@ anywhere outside this module.
 
 Items are persisted through a dynawrap backend: Postgres on the platform.
 """
-import os
 import time
 from hashlib import md5 as _md5
 from typing import ClassVar, Optional
@@ -21,35 +20,6 @@ from .model_settings import ModelSettings
 
 
 _DEFAULT_TTL_OFFSET = 86400 * 30  # 30 days
-
-
-# The loader settings, as environment variables.
-_ENV_KEYS = tuple(name.upper() for name in ModelSettings.model_fields)
-
-# The keys the last call to set_model_config_env set. The next call
-# clears them, so a handler setting such as NUM_STEPS applies to the
-# model that declares it and to no other.
-_applied_keys: set[str] = set()
-
-
-def set_model_config_env(settings: ModelSettings) -> None:
-    """Apply model settings to the process environment.
-
-    Each set setting becomes its name upper-cased, booleans as "true" or
-    "false" and other values as strings. Clears the loader keys and
-    every key the previous call set first. Shared between worker.py
-    (serve time) and model_cache_shared.py (cache-init time) so both
-    load a model under the same settings.
-    """
-    for key in (*_ENV_KEYS, *_applied_keys):
-        os.environ.pop(key, None)
-
-    _applied_keys.clear()
-
-    for name, value in settings.model_dump(exclude_none=True).items():
-        key = name.upper()
-        os.environ[key] = str(value).lower() if isinstance(value, bool) else str(value)
-        _applied_keys.add(key)
 
 
 class ResultsItem(DBItem, BaseModel):

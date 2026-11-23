@@ -12,7 +12,6 @@ The standard_loader handles the common AutoTokenizer/AutoProcessor +
 AutoModel pattern. Model-type-specific loaders import the correct
 transformer classes and delegate to standard_loader.
 """
-import json
 import logging
 import os
 from dataclasses import dataclass
@@ -21,6 +20,8 @@ from typing import Any
 
 import torch
 from transformers import BitsAndBytesConfig
+
+from shared.model_settings import ModelSettings
 
 
 logger = logging.getLogger(__name__)
@@ -38,9 +39,8 @@ def env_flag(name: str, default: bool = False) -> bool:
     false. Absent or empty returns the default, so a caller-supplied
     value survives an unset variable.
 
-    Environment wins over the caller when set, which is what makes a
-    model's settings effective without every loader growing a kwargs
-    path: load_in_4bit in settings arrives here as LOAD_IN_4BIT.
+    Used for HF_HUB_OFFLINE, a platform variable. Model settings reach
+    the loaders as a ModelSettings argument, not through the environment.
     """
     raw = os.getenv(name, "").strip().lower()
 
@@ -140,6 +140,7 @@ def load_diffusion_pipeline(
     modelname: str,
     cache_dir: str = None,
     quant_config = None,
+    device_map: dict = None,
     **load_overrides,
 ) -> ModelLoaderResult:
     """Load a diffusers DiffusionPipeline.
@@ -153,9 +154,9 @@ def load_diffusion_pipeline(
       multi-gpu   -- device_map="balanced"
       single/cpu  -- .to(target)
 
-    DIFFUSERS_DEVICE_MAP: json mapping component name to device string,
-    e.g. '{"transformer": "cuda:0", "text_encoder": "cuda:1"}'. Components
-    absent from the map default to cuda:0. Quantised path only.
+    device_map maps a component name to a device string, e.g.
+    {"transformer": "cuda:0", "text_encoder": "cuda:1"}. Components absent
+    from it default to cuda:0. Quantised path only.
     """
     from diffusers import DiffusionPipeline
 
@@ -182,14 +183,9 @@ def load_diffusion_pipeline(
         load_kwargs["quantization_config"] = quant_config
         pipe = DiffusionPipeline.from_pretrained(modelname, **load_kwargs)
 
-        explicit_map = {}
-        env_map = os.getenv("DIFFUSERS_DEVICE_MAP", "").strip()
-        if env_map:
-            explicit_map = json.loads(env_map)
-
         for name, component in pipe.components.items():
             if isinstance(component, torch.nn.Module):
-                component.to(explicit_map.get(name, "cuda:0"))
+                component.to((device_map or {}).get(name, "cuda:0"))
 
     elif gpu_count > 1:
         load_kwargs["device_map"] = "balanced"
@@ -219,11 +215,9 @@ def standard_loader(
     ModelClass,
     modelname: str,
     cache_dir: str = None,
-    use_fast: bool = False,
-    remote_code: bool = False,
     local_files_only: bool = True,
-    low_cpu_mem_usage: bool = True,
-    load_in_4bit: bool = False,
+    *,
+    settings: ModelSettings,
     **model_kwargs
 ) -> ModelLoaderResult:
     """Load a tokenizer/processor and a model using the from_pretrained pattern.
@@ -231,18 +225,19 @@ def standard_loader(
     TokenizerClass and ModelClass should be HuggingFace Auto classes, e.g.
     AutoTokenizer and AutoModelForCausalLM.
 
-    load_in_4bit is applied only to the model, not to the tokenizer.
-    use_fast and remote_code apply to both.
+    settings is the ModelSettings resolved for the load. load_in_4bit
+    applies only to the model, not to the tokenizer; use_fast and
+    trust_remote_code apply to both; low_cpu_mem_usage applies to the
+    model.
 
     Any additional keyword arguments (model_kwargs) are passed straight
     through to ModelClass.from_pretrained(), e.g. attn_implementation.
     They have no effect on the tokenizer load.
     """
-    # double check the envvars here, so we don't rely on the caller.
-    use_fast = env_flag("USE_FAST", use_fast)
-    remote_code = env_flag("TRUST_REMOTE_CODE", remote_code)
-    load_in_4bit = env_flag("LOAD_IN_4BIT", load_in_4bit)
-    low_cpu_mem_usage = env_flag("LOW_CPU_MEM_USAGE", low_cpu_mem_usage)
+    use_fast = bool(settings.use_fast)
+    remote_code = bool(settings.trust_remote_code)
+    load_in_4bit = bool(settings.load_in_4bit)
+    low_cpu_mem_usage = bool(settings.low_cpu_mem_usage)
 
     check_4bit(modelname, load_in_4bit)
 

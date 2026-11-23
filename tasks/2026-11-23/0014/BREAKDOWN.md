@@ -9,3 +9,6 @@
    building.md and configuration.md: a setting's name stays as it is,
    and it reaches the loader and the handler as a value, not as an
    environment variable.
+4. Name the settings in lower case where docstrings, log messages
+   and the request schemas' field descriptions name them in upper case
+   or as environment variables.

@@ -105,9 +105,9 @@ marigold cache validate ./my-app
 
 ### Model settings
 
-`settings:` holds values the worker applies before it loads the model.
-A setting's name is its environment variable in lower case:
-`load_in_4bit` reaches the loader as `LOAD_IN_4BIT`.
+`settings:` holds values the worker passes to the model's loader and
+handler as it loads the model. A setting's name is lower-case letters,
+digits and underscores, such as `load_in_4bit`.
 
 ```yaml
 models:

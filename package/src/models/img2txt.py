@@ -15,7 +15,8 @@ import os
 from time import perf_counter as clock
 
 import torch
-from api.models import Img2TxtRequest, Img2TxtResponse
+from shared.model_settings import ModelSettings
+from shared.schemas import Img2TxtRequest, Img2TxtResponse
 from models.standard_loader import ModelLoaderResult, standard_loader
 from shared.enums import ModelMode, ModelType
 from shared.models import InstructMessage, InstructRole
@@ -78,8 +79,8 @@ def _build_hf_prompt(request: Img2TxtRequest) -> tuple:
 )
 class Img2TxtModel(BaseModelHandler):
 
-    def __init__(self, modelname: str):
-        super().__init__(modelname)
+    def __init__(self, modelname: str, settings: ModelSettings):
+        super().__init__(modelname, settings)
 
     def _run(
         self, user_id: str, message_id: str, request: Img2TxtRequest

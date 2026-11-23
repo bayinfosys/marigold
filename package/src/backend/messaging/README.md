@@ -1,7 +1,7 @@
 # backend.messaging -- queue and notification backends
 
-QueueBackend and NotificationBackend interfaces (`base.py`), with the
-implementations the platform uses:
+Implementations of the QueueBackend and NotificationBackend interfaces,
+which shared/messaging.py declares, used by the platform:
 
 - `postgres.py` -- `PostgresQueueBackend`: queue tables in the platform
   database, claimed with `SELECT ... FOR UPDATE SKIP LOCKED`.

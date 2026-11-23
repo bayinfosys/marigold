@@ -12,7 +12,8 @@ import os
 from time import perf_counter as clock
 
 import torch
-from api.models import (EmbeddingQuantization, EmbeddingResponse,
+from shared.model_settings import ModelSettings
+from shared.schemas import (EmbeddingQuantization, EmbeddingResponse,
                         EmbedTextRequest)
 from models.standard_loader import ModelLoaderResult
 from sentence_transformers.quantization import quantize_embeddings
@@ -61,8 +62,8 @@ def load_text_embedding(modelname: str, cache_dir: str = None, **kwargs) -> Mode
 )
 class TextEmbeddingModel(BaseModelHandler):
 
-    def __init__(self, modelname: str):
-        super().__init__(modelname)
+    def __init__(self, modelname: str, settings: ModelSettings):
+        super().__init__(modelname, settings)
 
     def _run(
         self, user_id: str, message_id: str, request: EmbedTextRequest

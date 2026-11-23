@@ -65,7 +65,8 @@ for a later workplan.
    the others, in discussion or in their NOTES.md, until they are.
 3. For each task in order: confirm the tasks it depends on have landed
    and the code is in the state the task expects; run the patch loop
-   below until the diff is right; run it; commit with
+   below until the diff is right; run it, and run
+   `python scripts/layer_check.py`, which reports nothing; commit with
    `git commit -F tasks/<date>/<nnnn>/COMMIT_MSG`; push.
 4. Run the integration cycle, then write OUTCOME.md and commit it.
 5. Review the workplan as a whole.

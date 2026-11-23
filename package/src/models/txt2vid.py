@@ -31,7 +31,8 @@ from time import perf_counter as clock
 
 import torch
 
-from api.models import Txt2VidRequest, Txt2VidResponse
+from shared.model_settings import ModelSettings
+from shared.schemas import Txt2VidRequest, Txt2VidResponse
 from models.standard_loader import ModelLoaderResult, load_diffusion_pipeline
 from shared.enums import ModelMode, ModelType, OutputMimeType
 from shared.outputs import frames_to_mp4_bytes
@@ -60,10 +61,10 @@ def load_txt2vid(modelname: str, cache_dir: str = None, **kwargs) -> ModelLoader
 )
 class Txt2VidModel(BaseModelHandler):
 
-    def __init__(self, modelname: str):
-        super().__init__(modelname)
+    def __init__(self, modelname: str, settings: ModelSettings):
+        super().__init__(modelname, settings)
         self.pipe      = self.model
-        self.num_steps = int(os.getenv("NUM_STEPS", str(_DEFAULT_NUM_STEPS)))
+        self.num_steps = int(self.settings.get("num_steps", _DEFAULT_NUM_STEPS))
 
     def unload(self) -> None:
         del self.pipe

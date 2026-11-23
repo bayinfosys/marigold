@@ -1,15 +1,15 @@
 """Model settings: how a model is loaded and run, by name and value.
 
-A setting's name is its environment variable in lower case:
-load_in_4bit is LOAD_IN_4BIT. The four settings the loaders read are
-typed. Handlers read further settings, such as num_steps, which are
+A setting's name is lower-case letters, digits and underscores,
+starting with a letter, such as load_in_4bit. The four settings the
+loaders read are typed. Handlers read further settings, such as num_steps, which are
 allowed as extra keys holding a string, a number or a boolean.
 
 A models.yaml entry declares its settings under `settings:`, and the
 host config's [models] section sets them for every model, by model type
 and by model name. resolve_settings decides each setting's value at a
-load; the worker and the cache container apply the result to the
-process environment through shared.db_models.set_model_config_env.
+load; the worker passes the result to the handler, which passes it to
+the loader, and the cache container passes it to the loader.
 
 This module imports only pydantic and shared.enums, so the CLI can
 import it.
@@ -26,7 +26,7 @@ from shared.enums import ModelType
 # The environment variable the CLI writes [models] to, as JSON.
 HOST_SETTINGS_ENV = "MARIGOLD_MODEL_SETTINGS"
 
-# The environment variable in lower case.
+# Lower-case letters, digits and underscores, starting with a letter.
 _NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
@@ -54,13 +54,21 @@ class ModelSettings(BaseModel):
         description="Load the weights without a full copy in host memory.",
     )
 
+    def get(self, name: str, default=None):
+        """A setting's value, typed or extra, or default when it is unset."""
+        if name in type(self).model_fields:
+            value = getattr(self, name)
+        else:
+            value = (self.model_extra or {}).get(name)
+        return default if value is None else value
+
     @model_validator(mode="after")
     def _names(self):
         for name in self.__pydantic_extra__ or {}:
             if not _NAME_RE.match(name):
                 raise ValueError(
-                    f"setting '{name}': a setting's name is its environment "
-                    "variable in lower case, such as num_steps"
+                    f"setting '{name}': a setting's name is lower-case letters, "
+                    "digits and underscores, such as num_steps"
                 )
         return self
 

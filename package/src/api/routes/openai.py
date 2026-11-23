@@ -47,7 +47,7 @@ from typing import Literal
 
 from fastapi import HTTPException, Request, APIRouter
 from fastapi.responses import StreamingResponse
-from models.catalogue import get_models_by_type
+from shared.catalogue import get_models_by_type
 from pydantic import BaseModel, ValidationError
 from shared.enums import ModelType, StatusCode
 from shared.models import InstructToolCall, gen_tool_call_id

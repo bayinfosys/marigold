@@ -1,41 +1,55 @@
 #!/bin/bash
-# tasks/scripts/task.sh -- work with one task's patch.
+# tasks/scripts/task.sh -- work with a task's patch, or merge a workplan.
 #
 #   task.sh apply  [DATE/]NNNN   update the tree and the index with the patch
 #   task.sh diff   [DATE/]NNNN   show the changes: staged if applied, else the patch
 #   task.sh accept [DATE/]NNNN   apply if needed, then commit with COMMIT_MSG
 #   task.sh reject [DATE/]NNNN   take an applied, uncommitted patch out of the tree and the index
 #   task.sh view   [DATE/]NNNN   print COMMIT_MSG
+#   task.sh merge  [DATE]        squash DATE-workplan into the main branch with SQUASH_COMMIT_MSG
 #
 # DATE defaults to the newest workplan directory under tasks/.
+# TASK_MAIN_BRANCH names the main branch; it defaults to master.
 set -euo pipefail
 
+MAIN=${TASK_MAIN_BRANCH:-master}
+
 die()   { echo "$0: $*" >&2; exit 1; }
-usage() { echo "usage: $0 apply|diff|accept|reject|view [DATE/]NNNN" >&2; exit 2; }
-[ $# -eq 2 ] || usage
+usage() { echo "usage: $0 apply|diff|accept|reject|view [DATE/]NNNN | merge [DATE]" >&2; exit 2; }
+need()  { [ -f "$1" ] || die "$1: not found"; }
+
+newest() {
+  shopt -s nullglob
+  local plans=(tasks/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
+  shopt -u nullglob
+  [ ${#plans[@]} -gt 0 ] || die "no workplan directories under tasks/"
+  basename "${plans[-1]}"
+}
+
+[ $# -ge 1 ] || usage
 CMD=$1
-ID=$2
+ARG=${2:-}
 
 cd "$(git rev-parse --show-toplevel)"
 
-case $ID in
-  */*)
-    DIR=tasks/$ID
+case $CMD in
+  merge)
+    [ $# -le 2 ] || usage
+    DATE=${ARG:-$(newest)}
+    DIR=tasks/$DATE
+    [ -d "$DIR" ] || die "workplan $DATE does not exist"
     ;;
   *)
-    shopt -s nullglob
-    PLANS=(tasks/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9])
-    shopt -u nullglob
-    [ ${#PLANS[@]} -gt 0 ] || die "no workplan directories under tasks/"
-    DIR=${PLANS[-1]}/$ID
+    [ $# -eq 2 ] || usage
+    case $ARG in
+      */*) DIR=tasks/$ARG ;;
+      *)   DIR=tasks/$(newest)/$ARG ;;
+    esac
+    [ -d "$DIR" ] || die "task ${DIR#tasks/} does not exist"
+    PATCH=$DIR/output.patch
+    MSG=$DIR/COMMIT_MSG
     ;;
 esac
-[ -d "$DIR" ] || die "task ${DIR#tasks/} does not exist"
-
-PATCH=$DIR/output.patch
-MSG=$DIR/COMMIT_MSG
-
-need() { [ -f "$1" ] || die "task ${DIR#tasks/} has no $(basename "$1")"; }
 
 # True when the index holds the whole patch.
 applied() { git apply --cached -R --check "$PATCH" 2>/dev/null; }
@@ -60,6 +74,17 @@ reject_patch() {
   echo "$PATCH: rejected"
 }
 
+merge_workplan() {
+  local branch=$DATE-workplan
+  local msg=$DIR/SQUASH_COMMIT_MSG
+  need "$msg"
+  git rev-parse --verify -q "refs/heads/$branch" >/dev/null || die "branch $branch does not exist"
+  git diff --quiet && git diff --cached --quiet || die "the tree has uncommitted changes"
+  git switch "$MAIN"
+  git merge --squash "$branch"
+  git commit -F "$msg"
+}
+
 case $CMD in
   apply)
     need "$PATCH"
@@ -78,7 +103,6 @@ case $CMD in
     need "$PATCH"
     need "$MSG"
     apply_patch
-    git add -- "$PATCH" "$MSG"
     git commit -F "$MSG"
     ;;
   reject)
@@ -88,6 +112,9 @@ case $CMD in
   view)
     need "$MSG"
     cat "$MSG"
+    ;;
+  merge)
+    merge_workplan
     ;;
   *)
     usage

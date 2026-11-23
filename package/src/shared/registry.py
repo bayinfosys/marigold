@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, List, Optional, Type
 
 from shared.enums import ModelMode, ModelType, OutputMimeType
 from shared.outputs import write_binary_output
+from shared.model_settings import ModelSettings
 
 logger = logging.getLogger(__name__)
 
@@ -126,21 +127,25 @@ class BaseModelHandler(ABC):
     once per load, not per message. The loader is called via the ModelSpec
     registered by @model_spec and must return a ModelLoaderResult.
 
+    settings is the ModelSettings resolved for this load. The handler
+    keeps it as self.settings and passes it to the loader.
+
     self.processor and self.model are set from the ModelLoaderResult.
     processor is None for loaders that use sentence-transformers or return
     a single pipeline object. Subclasses that need a named alias
     (e.g. self.pipe) assign it after calling super().__init__().
     """
 
-    def __init__(self, modelname: str):
+    def __init__(self, modelname: str, settings: ModelSettings):
         self.modelname = modelname
+        self.settings = settings
         cache_dir = os.getenv("CACHE_DIR", "/models")
 
         spec = _SPECS[self._model_type.value]  # set by decorator
         T = clock()
 
         try:
-            result = spec.loader(self.modelname, cache_dir)
+            result = spec.loader(self.modelname, cache_dir, settings=settings)
         except Exception:
             logger.exception("%s an exception on load", self.modelname)
             raise
